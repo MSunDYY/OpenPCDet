@@ -1,3 +1,4 @@
+import pcdet
 from collections import defaultdict
 from pathlib import Path
 
@@ -5,10 +6,10 @@ import numpy as np
 import torch
 import torch.utils.data as torch_data
 
-from ..utils import common_utils
-from .augmentor.data_augmentor import DataAugmentor
-from .processor.data_processor import DataProcessor
-from .processor.point_feature_encoder import PointFeatureEncoder
+from pcdet.utils import common_utils
+from pcdet.datasets.augmentor.data_augmentor import DataAugmentor
+from pcdet.datasets.processor.data_processor import DataProcessor
+from pcdet.datasets.processor.point_feature_encoder import PointFeatureEncoder
 
 
 class DatasetTemplate(torch_data.Dataset):
@@ -18,21 +19,21 @@ class DatasetTemplate(torch_data.Dataset):
         self.training = training
         self.class_names = class_names
         self.logger = logger
-        self.root_path = root_path if root_path is not None else Path(self.dataset_cfg.DATA_PATH)
+        self.root_path = root_path if root_path is not None else Path(self.dataset_cfg['DATA_PATH'])
         self.logger = logger
         if self.dataset_cfg is None or class_names is None:
             return
 
-        self.point_cloud_range = np.array(self.dataset_cfg.POINT_CLOUD_RANGE, dtype=np.float32)
+        self.point_cloud_range = np.array(self.dataset_cfg['POINT_CLOUD_RANGE'], dtype=np.float32)
         self.point_feature_encoder = PointFeatureEncoder(
-            self.dataset_cfg.POINT_FEATURE_ENCODING,
+            self.dataset_cfg['POINT_FEATURE_ENCODING'],
             point_cloud_range=self.point_cloud_range
         )
         self.data_augmentor = DataAugmentor(
-            self.root_path, self.dataset_cfg.DATA_AUGMENTOR, self.class_names, logger=self.logger
+            self.root_path, self.dataset_cfg['DATA_AUGMENTOR'], self.class_names, logger=self.logger
         ) if self.training else None
         self.data_processor = DataProcessor(
-            self.dataset_cfg.DATA_PROCESSOR, point_cloud_range=self.point_cloud_range,
+            self.dataset_cfg['DATA_PROCESSOR'], point_cloud_range=self.point_cloud_range,
             training=self.training, num_point_features=self.point_feature_encoder.num_point_features
         )
 

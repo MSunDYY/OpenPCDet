@@ -28,20 +28,20 @@ class DataBaseSampler(object):
 
         self.use_shared_memory = sampler_cfg.get('USE_SHARED_MEMORY', False)
 
-        for db_info_path in sampler_cfg.DB_INFO_PATH:
+        for db_info_path in sampler_cfg['DB_INFO_PATH']:
             db_info_path = self.root_path.resolve() / db_info_path
             if not db_info_path.exists():
-                assert len(sampler_cfg.DB_INFO_PATH) == 1
-                sampler_cfg.DB_INFO_PATH[0] = sampler_cfg.BACKUP_DB_INFO['DB_INFO_PATH']
-                sampler_cfg.DB_DATA_PATH[0] = sampler_cfg.BACKUP_DB_INFO['DB_DATA_PATH']
+                assert len(sampler_cfg['DB_INFO_PATH']) == 1
+                sampler_cfg['DB_INFO_PATH'][0] = sampler_cfg['BACKUP_DB_INFO']['DB_INFO_PATH']
+                sampler_cfg['DB_DATA_PATH'][0] = sampler_cfg['BACKUP_DB_INFO']['DB_DATA_PATH']
                 db_info_path = self.root_path.resolve() / sampler_cfg.DB_INFO_PATH[0]
-                sampler_cfg.NUM_POINT_FEATURES = sampler_cfg.BACKUP_DB_INFO['NUM_POINT_FEATURES']
+                sampler_cfg['NUM_POINT_FEATURES'] = sampler_cfg['BACKUP_DB_INFO']['NUM_POINT_FEATURES']
 
             with open(str(db_info_path), 'rb') as f:
                 infos = pickle.load(f)
                 [self.db_infos[cur_class].extend(infos[cur_class]) for cur_class in class_names]
 
-        for func_name, val in sampler_cfg.PREPARE.items():
+        for func_name, val in sampler_cfg['PREPARE'].items():
             self.db_infos = getattr(self, func_name)(self.db_infos, val)
 
         self.gt_database_data_key = self.load_db_to_shared_memory() if self.use_shared_memory else None
@@ -50,7 +50,7 @@ class DataBaseSampler(object):
         self.sample_class_num = {}
         self.limit_whole_scene = sampler_cfg.get('LIMIT_WHOLE_SCENE', False)
 
-        for x in sampler_cfg.SAMPLE_GROUPS:
+        for x in sampler_cfg['SAMPLE_GROUPS']:
             class_name, sample_num = x.split(':')
             if class_name not in class_names:
                 continue
@@ -73,7 +73,7 @@ class DataBaseSampler(object):
         if self.use_shared_memory:
             self.logger.info('Deleting GT database from shared memory')
             cur_rank, num_gpus = common_utils.get_dist_info()
-            sa_key = self.sampler_cfg.DB_DATA_PATH[0]
+            sa_key = self.sampler_cfg['DB_DATA_PATH'][0]
             if cur_rank % num_gpus == 0 and os.path.exists(f"/dev/shm/{sa_key}"):
                 SharedArray.delete(f"shm://{sa_key}")
 
@@ -85,9 +85,9 @@ class DataBaseSampler(object):
         self.logger.info('Loading GT database to shared memory')
         cur_rank, world_size, num_gpus = common_utils.get_dist_info(return_gpu_per_machine=True)
 
-        assert self.sampler_cfg.DB_DATA_PATH.__len__() == 1, 'Current only support single DB_DATA'
-        db_data_path = self.root_path.resolve() / self.sampler_cfg.DB_DATA_PATH[0]
-        sa_key = self.sampler_cfg.DB_DATA_PATH[0]
+        assert self.sampler_cfg['DB_DATA_PATH'].__len__() == 1, 'Current only support single DB_DATA'
+        db_data_path = self.root_path.resolve() / self.sampler_cfg['DB_DATA_PATH'][0]
+        sa_key = self.sampler_cfg['DB_DATA_PATH'][0]
 
         if cur_rank % num_gpus == 0 and not os.path.exists(f"/dev/shm/{sa_key}"):
             gt_database_data = np.load(db_data_path)

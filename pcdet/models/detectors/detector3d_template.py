@@ -162,11 +162,11 @@ class Detector3DTemplate(nn.Module):
             return None, model_info_dict
         point_head_module = roi_heads.__all__[self.model_cfg.ROI_HEAD.NAME](
             model_cfg=self.model_cfg.ROI_HEAD,
+            num_class=self.num_class if not self.model_cfg.ROI_HEAD.CLASS_AGNOSTIC else 1,
             input_channels=model_info_dict['num_point_features'],
             backbone_channels= model_info_dict.get('backbone_channels', None),
             point_cloud_range=model_info_dict['point_cloud_range'],
             voxel_size=model_info_dict['voxel_size'],
-            num_class=self.num_class if not self.model_cfg.ROI_HEAD.CLASS_AGNOSTIC else 1,
         )
 
         model_info_dict['module_list'].append(point_head_module)

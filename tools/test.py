@@ -20,12 +20,12 @@ from pcdet.utils import common_utils
 
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
-    parser.add_argument('--cfg_file', type=str, default=None, help='specify the config for training')
+    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/centerpoint_4frames.yaml', help='specify the config for training')
 
-    parser.add_argument('--batch_size', type=int, default=None, required=False, help='batch size for training')
+    parser.add_argument('--batch_size', type=int, default=3, required=False, help='batch size for training')
     parser.add_argument('--workers', type=int, default=4, help='number of workers for dataloader')
     parser.add_argument('--extra_tag', type=str, default='default', help='extra tag for this experiment')
-    parser.add_argument('--ckpt', type=str, default=None, help='checkpoint to start from')
+    parser.add_argument('--ckpt', type=str, default='../output/waymo_models/centerpoint_4frames/default/ckpt/latest_model.pth', help='checkpoint to start from')
     parser.add_argument('--pretrained_model', type=str, default=None, help='pretrained_model')
     parser.add_argument('--launcher', choices=['none', 'pytorch', 'slurm'], default='none')
     parser.add_argument('--tcp_port', type=int, default=18888, help='tcp port for distrbuted training')
@@ -164,7 +164,7 @@ def main():
     if not args.eval_all:
         num_list = re.findall(r'\d+', args.ckpt) if args.ckpt is not None else []
         epoch_id = num_list[-1] if num_list.__len__() > 0 else 'no_number'
-        eval_output_dir = eval_output_dir / ('epoch_%s' % epoch_id) / cfg.DATA_CONFIG.DATA_SPLIT['test']
+        eval_output_dir = eval_output_dir / ('epoch_%s' % epoch_id) / cfg.DATA_CONFIG['DATA_SPLIT']['test']
     else:
         eval_output_dir = eval_output_dir / 'eval_all_default'
 

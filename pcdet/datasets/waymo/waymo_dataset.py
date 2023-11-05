@@ -14,10 +14,12 @@ import torch.distributed as dist
 from tqdm import tqdm
 from pathlib import Path
 from functools import partial
+import sys
+sys.path.append('/home/msun/pan1/pointcloud/OpenPCDet/pcdet/datasets')
 
-from ...ops.roiaware_pool3d import roiaware_pool3d_utils
-from ...utils import box_utils, common_utils
-from ..dataset import DatasetTemplate
+from pcdet.ops.roiaware_pool3d import roiaware_pool3d_utils
+from pcdet.utils import box_utils, common_utils
+from pcdet.datasets.dataset import DatasetTemplate
 
 
 class WaymoDataset(DatasetTemplate):
@@ -25,8 +27,8 @@ class WaymoDataset(DatasetTemplate):
         super().__init__(
             dataset_cfg=dataset_cfg, class_names=class_names, training=training, root_path=root_path, logger=logger
         )
-        self.data_path = self.root_path / self.dataset_cfg.PROCESSED_DATA_TAG
-        self.split = self.dataset_cfg.DATA_SPLIT[self.mode]
+        self.data_path = self.root_path / self.dataset_cfg['PROCESSED_DATA_TAG']
+        self.split = self.dataset_cfg['DATA_SPLIT'][self.mode]
         split_dir = self.root_path / 'ImageSets' / (self.split + '.txt')
         self.sample_sequence_list = [x.strip() for x in open(split_dir).readlines()]
 
@@ -79,14 +81,14 @@ class WaymoDataset(DatasetTemplate):
         self.logger.info('Total skipped info %s' % num_skipped_infos)
         self.logger.info('Total samples for Waymo dataset: %d' % (len(waymo_infos)))
 
-        if self.dataset_cfg.SAMPLED_INTERVAL[mode] > 1:
+        if self.dataset_cfg['SAMPLED_INTERVAL'][mode] > 1:
             sampled_waymo_infos = []
             for k in range(0, len(self.infos), self.dataset_cfg.SAMPLED_INTERVAL[mode]):
                 sampled_waymo_infos.append(self.infos[k])
             self.infos = sampled_waymo_infos
             self.logger.info('Total sampled samples for Waymo dataset: %d' % len(self.infos))
             
-        use_sequence_data = self.dataset_cfg.get('SEQUENCE_CONFIG', None) is not None and self.dataset_cfg.SEQUENCE_CONFIG.ENABLED
+        use_sequence_data = self.dataset_cfg.get('SEQUENCE_CONFIG', None) is not None and self.dataset_cfg['SEQUENCE_CONFIG'].ENABLED
         if not use_sequence_data:
             seq_name_to_infos = None 
         return seq_name_to_infos
@@ -172,7 +174,7 @@ class WaymoDataset(DatasetTemplate):
         return sequence_file
 
     def get_infos(self, raw_data_path, save_path, num_workers=multiprocessing.cpu_count(), has_label=True, sampled_interval=1, update_info_only=False):
-        from . import waymo_utils
+        from pcdet.datasets.waymo import waymo_utils
         print('---------------The waymo sample interval is %d, total sequecnes is %d-----------------'
               % (sampled_interval, len(self.sample_sequence_list)))
 
@@ -358,9 +360,9 @@ class WaymoDataset(DatasetTemplate):
         else:
             points = self.get_lidar(sequence_name, sample_idx)
 
-        if self.dataset_cfg.get('SEQUENCE_CONFIG', None) is not None and self.dataset_cfg.SEQUENCE_CONFIG.ENABLED:
+        if self.dataset_cfg.get('SEQUENCE_CONFIG', None) is not None and self.dataset_cfg['SEQUENCE_CONFIG'].ENABLED:
             points, num_points_all, sample_idx_pre_list, poses, pred_boxes, pred_scores, pred_labels = self.get_sequence_data(
-                info, points, sequence_name, sample_idx, self.dataset_cfg.SEQUENCE_CONFIG,
+                info, points, sequence_name, sample_idx, self.dataset_cfg['SEQUENCE_CONFIG'],
                 load_pred_boxes=self.dataset_cfg.get('USE_PREDBOX', False)
             )
             input_dict['poses'] = poses
@@ -707,21 +709,21 @@ def create_waymo_infos(dataset_cfg, class_names, data_path, save_path,
         training=False, logger=common_utils.create_logger()
     )
     train_split, val_split = 'train', 'val'
-
+    #
     train_filename = save_path / ('%s_infos_%s.pkl' % (processed_data_tag, train_split))
     val_filename = save_path / ('%s_infos_%s.pkl' % (processed_data_tag, val_split))
-
+    #
     os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
     print('---------------Start to generate data infos---------------')
-
-    dataset.set_split(train_split)
-    waymo_infos_train = dataset.get_infos(
-        raw_data_path=data_path / raw_data_tag,
-        save_path=save_path / processed_data_tag, num_workers=workers, has_label=True,
-        sampled_interval=1, update_info_only=update_info_only
-    )
-    with open(train_filename, 'wb') as f:
-        pickle.dump(waymo_infos_train, f)
+    #
+    # dataset.set_split(train_split)
+    # waymo_infos_train = dataset.get_infos(
+    #     raw_data_path=data_path / raw_data_tag,
+    #     save_path=save_path / processed_data_tag, num_workers=workers, has_label=True,
+    #     sampled_interval=1, update_info_only=update_info_only
+    # )
+    # with open(train_filename, 'wb') as f:
+    #     pickle.dump(waymo_infos_train, f)
     print('----------------Waymo info train file is saved to %s----------------' % train_filename)
 
     dataset.set_split(val_split)
@@ -780,7 +782,7 @@ if __name__ == '__main__':
     from easydict import EasyDict
 
     parser = argparse.ArgumentParser(description='arg parser')
-    parser.add_argument('--cfg_file', type=str, default=None, help='specify the config of dataset')
+    parser.add_argument('--cfg_file', type=str, default='../../../tools/cfgs/dataset_configs/waymo_dataset_multiframe.yaml', help='specify the config of dataset')
     parser.add_argument('--func', type=str, default='create_waymo_infos', help='')
     parser.add_argument('--processed_data_tag', type=str, default='waymo_processed_data_v0_5_0', help='')
     parser.add_argument('--update_info_only', action='store_true', default=False, help='')

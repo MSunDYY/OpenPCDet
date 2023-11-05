@@ -1,14 +1,17 @@
 import argparse
 import glob
+import os.path
 from pathlib import Path
 
 try:
     import open3d
     from visual_utils import open3d_vis_utils as V
     OPEN3D_FLAG = True
+    import mayavi.mlab as mlab
 except:
     import mayavi.mlab as mlab
     from visual_utils import visualize_utils as V
+
     OPEN3D_FLAG = False
 
 import numpy as np
@@ -62,11 +65,14 @@ class DemoDataset(DatasetTemplate):
 
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
-    parser.add_argument('--cfg_file', type=str, default='cfgs/kitti_models/second.yaml',
+    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/centerpoint_4frames.yaml',
                         help='specify the config for demo')
-    parser.add_argument('--data_path', type=str, default='demo_data',
+    parser.add_argument('--data_path', type=str,
+                        default='../data/waymo/waymo_processed_data_v0_5_0/segment-272435602399417322_2884_130_2904_130_with_camera_labels/0001.npy',
                         help='specify the point cloud data file or directory')
-    parser.add_argument('--ckpt', type=str, default=None, help='specify the pretrained model')
+    parser.add_argument('--ckpt', type=str,
+                        default='../output/waymo_models/centerpoint_4frames/default/ckpt/checkpoint_epoch_1.pth',
+                        help='specify the pretrained model')
     parser.add_argument('--ext', type=str, default='.bin', help='specify the extension of your point cloud data file')
 
     args = parser.parse_args()
@@ -108,5 +114,30 @@ def main():
     logger.info('Demo done.')
 
 
+def test():
+    data_path='../data/waymo/waymo_processed_data_v0_5_0/segment-272435602399417322_2884_130_2904_130_with_camera_labels'
+    data_path='/media/msun/Seagate/radraed_lidar_data/infared-lidar/pro_data/lidar_matched/2023-10-29-15-18-18/2052.pcd'
+    if os.path.isfile(data_path):
+        if data_path.endswith('.npy'):
+            V.draw_scenes(
+                points=np.load(data_path),
+            )
+        if data_path.endswith('.pcd'):
+            V.draw_pcd(data_path)
+
+        if not OPEN3D_FLAG:
+            mlab.show(stop=True)
+    else:
+        files = os.listdir(data_path)
+        frames = []
+        for file in files:
+            if file.endswith('.npy'):
+                points = np.load(os.path.join(data_path, file))
+                frames.append(points)
+        V.draw_scenes_frames(frames,auto=True)
+        if not OPEN3D_FLAG:
+            mlab.show(stop=True)
+
+
 if __name__ == '__main__':
-    main()
+    test()

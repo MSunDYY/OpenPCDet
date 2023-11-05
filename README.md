@@ -18,7 +18,8 @@ It is also the official code release of [`[PointRCNN]`](https://arxiv.org/abs/18
 - [Model Zoo](#model-zoo)
 - [Installation](docs/INSTALL.md)
 - [Quick Demo](docs/DEMO.md)
-- [Getting Started](docs/GETTING_STARTED.md)
+- [Getting Started](docs/GETTING_STARTED
+- .md)
 - [Citation](#citation)
 
 

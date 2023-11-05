@@ -41,6 +41,8 @@ def model_fn_decorator():
 
     def model_func(model, batch_dict):
         load_data_to_gpu(batch_dict)
+        if hasattr(torch.cuda, 'empty_cache'):
+            torch.cuda.empty_cache()
         ret_dict, tb_dict, disp_dict = model(batch_dict)
 
         loss = ret_dict['loss'].mean()
