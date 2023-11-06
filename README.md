@@ -1,1 +1,1 @@
-This is from another [repository](https://github.com/open-mmlab/OpenPCDet) for 3D detection.
+This is a repository forked from [another one](https://github.com/open-mmlab/OpenPCDet) for 3D object detection.
