@@ -8,7 +8,7 @@ DATA_CONFIG:
         'train': 1,
         'test': 1
     }
-    FILTER_EMPTY_BOXES_FOR_TRAIN: True
+    FILTER_EMPTY_BOXES_FOR_TRAIN: False
     DISABLE_NLZ_FLAG_ON_POINTS: True
 
     SEQUENCE_CONFIG:
@@ -17,8 +17,8 @@ DATA_CONFIG:
         
     USE_PREDBOX: True
     ROI_BOXES_PATH: {
-        'train': '../output/xxxxx/train/result.pkl',  # example: predicted boxes of RPN in training set
-        'test': '../output/xxxxx/val/result.pkl',  # example: predicted boxes of RPN in evalulation set
+        'train': '../output/waymo_models/centerpoint_4frames/default/eval/epoch_4/train/default/result.pkl',  # example: predicted boxes of RPN in training set
+        'test': '../output/waymo_models/centerpoint_4frames/default/eval/epoch_4/val/default/result.pkl',  # example: predicted boxes of RPN in evalulation set
     }
 
     DATA_AUGMENTOR:

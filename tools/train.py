@@ -16,11 +16,11 @@ from pcdet.models import build_network, model_fn_decorator
 from pcdet.utils import common_utils
 from train_utils.optimization import build_optimizer, build_scheduler
 from train_utils.train_utils import train_model
-
+import SharedArray
 
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
-    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/mppnet_4frames.yaml', help='specify the config for training')
+    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/mppnet_16frames.yaml', help='specify the config for training')
 
     parser.add_argument('--batch_size', type=int, default=1, required=False, help='batch size for training')
     parser.add_argument('--epochs', type=int, default=None, required=False, help='number of epochs to train for')
