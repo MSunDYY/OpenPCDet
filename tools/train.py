@@ -5,6 +5,7 @@ import glob
 import os
 from pathlib import Path
 from test import repeat_eval_ckpt
+from pcdet import device
 
 import torch
 import torch.nn as nn
@@ -20,7 +21,7 @@ import SharedArray
 
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
-    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/mppnet_16frames.yaml', help='specify the config for training')
+    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/mppnet_4frames.yaml', help='specify the config for training')
 
     parser.add_argument('--batch_size', type=int, default=1, required=False, help='batch size for training')
     parser.add_argument('--epochs', type=int, default=None, required=False, help='number of epochs to train for')
@@ -129,7 +130,8 @@ def main():
     model = build_network(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=train_set)
     if args.sync_bn:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
-    model.cuda()
+
+    model.to(device)
 
     optimizer = build_optimizer(model, cfg.OPTIMIZATION)
 
