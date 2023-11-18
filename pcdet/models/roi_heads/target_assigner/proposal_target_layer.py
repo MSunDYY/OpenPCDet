@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
+from pcdet import device
 
 from ....ops.iou3d_nms import iou3d_nms_utils
 
@@ -220,7 +221,7 @@ class ProposalTargetLayer(nn.Module):
                 cur_gt = gt_boxes[gt_mask]
                 original_gt_assignment = gt_mask.nonzero().view(-1)
 
-                iou3d = iou3d_nms_utils.boxes_iou3d_gpu(cur_roi[:, :7], cur_gt[:, :7])  # (M, N)
+                iou3d = iou3d_nms_utils.boxes_iou3d_gpu(cur_roi.cuda()[:, :7], cur_gt.cuda()[:, :7]).to(device)  # (M, N)
                 cur_max_overlaps, cur_gt_assignment = torch.max(iou3d, dim=1)
                 max_overlaps[roi_mask] = cur_max_overlaps
                 gt_assignment[roi_mask] = original_gt_assignment[cur_gt_assignment]

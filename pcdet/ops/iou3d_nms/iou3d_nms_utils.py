@@ -7,7 +7,7 @@ import torch
 
 from ...utils import common_utils
 from . import iou3d_nms_cuda
-
+from pcdet import device
 
 def boxes_bev_iou_cpu(boxes_a, boxes_b):
     """
@@ -64,8 +64,11 @@ def boxes_iou3d_gpu(boxes_a, boxes_b):
 
     # bev overlap
     overlaps_bev = torch.cuda.FloatTensor(torch.Size((boxes_a.shape[0], boxes_b.shape[0]))).zero_()  # (N, M)
-    iou3d_nms_cuda.boxes_overlap_bev_gpu(boxes_a.contiguous(), boxes_b.contiguous(), overlaps_bev)
+    iou3d_nms_cuda.boxes_overlap_bev_gpu(boxes_a.contiguous().cuda(), boxes_b.contiguous().cuda(), overlaps_bev.cuda())
 
+    boxes_a.to(device)
+    boxes_b.to(device)
+    overlaps_bev.to(device)
     max_of_min = torch.max(boxes_a_height_min, boxes_b_height_min)
     min_of_max = torch.min(boxes_a_height_max, boxes_b_height_max)
     overlaps_h = torch.clamp(min_of_max - max_of_min, min=0)

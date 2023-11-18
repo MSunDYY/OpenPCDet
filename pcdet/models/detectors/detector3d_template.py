@@ -9,6 +9,7 @@ from .. import backbones_2d, backbones_3d, dense_heads, roi_heads
 from ..backbones_2d import map_to_bev
 from ..backbones_3d import pfe, vfe
 from ..model_utils import model_nms_utils
+from pcdet import device
 
 
 class Detector3DTemplate(nn.Module):
@@ -305,12 +306,12 @@ class Detector3DTemplate(nn.Module):
 
         if cur_gt.shape[0] > 0:
             if box_preds.shape[0] > 0:
-                iou3d_rcnn = iou3d_nms_utils.boxes_iou3d_gpu(box_preds[:, 0:7], cur_gt[:, 0:7])
+                iou3d_rcnn = iou3d_nms_utils.boxes_iou3d_gpu(box_preds.cuda()[:, 0:7], cur_gt.cuda()[:, 0:7]).to(device)
             else:
                 iou3d_rcnn = torch.zeros((0, cur_gt.shape[0]))
 
             if rois is not None:
-                iou3d_roi = iou3d_nms_utils.boxes_iou3d_gpu(rois[:, 0:7], cur_gt[:, 0:7])
+                iou3d_roi = iou3d_nms_utils.boxes_iou3d_gpu(rois.cuda()[:, 0:7], cur_gt.cuda()[:, 0:7]).to(device)
 
             for cur_thresh in thresh_list:
                 if iou3d_rcnn.shape[0] == 0:

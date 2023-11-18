@@ -1,5 +1,7 @@
 import subprocess
+import torch
 from pathlib import Path
+device=torch.device('cpu')
 
 from .version import __version__
 

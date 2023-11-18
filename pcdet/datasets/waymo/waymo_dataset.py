@@ -373,6 +373,7 @@ class WaymoDataset(DatasetTemplate):
                     'roi_labels': pred_labels,
                 })
 
+
         input_dict.update({
             'points': points,
             'frame_id': info['frame_id'],

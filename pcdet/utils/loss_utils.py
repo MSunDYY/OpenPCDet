@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 from . import box_utils
 from pcdet.ops.iou3d_nms import iou3d_nms_utils
-
+from pcdet import device
 
 class SigmoidFocalClassificationLoss(nn.Module):
     """
@@ -95,7 +95,7 @@ class WeightedSmoothL1Loss(nn.Module):
         self.beta = beta
         if code_weights is not None:
             self.code_weights = np.array(code_weights, dtype=np.float32)
-            self.code_weights = torch.from_numpy(self.code_weights).cuda()
+            self.code_weights = torch.from_numpy(self.code_weights).to(device)
 
     @staticmethod
     def smooth_l1_loss(diff, beta):

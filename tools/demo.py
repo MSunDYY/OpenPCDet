@@ -116,10 +116,10 @@ def main():
 
 
 def test():
-    data_path = '../data/waymo/waymo_processed_data_v0_5_0/segment-272435602399417322_2884_130_2904_130_with_camera_labels'
-    #data_path = '/media/msun/Seagate/radraed_lidar_data/infared-lidar/pro_data/lidar_matched/2023-10-29-15-18-18/2052.pcd'
-    #data_path = '/media/msun/Seagate/waymo/waymo_processed_data_v0_5_0/segment-272435602399417322_2884_130_2904_130_with_camera_labels/0001.npy'
-    data_path = '/media/msun/Seagate/nuscenes/v1.0-mini/raw_data/n015-2018-11-21-19-38-26+0800__LIDAR_TOP__1542801003948191.npy'
+    # data_path = '../data/waymo/waymo_processed_data_v0_5_0/segment-272435602399417322_2884_130_2904_130_with_camera_labels'
+    # #data_path = '/media/msun/Seagate/radraed_lidar_data/infared-lidar/pro_data/lidar_matched/2023-10-29-15-18-18/2052.pcd'
+    # #data_path = '/media/msun/Seagate/waymo/waymo_processed_data_v0_5_0/segment-272435602399417322_2884_130_2904_130_with_camera_labels/0001.npy'
+    # data_path = '/media/msun/Seagate/nuscenes/v1.0-mini/raw_data/n015-2018-11-21-19-38-26+0800__LIDAR_TOP__1542801003948191.npy'
     args, cfg = parse_config()
     data_path = args.data_path
     if os.path.isfile(data_path):

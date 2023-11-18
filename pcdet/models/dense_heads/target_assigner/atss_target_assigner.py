@@ -1,4 +1,5 @@
 import torch
+from pcdet import device
 
 from ....ops.iou3d_nms import iou3d_nms_utils
 from ....utils import common_utils
@@ -86,9 +87,9 @@ class ATSSTargetAssigner(object):
 
         # select topk anchors for each gt_boxes
         if self.match_height:
-            ious = iou3d_nms_utils.boxes_iou3d_gpu(anchors[:, 0:7], gt_boxes[:, 0:7])  # (N, M)
+            ious = iou3d_nms_utils.boxes_iou3d_gpu(anchors.cuda()[:, 0:7], gt_boxes[:, 0:7].cuda()).to(device)  # (N, M)
         else:
-            ious = iou3d_nms_utils.boxes_iou_bev(anchors[:, 0:7], gt_boxes[:, 0:7])
+            ious = iou3d_nms_utils.boxes_iou_bev(anchors.cuda()[:, 0:7], gt_boxes.cuda()[:, 0:7]).to(device)
 
         distance = (anchors[:, None, 0:3] - gt_boxes[None, :, 0:3]).norm(dim=-1)  # (N, M)
         _, topk_idxs = distance.topk(self.topk, dim=0, largest=False)  # (K, M)

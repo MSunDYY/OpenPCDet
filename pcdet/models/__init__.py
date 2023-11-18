@@ -1,5 +1,5 @@
 from collections import namedtuple
-
+from pcdet import device
 import numpy as np
 import torch
 
@@ -11,8 +11,6 @@ except:
     pass 
     # print('Warning: kornia is not installed. This package is only required by CaDDN')
 
-
-
 def build_network(model_cfg, num_class, dataset):
     model = build_detector(
         model_cfg=model_cfg, num_class=num_class, dataset=dataset
@@ -21,19 +19,20 @@ def build_network(model_cfg, num_class, dataset):
 
 
 def load_data_to_gpu(batch_dict):
+
     for key, val in batch_dict.items():
         if key == 'camera_imgs':
-            batch_dict[key] = val.cuda()
+            batch_dict[key] = val.to(device)
         elif not isinstance(val, np.ndarray):
             continue
         elif key in ['frame_id', 'metadata', 'calib', 'image_paths','ori_shape','img_process_infos']:
             continue
         elif key in ['images']:
-            batch_dict[key] = kornia.image_to_tensor(val).float().cuda().contiguous()
+            batch_dict[key] = kornia.image_to_tensor(val).float().to(device).contiguous()
         elif key in ['image_shape']:
-            batch_dict[key] = torch.from_numpy(val).int().cuda()
+            batch_dict[key] = torch.from_numpy(val).int().to(device)
         else:
-            batch_dict[key] = torch.from_numpy(val).float().cuda()
+            batch_dict[key] = torch.from_numpy(val).float().to(device)
 
 
 def model_fn_decorator():

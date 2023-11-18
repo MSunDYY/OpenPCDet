@@ -10,7 +10,7 @@ from .roi_head_template import RoIHeadTemplate
 from ..model_utils.mppnet_utils import build_transformer, PointNet, MLP
 from .target_assigner.proposal_target_layer import ProposalTargetLayer
 from pcdet.ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_stack_modules
-
+from pcdet import device
 
 class ProposalTargetLayerMPPNet(ProposalTargetLayer):
     def __init__(self, roi_sampler_cfg):
@@ -129,7 +129,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
                 )
 
             else:
-                iou3d = iou3d_nms_utils.boxes_iou3d_gpu(cur_roi, cur_gt[:, 0:7])  # (M, N)
+                iou3d = iou3d_nms_utils.boxes_iou3d_gpu(cur_roi.cuda(), cur_gt.cuda()[:, 0:7]).to(device)  # (M, N)
                 max_overlaps, gt_assignment = torch.max(iou3d, dim=1)
 
             sampled_inds,fg_inds, bg_inds = self.subsample_rois(max_overlaps=max_overlaps)
@@ -242,7 +242,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
                     aug_box3d = self.random_aug_box3d(roi_box3d)
                     keep = False
                 aug_box3d = aug_box3d.view((1, aug_box3d.shape[-1]))
-                iou3d = iou3d_nms_utils.boxes_iou3d_gpu(aug_box3d[:,:7], gt_box3d[:,:7])
+                iou3d = iou3d_nms_utils.boxes_iou3d_gpu(aug_box3d.cuda()[:,:7], gt_box3d.cuda()[:,:7]).to(device)
                 temp_iou = iou3d[0][0]
                 cnt += 1
             roi_boxes3d[k] = aug_box3d.view(-1)
@@ -577,8 +577,8 @@ class MPPNetHead(RoIHeadTemplate):
     def get_proposal_aware_motion_feature(self,proxy_point,batch_size,trajectory_rois,num_rois,batch_dict):
 
 
-        time_stamp   = torch.ones([proxy_point.shape[0],proxy_point.shape[1],1]).cuda()
-        padding_zero = torch.zeros([proxy_point.shape[0],proxy_point.shape[1],2]).cuda()
+        time_stamp   = torch.ones([proxy_point.shape[0],proxy_point.shape[1],1]).to(device)
+        padding_zero = torch.zeros([proxy_point.shape[0],proxy_point.shape[1],2]).to(device)
         proxy_point_time_padding = torch.cat([padding_zero,time_stamp],-1)
 
         num_frames = trajectory_rois.shape[1]
@@ -607,7 +607,7 @@ class MPPNetHead(RoIHeadTemplate):
 
     def trajectories_auxiliary_branch(self,trajectory_rois):
 
-        time_stamp = torch.ones([trajectory_rois.shape[0],trajectory_rois.shape[1],trajectory_rois.shape[2],1]).cuda()
+        time_stamp = torch.ones([trajectory_rois.shape[0],trajectory_rois.shape[1],trajectory_rois.shape[2],1]).to(device)
         for i in range(time_stamp.shape[1]):
             time_stamp[:,i,:] = i*0.1 
 
@@ -645,9 +645,12 @@ class MPPNetHead(RoIHeadTemplate):
             frame[:,:,2:] = trajectory_rois[:,i-1,:,2:]
 
             for bs_idx in range( batch_dict['batch_size']):
-                iou3d = iou3d_nms_utils.boxes_iou3d_gpu(frame[bs_idx,:,:7], proposals_list[bs_idx,i,:,:7])
+
+                iou3d = iou3d_nms_utils.boxes_iou3d_gpu(frame.cuda()[bs_idx,:,:7], proposals_list.cuda()[bs_idx,i,:,:7]).to(device)
+
                 max_overlaps, traj_assignment = torch.max(iou3d, dim=1)
-                
+
+
                 fg_inds = ((max_overlaps >= 0.5)).nonzero().view(-1)
                     
                 valid_length[bs_idx,i,fg_inds] = 1
@@ -717,8 +720,8 @@ class MPPNetHead(RoIHeadTemplate):
             src[empty_mask.view(-1)] = 0
 
         if self.model_cfg.Transformer.use_grid_pos.init_type == 'index':
-            pos = self.grid_pos_embeded(self.grid_index.cuda())[None,:,:]
-            pos = torch.cat([torch.zeros(1,1,self.hidden_dim).cuda(),pos],1)
+            pos = self.grid_pos_embeded(self.grid_index.to(device))[None,:,:]
+            pos = torch.cat([torch.zeros(1,1,self.hidden_dim).to(device),pos],1)
         else:
             pos=None
 

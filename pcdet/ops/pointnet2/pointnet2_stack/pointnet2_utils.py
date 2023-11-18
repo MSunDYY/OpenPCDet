@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch.autograd import Function, Variable
 
 from . import pointnet2_stack_cuda as pointnet2
+from pcdet import device
 
 
 class BallQuery(Function):
@@ -80,10 +81,10 @@ class GroupingOperation(Function):
         B = idx_batch_cnt.shape[0]
         output = torch.cuda.FloatTensor(M, C, nsample)
 
-        pointnet2.group_points_wrapper(B, M, C, nsample, features, features_batch_cnt, idx, idx_batch_cnt, output)
+        pointnet2.group_points_wrapper(B, M, C, nsample, features.cuda(), features_batch_cnt.cuda(), idx.cuda(), idx_batch_cnt.cuda(), output)
 
         ctx.for_backwards = (B, N, idx, features_batch_cnt, idx_batch_cnt)
-        return output
+        return output.to(device)
 
     @staticmethod
     def backward(ctx, grad_out: torch.Tensor):
@@ -101,9 +102,9 @@ class GroupingOperation(Function):
         grad_features = Variable(torch.cuda.FloatTensor(N, C).zero_())
 
         grad_out_data = grad_out.data.contiguous()
-        pointnet2.group_points_grad_wrapper(B, M, C, N, nsample, grad_out_data, idx,
-                                            idx_batch_cnt, features_batch_cnt, grad_features.data)
-        return grad_features, None, None, None
+        pointnet2.group_points_grad_wrapper(B, M, C, N, nsample, grad_out_data.cuda(), idx.cuda(),
+                                            idx_batch_cnt.cuda(), features_batch_cnt.cuda(), grad_features.data.cuda())
+        return grad_features.to(device), None, None, None
 
 
 grouping_operation = GroupingOperation.apply
@@ -139,13 +140,17 @@ class QueryAndGroup(nn.Module):
             'new_xyz: %s, new_xyz_batch_cnt: %s' % (str(new_xyz.shape), str(new_xyz_batch_cnt))
 
         # idx: (M1 + M2 ..., nsample), empty_ball_mask: (M1 + M2 ...)
-        idx, empty_ball_mask = ball_query(self.radius, self.nsample, xyz, xyz_batch_cnt, new_xyz, new_xyz_batch_cnt)
+        idx, empty_ball_mask = ball_query(self.radius, self.nsample, xyz.cuda(), xyz_batch_cnt.cuda(), new_xyz.cuda(), new_xyz_batch_cnt.cuda())
+        idx=idx.to(device)
+        empty_ball_mask=empty_ball_mask.to(device)
+
         grouped_xyz = grouping_operation(xyz, xyz_batch_cnt, idx, new_xyz_batch_cnt)  # (M1 + M2, 3, nsample)
         grouped_xyz -= new_xyz.unsqueeze(-1)
 
         grouped_xyz[empty_ball_mask] = 0
 
         if features is not None:
+
             grouped_features = grouping_operation(features, xyz_batch_cnt, idx, new_xyz_batch_cnt)  # (M1 + M2, C, nsample)
             grouped_features[empty_ball_mask] = 0
             if self.use_xyz:
