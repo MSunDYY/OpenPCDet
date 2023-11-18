@@ -115,7 +115,8 @@ def main():
     logger.info('Demo done.')
 
 
-def test():
+
+def show():
     # data_path = '../data/waymo/waymo_processed_data_v0_5_0/segment-272435602399417322_2884_130_2904_130_with_camera_labels'
     # #data_path = '/media/msun/Seagate/radraed_lidar_data/infared-lidar/pro_data/lidar_matched/2023-10-29-15-18-18/2052.pcd'
     # #data_path = '/media/msun/Seagate/waymo/waymo_processed_data_v0_5_0/segment-272435602399417322_2884_130_2904_130_with_camera_labels/0001.npy'
@@ -142,9 +143,9 @@ def test():
                     points = np.load(os.path.join(data_path, file))
                     V.draw_scenes(points=points)
                 elif file.endswith('.bin'):
-                    with open(os.path.join(data_path,file),'rb') as file_name:
-                        points = np.fromfile(file_name,dtype=np.float64)
-                    V.draw_scenes(points=points.reshape((-1,5))[:,:3])
+                    with open(os.path.join(data_path, file), 'rb') as file_name:
+                        points = np.fromfile(file_name, dtype=np.float64)
+                    V.draw_scenes(points=points.reshape((-1, 5))[:, :3])
                 if file.endswith('.pcd'):
                     V.draw_pcd(data_path)
         else:
@@ -152,15 +153,16 @@ def test():
                 if file.endswith('.npy'):
                     points = np.load(os.path.join(data_path, file))
                 elif file.endswith('.bin'):
-                    with open(os.path.join(data_path,file),'rb') as file_name:
-                        points = np.fromfile(file_name,dtype=np.float64)
+                    with open(os.path.join(data_path, file), 'rb') as file_name:
+                        points = np.fromfile(file_name, dtype=np.float64)
                 if file.endswith('.pcd'):
                     V.draw_pcd(data_path)
                 frames.append(points)
-        V.draw_scenes_frames(frames, auto=True,color=True)
+        V.draw_scenes_frames(frames, auto=True, color=True)
         if not OPEN3D_FLAG:
             mlab.show(stop=True)
 
 
+
 if __name__ == '__main__':
-    main()
+    show()
