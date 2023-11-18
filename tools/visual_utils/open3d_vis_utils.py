@@ -36,13 +36,15 @@ def get_coor_colors(obj_labels):
     return label_rgba
 
 
-def draw_scenes_frames(frames, draw_origin=True,auto=True):
+def draw_scenes_frames(frames, draw_origin=True,auto=True,color=None):
     def create_vis():
         vis = open3d.visualization.Visualizer()
         vis.create_window()
         vis.get_render_option().point_size = 1.0
         vis.get_render_option().background_color = np.zeros(3)
-
+        opt = vis.get_render_option()
+        # 设置背景色（这里为白色）
+        opt.background_color = np.array([0, 0, 0])
 
         return vis
     vis = create_vis()
@@ -57,6 +59,9 @@ def draw_scenes_frames(frames, draw_origin=True,auto=True):
     if auto:
         for frame in frames:
             pts.points = open3d.utility.Vector3dVector(frame[:, :3])
+            if color == None:
+                pts.colors = open3d.utility.Vector3dVector(np.ones((frame.shape[0], 3)))
+
             vis.add_geometry(pts)
             vis.update_renderer()
             vis.poll_events()
@@ -67,6 +72,8 @@ def draw_scenes_frames(frames, draw_origin=True,auto=True):
 
         for frame in frames:
             pts.points = open3d.utility.Vector3dVector(frame[:, :3])
+            if(color==None):
+                pts.colors = open3d.utility.Vector3dVector(np.ones((frame.shape[0], 3)))
             vis.add_geometry(pts)
             vis.update_renderer()
             vis.poll_events()
@@ -145,7 +152,7 @@ def draw_scenes(points, gt_boxes=None, ref_boxes=None, ref_labels=None, ref_scor
         gt_boxes = gt_boxes.cpu().numpy()
     if isinstance(ref_boxes, torch.Tensor):
         ref_boxes = ref_boxes.cpu().numpy()
-
+    print('The num of points is:',points.shape[0])
     vis = open3d.visualization.Visualizer()
     vis.create_window()
 
