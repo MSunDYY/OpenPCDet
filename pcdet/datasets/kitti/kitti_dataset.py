@@ -4,9 +4,9 @@ import pickle
 import numpy as np
 from skimage import io
 
-from . import kitti_utils
-from ...ops.roiaware_pool3d import roiaware_pool3d_utils
-from ...utils import box_utils, calibration_kitti, common_utils, object3d_kitti
+from pcdet.datasets.kitti import kitti_utils
+from pcdet.ops.roiaware_pool3d import roiaware_pool3d_utils
+from pcdet.utils import box_utils, calibration_kitti, common_utils, object3d_kitti
 from ..dataset import DatasetTemplate
 
 
@@ -23,7 +23,7 @@ class KittiDataset(DatasetTemplate):
         super().__init__(
             dataset_cfg=dataset_cfg, class_names=class_names, training=training, root_path=root_path, logger=logger
         )
-        self.split = self.dataset_cfg.DATA_SPLIT[self.mode]
+        self.split = self.dataset_cfg['DATA_SPLIT'][self.mode]
         self.root_split_path = self.root_path / ('training' if self.split != 'test' else 'testing')
 
         split_dir = self.root_path / 'ImageSets' / (self.split + '.txt')
@@ -37,7 +37,7 @@ class KittiDataset(DatasetTemplate):
             self.logger.info('Loading KITTI dataset')
         kitti_infos = []
 
-        for info_path in self.dataset_cfg.INFO_PATH[mode]:
+        for info_path in self.dataset_cfg['INFO_PATH'][mode]:
             info_path = self.root_path / info_path
             if not info_path.exists():
                 continue
@@ -406,7 +406,7 @@ class KittiDataset(DatasetTemplate):
 
         if "points" in get_item_list:
             points = self.get_lidar(sample_idx)
-            if self.dataset_cfg.FOV_POINTS_ONLY:
+            if self.dataset_cfg['FOV_POINTS_ONLY']:
                 pts_rect = calib.lidar_to_rect(points[:, 0:3])
                 fov_flag = self.get_fov_flag(pts_rect, img_shape, calib)
                 points = points[fov_flag]
