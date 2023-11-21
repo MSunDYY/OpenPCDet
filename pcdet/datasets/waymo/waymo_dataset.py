@@ -83,7 +83,7 @@ class WaymoDataset(DatasetTemplate):
 
         if self.dataset_cfg['SAMPLED_INTERVAL'][mode] > 1:
             sampled_waymo_infos = []
-            for k in range(0, len(self.infos), self.dataset_cfg.SAMPLED_INTERVAL[mode]):
+            for k in range(0, len(self.infos), self.dataset_cfg['SAMPLED_INTERVAL'][mode]):
                 sampled_waymo_infos.append(self.infos[k])
             self.infos = sampled_waymo_infos
             self.logger.info('Total sampled samples for Waymo dataset: %d' % len(self.infos))
@@ -707,8 +707,19 @@ def create_waymo_infos(dataset_cfg, class_names, data_path, save_path,
                        workers=min(16, multiprocessing.cpu_count()), update_info_only=False):
     dataset = WaymoDataset(
         dataset_cfg=dataset_cfg, class_names=class_names, root_path=data_path,
-        training=False, logger=common_utils.create_logger()
+        training=True, logger=common_utils.create_logger()
     )
+    # distances=[]
+    # for info in dataset.infos:
+    #     gt_lidar=info['annos']['gt_boxes_lidar']
+    #     dis=np.sqrt(gt_lidar[:,0]**2+gt_lidar[:,1]**2)
+    #     distances.append(dis)
+    # distances=np.concatenate(distances,axis=0)
+    # min_dis=distances.min()
+    # while min_dis<distances.max():
+    #     print('>{} and <{}:'.format(min_dis,min(min_dis+10,distances.max())),((distances>=min_dis)&(distances<min(min_dis+10,distances.max()))).sum())
+    #     min_dis+=10
+
     train_split, val_split = 'train', 'val'
     #
     train_filename = save_path / ('%s_infos_%s.pkl' % (processed_data_tag, train_split))
@@ -716,15 +727,15 @@ def create_waymo_infos(dataset_cfg, class_names, data_path, save_path,
     #
     os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
     print('---------------Start to generate data infos---------------')
-    #
-    # dataset.set_split(train_split)
-    # waymo_infos_train = dataset.get_infos(
-    #     raw_data_path=data_path / raw_data_tag,
-    #     save_path=save_path / processed_data_tag, num_workers=workers, has_label=True,
-    #     sampled_interval=1, update_info_only=update_info_only
-    # )
-    # with open(train_filename, 'wb') as f:
-    #     pickle.dump(waymo_infos_train, f)
+
+    dataset.set_split(train_split)
+    waymo_infos_train = dataset.get_infos(
+        raw_data_path=data_path / raw_data_tag,
+        save_path=save_path / processed_data_tag, num_workers=workers, has_label=True,
+        sampled_interval=1, update_info_only=update_info_only
+    )
+    with open(train_filename, 'wb') as f:
+        pickle.dump(waymo_infos_train, f)
     print('----------------Waymo info train file is saved to %s----------------' % train_filename)
 
     dataset.set_split(val_split)

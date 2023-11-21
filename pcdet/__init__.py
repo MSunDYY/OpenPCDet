@@ -1,7 +1,7 @@
 import subprocess
 import torch
 from pathlib import Path
-device=torch.device('cpu')
+device=torch.device('cuda')
 
 from .version import __version__
 

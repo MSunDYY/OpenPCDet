@@ -69,12 +69,14 @@ def parse_config():
     parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/centerpoint_4frames.yaml',
                         help='specify the config for demo')
     parser.add_argument('--data_path', type=str,
-                        default='/media/msun/Seagate/nuscenes/v1.0-mini/raw_data/n015-2018-11-21-19-38-26+0800__LIDAR_TOP__1542801003948191.npy',
+                        default='/media/msun/Seagate/kitti/object/training/velodyne',
                         help='specify the point cloud data file or directory')
     parser.add_argument('--ckpt', type=str,
                         default='../output/waymo_models/centerpoint_4frames/default/ckpt/checkpoint_epoch_1.pth',
                         help='specify the pretrained model')
     parser.add_argument('--ext', type=str, default='.bin', help='specify the extension of your point cloud data file')
+    parser.add_argument('--frame_rate', type=int, default=100,help='frame_rate of auto-displaying')
+    parser.add_argument('--auto_display',type=bool,default=False,help='whether to display automately')
 
     args = parser.parse_args()
 
@@ -115,7 +117,6 @@ def main():
     logger.info('Demo done.')
 
 
-
 def show():
     # data_path = '../data/waymo/waymo_processed_data_v0_5_0/segment-272435602399417322_2884_130_2904_130_with_camera_labels'
     # #data_path = '/media/msun/Seagate/radraed_lidar_data/infared-lidar/pro_data/lidar_matched/2023-10-29-15-18-18/2052.pcd'
@@ -130,22 +131,25 @@ def show():
             )
         if data_path.endswith('.pcd'):
             V.draw_pcd(data_path)
+        if data_path.endswith('.bin'):
+            points = np.fromfile(data_path, dtype=np.float32).reshape((-1, 4))
+            V.draw_scenes(points=points[:, :3])
 
         if not OPEN3D_FLAG:
             mlab.show(stop=True)
     else:
         files = os.listdir(data_path)
         frames = []
-        split_diaplay = False
-        if split_diaplay:
+        file_names = []
+        if not args.auto_display:
             for file in files:
                 if file.endswith('.npy'):
                     points = np.load(os.path.join(data_path, file))
                     V.draw_scenes(points=points)
                 elif file.endswith('.bin'):
                     with open(os.path.join(data_path, file), 'rb') as file_name:
-                        points = np.fromfile(file_name, dtype=np.float64)
-                    V.draw_scenes(points=points.reshape((-1, 5))[:, :3])
+                        points = np.fromfile(file_name, dtype=np.float32)
+                    V.draw_scenes(points=points.reshape((-1, 4))[:, :3],file_name=file)
                 if file.endswith('.pcd'):
                     V.draw_pcd(data_path)
         else:
@@ -154,14 +158,16 @@ def show():
                     points = np.load(os.path.join(data_path, file))
                 elif file.endswith('.bin'):
                     with open(os.path.join(data_path, file), 'rb') as file_name:
-                        points = np.fromfile(file_name, dtype=np.float64)
+                        points = np.fromfile(file_name, dtype=np.float32).reshape((-1, 4))
+                        file_names.append(data_path)
                 if file.endswith('.pcd'):
                     V.draw_pcd(data_path)
-                frames.append(points)
-        V.draw_scenes_frames(frames, auto=True, color=True)
+                frames.append(points[:, :3])
+                if (len(frames) > 200):
+                    break
+        V.draw_scenes_frames(frames, file_names,auto=True, color=True, frame_rate=cfg.frame_rate)
         if not OPEN3D_FLAG:
             mlab.show(stop=True)
-
 
 
 if __name__ == '__main__':

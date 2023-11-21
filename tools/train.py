@@ -21,7 +21,7 @@ import SharedArray
 
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
-    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/mppnet_4frames.yaml', help='specify the config for training')
+    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/pv_rcnn.yaml', help='specify the config for training')
 
     parser.add_argument('--batch_size', type=int, default=1, required=False, help='batch size for training')
     parser.add_argument('--epochs', type=int, default=None, required=False, help='number of epochs to train for')

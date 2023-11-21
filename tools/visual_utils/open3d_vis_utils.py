@@ -36,7 +36,7 @@ def get_coor_colors(obj_labels):
     return label_rgba
 
 
-def draw_scenes_frames(frames, draw_origin=True,auto=True,color=None):
+def draw_scenes_frames(frames, file_names,draw_origin=True,auto=True,color=None,frame_rate = 100):
     def create_vis():
         vis = open3d.visualization.Visualizer()
         vis.create_window()
@@ -49,7 +49,6 @@ def draw_scenes_frames(frames, draw_origin=True,auto=True,color=None):
         return vis
     vis = create_vis()
 
-    frame_rate = 200
     pts = open3d.geometry.PointCloud()
 
 
@@ -144,7 +143,7 @@ def draw_scenes_pcd(data_path):
     # 关闭窗口并清理资源
     vis.destroy_window()
 
-def draw_scenes(points, gt_boxes=None, ref_boxes=None, ref_labels=None, ref_scores=None, point_colors=None,
+def draw_scenes(points, file_name,gt_boxes=None, ref_boxes=None, ref_labels=None, ref_scores=None, point_colors=None,
                 draw_origin=True):
     if isinstance(points, torch.Tensor):
         points = points.cpu().numpy()
@@ -152,7 +151,7 @@ def draw_scenes(points, gt_boxes=None, ref_boxes=None, ref_labels=None, ref_scor
         gt_boxes = gt_boxes.cpu().numpy()
     if isinstance(ref_boxes, torch.Tensor):
         ref_boxes = ref_boxes.cpu().numpy()
-    print('The num of points is:',points.shape[0])
+    print('file_name:',file_name,'The num of points is:',points.shape[0])
     vis = open3d.visualization.Visualizer()
     vis.create_window()
 
