@@ -10,10 +10,13 @@ import numpy as np
 import time
 
 box_colormap = [
-    [1, 1, 1],
-    [0, 1, 0],
+    [0, 0, 1],
     [0, 1, 1],
     [1, 1, 0],
+    [0,0,0.5],
+    [0,0.5,0.5],
+    [0.5,0.5,0]
+
 ]
 
 
@@ -36,7 +39,7 @@ def get_coor_colors(obj_labels):
     return label_rgba
 
 
-def draw_scenes_frames(frames, file_names,draw_origin=True,auto=True,color=None,frame_rate = 100):
+def draw_scenes_frames(frames, file_names, draw_origin=True, auto=True, color=None, frame_rate=100):
     def create_vis():
         vis = open3d.visualization.Visualizer()
         vis.create_window()
@@ -47,10 +50,10 @@ def draw_scenes_frames(frames, file_names,draw_origin=True,auto=True,color=None,
         opt.background_color = np.array([0, 0, 0])
 
         return vis
+
     vis = create_vis()
 
     pts = open3d.geometry.PointCloud()
-
 
     if draw_origin:
         axis_pcd = open3d.geometry.TriangleMesh.create_coordinate_frame(size=1.0, origin=[0, 0, 0])
@@ -71,7 +74,7 @@ def draw_scenes_frames(frames, file_names,draw_origin=True,auto=True,color=None,
 
         for frame in frames:
             pts.points = open3d.utility.Vector3dVector(frame[:, :3])
-            if(color==None):
+            if (color == None):
                 pts.colors = open3d.utility.Vector3dVector(np.ones((frame.shape[0], 3)))
             vis.add_geometry(pts)
             vis.update_renderer()
@@ -84,9 +87,9 @@ def draw_scenes_frames(frames, file_names,draw_origin=True,auto=True,color=None,
 
         vis.destroy_window()
 
+
 def draw_pcd(path):
     pcd = open3d.io.read_point_cloud(path)
-
 
     # 设置点云颜色 只能是0 1 如[1,0,0]代表红色为既r
     pcd.paint_uniform_color([1, 1, 1])
@@ -102,14 +105,15 @@ def draw_pcd(path):
     opt.background_color = np.array([0, 0, 0])
     # 设置渲染点的大小
     opt.point_size = 1.0
-    ctrl=vis.get_view_control()
-    ctrl.set_lookat(np.array([1, 0, 0],dtype=np.float64))
+    ctrl = vis.get_view_control()
+    ctrl.set_lookat(np.array([1, 0, 0], dtype=np.float64))
     ctrl.set_zoom(5)
 
     vis.add_geometry(pcd)
     # 添加点云
     vis.run()
     vis.destroy_window()
+
 
 def draw_scenes_pcd(data_path):
     vis = open3d.visualization.Visualizer()
@@ -127,7 +131,7 @@ def draw_scenes_pcd(data_path):
     # 添加点云数据到可视化对象
     vis.add_geometry(pointcloud)
     pcd = np.asarray(pcd.points)
-    pointcloud.points=open3d.utility.Vector3dVector(pcd)
+    pointcloud.points = open3d.utility.Vector3dVector(pcd)
     # 创建一个窗口并启动可视化循环
     vis.update_geometry(pointcloud)
     # 获取视图控制对象
@@ -135,7 +139,7 @@ def draw_scenes_pcd(data_path):
     view_control.change_field_of_view(step=0.2)
     # 设置视点（前方 x 轴）、目标（原点）和上方向（上面 z 轴）
     # view_control.set_lookat([1, 0, 0], [0, 0, 0], [0, 0, 1])
-    view_control.set_front(np.array([-1,0,0],dtype=np.float64))
+    view_control.set_front(np.array([-1, 0, 0], dtype=np.float64))
     # 启动可视化循环
 
     pointcloud.colors = open3d.utility.Vector3dVector(np.ones((pcd.shape[0], 3)))
@@ -143,7 +147,9 @@ def draw_scenes_pcd(data_path):
     # 关闭窗口并清理资源
     vis.destroy_window()
 
-def draw_scenes(points, file_name,gt_boxes=None, ref_boxes=None, ref_labels=None, ref_scores=None, point_colors=None,
+
+def draw_scenes(points, file_name=None, gt_boxes=None, gt_labels=None, ref_boxes=None, ref_labels=None, ref_scores=None,
+                point_colors=None,
                 draw_origin=True):
     if isinstance(points, torch.Tensor):
         points = points.cpu().numpy()
@@ -151,10 +157,10 @@ def draw_scenes(points, file_name,gt_boxes=None, ref_boxes=None, ref_labels=None
         gt_boxes = gt_boxes.cpu().numpy()
     if isinstance(ref_boxes, torch.Tensor):
         ref_boxes = ref_boxes.cpu().numpy()
-    print('file_name:',file_name,'The num of points is:',points.shape[0])
+    if file_name is not None:
+        print('file_name:', file_name, 'The num of points is:', points.shape[0])
     vis = open3d.visualization.Visualizer()
     vis.create_window()
-
 
     vis.get_render_option().point_size = 1.0
     vis.get_render_option().background_color = np.zeros(3)
@@ -163,7 +169,6 @@ def draw_scenes(points, file_name,gt_boxes=None, ref_boxes=None, ref_labels=None
     if draw_origin:
         axis_pcd = open3d.geometry.TriangleMesh.create_coordinate_frame(size=1.0, origin=[0, 0, 0])
         vis.add_geometry(axis_pcd)
-
 
     pts = open3d.geometry.PointCloud()
 
@@ -182,7 +187,7 @@ def draw_scenes(points, file_name,gt_boxes=None, ref_boxes=None, ref_labels=None
         pts.colors = open3d.utility.Vector3dVector(point_colors)
 
     if gt_boxes is not None:
-        vis = draw_box(vis, gt_boxes, (0, 0, 1))
+        vis = draw_box(vis, gt_boxes, (0, 0, 1), gt_labels)
 
     if ref_boxes is not None:
         vis = draw_box(vis, ref_boxes, (0, 1, 0), ref_labels, ref_scores)

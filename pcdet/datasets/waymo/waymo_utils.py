@@ -257,7 +257,10 @@ def process_single_sequence(sequence_file, save_path, sampled_interval, has_labe
                 frame, cur_save_dir / ('%04d.npy' % cnt), use_two_returns=use_two_returns
             )
         info['num_points_of_each_lidar'] = num_points_of_each_lidar
-
+        assert annotations['num_points_in_gt'].mean()>0
+        print('min num of points in gt:',annotations['num_points_in_gt'].min(),'  mean num of points in gt:',annotations['num_points_in_gt'].mean())
+        if annotations['num_points_in_gt'].mean()==0.0:
+            print('mean point of gt is',0.0)
         sequence_infos.append(info)
 
     with open(pkl_file, 'wb') as f:

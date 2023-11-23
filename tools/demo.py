@@ -2,6 +2,7 @@ import argparse
 import glob
 import os.path
 from pathlib import Path
+import pickle
 
 try:
     import open3d
@@ -69,15 +70,17 @@ def parse_config():
     parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/centerpoint_4frames.yaml',
                         help='specify the config for demo')
     parser.add_argument('--data_path', type=str,
-                        default='/media/msun/Seagate/kitti/object/training/velodyne',
+                        default='/media/msun/Seagate/waymo/waymo_processed_data_v0_5_0/segment-1005081002024129653_5313_150_5333_150_with_camera_labels/0001.npy',
                         help='specify the point cloud data file or directory')
     parser.add_argument('--ckpt', type=str,
-                        default='../output/waymo_models/centerpoint_4frames/default/ckpt/checkpoint_epoch_1.pth',
+                        default='../output/waymo_models/centerpoint_4frames/default/ckpt/latest_model.pth',
                         help='specify the pretrained model')
-    parser.add_argument('--ext', type=str, default='.bin', help='specify the extension of your point cloud data file')
-    parser.add_argument('--frame_rate', type=int, default=100,help='frame_rate of auto-displaying')
-    parser.add_argument('--auto_display',type=bool,default=False,help='whether to display automately')
-
+    parser.add_argument('--dataset', type=str, default='waymo', help='dataset you want to visualize')
+    parser.add_argument('--ext', type=str, default='.npy', help='specify the extension of your point cloud data file')
+    parser.add_argument('--frame_rate', type=int, default=100, help='frame_rate of auto-displaying')
+    parser.add_argument('--auto_display', type=bool, default=False, help='whether to display automately')
+    parser.add_argument('--index', type=int, default=9, help='index of data in your dataset')
+    parser.add_argument('--frames', type=int, default=2, help='frames to cat')
     args = parser.parse_args()
 
     cfg_from_yaml_file(args.cfg_file, cfg)
@@ -133,7 +136,7 @@ def show():
             V.draw_pcd(data_path)
         if data_path.endswith('.bin'):
             points = np.fromfile(data_path, dtype=np.float32).reshape((-1, 4))
-            V.draw_scenes(points=points[:, :3])
+            V.draw_scenes(points=points[:, :3], file_name=data_path)
 
         if not OPEN3D_FLAG:
             mlab.show(stop=True)
@@ -149,7 +152,7 @@ def show():
                 elif file.endswith('.bin'):
                     with open(os.path.join(data_path, file), 'rb') as file_name:
                         points = np.fromfile(file_name, dtype=np.float32)
-                    V.draw_scenes(points=points.reshape((-1, 4))[:, :3],file_name=file)
+                    V.draw_scenes(points=points.reshape((-1, 4))[:, :3], file_name=file)
                 if file.endswith('.pcd'):
                     V.draw_pcd(data_path)
         else:
@@ -165,10 +168,47 @@ def show():
                 frames.append(points[:, :3])
                 if (len(frames) > 200):
                     break
-        V.draw_scenes_frames(frames, file_names,auto=True, color=True, frame_rate=cfg.frame_rate)
+        V.draw_scenes_frames(frames, file_names, auto=True, color=True, frame_rate=cfg.frame_rate)
         if not OPEN3D_FLAG:
             mlab.show(stop=True)
 
 
+def visualize_dataset():
+    args, cfg = parse_config()
+
+    index = args.index
+    if args.dataset == 'waymo':
+        root_data = '/media/msun/Seagate/waymo'
+        WAYMO_CLASSES = ['Vehicle', 'Pedestrian', 'Cyclist']
+        train_infos = pickle.load(open('/media/msun/Seagate/waymo/waymo_processed_data_v0_5_0_infos_train.pkl', 'rb'))
+        points = []
+        gt_boxes = []
+        gt_label = []
+        for i in range(args.frames):
+
+            train_info = train_infos[index - i]
+            data_path = os.path.join(root_data, 'waymo_processed_data_v0_5_0',
+                                     train_info['point_cloud']['lidar_sequence'] + '/{:04d}.npy'.format(
+                                         train_info['point_cloud']['sample_idx']))
+            points.append(np.load(data_path))
+            if train_info['point_cloud']['sample_idx'] == 0:
+                break
+            gt_boxes.append(train_info['annos']['gt_boxes_lidar'])
+            gt_label_mask = np.zeros(gt_boxes[-1].shape[0], dtype=bool)
+            for j, label in enumerate(train_info['annos']['name']):
+                if label in WAYMO_CLASSES:
+                    gt_label_mask[j] = True
+                    gt_label.append(WAYMO_CLASSES.index(label)+3*i)
+            gt_boxes[-1] = gt_boxes[-1][gt_label_mask]
+
+        points = np.concatenate(points, axis=0)
+        gt_boxes = np.concatenate(gt_boxes,axis=0)
+
+
+        V.draw_scenes(
+            points=points, gt_boxes=gt_boxes[:, :7], gt_labels=gt_label
+        )
+
+
 if __name__ == '__main__':
-    show()
+    visualize_dataset()

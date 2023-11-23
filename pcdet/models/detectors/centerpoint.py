@@ -1,10 +1,11 @@
 from .detector3d_template import Detector3DTemplate
-
+from tools.visual_utils.open3d_vis_utils import draw_scenes
 
 class CenterPoint(Detector3DTemplate):
     def __init__(self, model_cfg, num_class, dataset):
         super().__init__(model_cfg=model_cfg, num_class=num_class, dataset=dataset)
         self.module_list = self.build_networks()
+
 
     def forward(self, batch_dict):
         for cur_module in self.module_list:
@@ -44,7 +45,9 @@ class CenterPoint(Detector3DTemplate):
             recall_dict = self.generate_recall_record(
                 box_preds=pred_boxes,
                 recall_dict=recall_dict, batch_index=index, data_dict=batch_dict,
-                thresh_list=post_process_cfg.RECALL_THRESH_LIST
+                thresh_list=post_process_cfg.RECALL_THRESH_LIST,
+                visualization=False
             )
+
 
         return final_pred_dict, recall_dict

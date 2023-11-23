@@ -74,7 +74,6 @@ class WaymoDataset(DatasetTemplate):
             with open(info_path, 'rb') as f:
                 infos = pickle.load(f)
                 waymo_infos.extend(infos)
-
             seq_name_to_infos[infos[0]['point_cloud']['lidar_sequence']] = infos
 
         self.infos.extend(waymo_infos[:])
@@ -707,7 +706,7 @@ def create_waymo_infos(dataset_cfg, class_names, data_path, save_path,
                        workers=min(16, multiprocessing.cpu_count()), update_info_only=False):
     dataset = WaymoDataset(
         dataset_cfg=dataset_cfg, class_names=class_names, root_path=data_path,
-        training=True, logger=common_utils.create_logger()
+        training=False, logger=common_utils.create_logger()
     )
     # distances=[]
     # for info in dataset.infos:
@@ -795,9 +794,9 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='arg parser')
     parser.add_argument('--cfg_file', type=str, default='../../../tools/cfgs/dataset_configs/waymo_dataset_multiframe.yaml', help='specify the config of dataset')
-    parser.add_argument('--func', type=str, default='create_waymo_infos', help='')
+    parser.add_argument('--func', type=str, default='create_waymo_gt_database', help='')
     parser.add_argument('--processed_data_tag', type=str, default='waymo_processed_data_v0_5_0', help='')
-    parser.add_argument('--update_info_only', action='store_true', default=False, help='')
+    parser.add_argument('--update_info_only', default=False, help='')
     parser.add_argument('--use_parallel', action='store_true', default=False, help='')
     parser.add_argument('--wo_crop_gt_with_tail', action='store_true', default=False, help='')
 

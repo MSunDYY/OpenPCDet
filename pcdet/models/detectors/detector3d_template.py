@@ -10,7 +10,7 @@ from ..backbones_2d import map_to_bev
 from ..backbones_3d import pfe, vfe
 from ..model_utils import model_nms_utils
 from pcdet import device
-
+from tools.visual_utils.open3d_vis_utils import draw_scenes
 
 class Detector3DTemplate(nn.Module):
     def __init__(self, model_cfg, num_class, dataset):
@@ -285,10 +285,13 @@ class Detector3DTemplate(nn.Module):
         return pred_dicts, recall_dict
 
     @staticmethod
-    def generate_recall_record(box_preds, recall_dict, batch_index, data_dict=None, thresh_list=None):
+    def generate_recall_record(box_preds, recall_dict, batch_index, data_dict=None, thresh_list=None,visualization=False):
         if 'gt_boxes' not in data_dict:
             return recall_dict
 
+        recall_boxes={}
+        recall_labels={}
+        recall_scores={}
         rois = data_dict['rois'][batch_index] if 'rois' in data_dict else None
         gt_boxes = data_dict['gt_boxes'][batch_index]
 
@@ -297,6 +300,7 @@ class Detector3DTemplate(nn.Module):
             for cur_thresh in thresh_list:
                 recall_dict['roi_%s' % (str(cur_thresh))] = 0
                 recall_dict['rcnn_%s' % (str(cur_thresh))] = 0
+
 
         cur_gt = gt_boxes
         k = cur_gt.__len__() - 1
@@ -318,6 +322,10 @@ class Detector3DTemplate(nn.Module):
                     recall_dict['rcnn_%s' % str(cur_thresh)] += 0
                 else:
                     rcnn_recalled = (iou3d_rcnn.max(dim=0)[0] > cur_thresh).sum().item()
+                    recall_boxes['roi_%s' % (str(cur_thresh))]=box_preds[iou3d_rcnn.max(dim=1)[0] > cur_thresh]
+                    recall_labels['roi_%s' % (str(cur_thresh))]=data_dict['final_box_dicts'][0]['pred_labels'][iou3d_rcnn.max(dim=1)[0] > cur_thresh]
+                    recall_scores['roi_%s' % (str(cur_thresh))]=data_dict['final_box_dicts'][0]['pred_scores'][iou3d_rcnn.max(dim=1)[0] > cur_thresh]
+
                     recall_dict['rcnn_%s' % str(cur_thresh)] += rcnn_recalled
                 if rois is not None:
                     roi_recalled = (iou3d_roi.max(dim=0)[0] > cur_thresh).sum().item()
@@ -326,6 +334,12 @@ class Detector3DTemplate(nn.Module):
             recall_dict['gt'] += cur_gt.shape[0]
         else:
             gt_iou = box_preds.new_zeros(box_preds.shape[0])
+        if visualization:
+            draw_scenes(points=data_dict['points'][:, 1:4], gt_boxes=data_dict['gt_boxes'][0][:, :7],
+                    ref_boxes=recall_boxes['roi_0.3'][:, :7],
+                    ref_labels=recall_labels['roi_0.3'],
+                    ref_scores=recall_scores['roi_0.3']
+                    )
         return recall_dict
 
     def _load_state_dict(self, model_state_disk, *, strict=True):
