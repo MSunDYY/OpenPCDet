@@ -75,12 +75,13 @@ def parse_config():
     parser.add_argument('--ckpt', type=str,
                         default='../output/waymo_models/centerpoint_4frames/default/ckpt/latest_model.pth',
                         help='specify the pretrained model')
+    parser.add_argument('--func',type=str,default='visualize_file',help='func you want to excecute')
     parser.add_argument('--dataset', type=str, default='waymo', help='dataset you want to visualize')
     parser.add_argument('--ext', type=str, default='.npy', help='specify the extension of your point cloud data file')
     parser.add_argument('--frame_rate', type=int, default=100, help='frame_rate of auto-displaying')
     parser.add_argument('--auto_display', type=bool, default=False, help='whether to display automately')
     parser.add_argument('--index', type=int, default=9, help='index of data in your dataset')
-    parser.add_argument('--frames', type=int, default=2, help='frames to cat')
+    parser.add_argument('--frames', type=int, default=1, help='frames to cat')
     args = parser.parse_args()
 
     cfg_from_yaml_file(args.cfg_file, cfg)
@@ -209,6 +210,17 @@ def visualize_dataset():
             points=points, gt_boxes=gt_boxes[:, :7], gt_labels=gt_label
         )
 
+def visualize_file():
+    args,cfg = parse_config()
+    # data_file = args.data_file
+    if args.data_path.endswith('.npy'):
+        V.draw_scenes(
+            points=np.load(args.data_path),
+        )
 
 if __name__ == '__main__':
-    visualize_dataset()
+    args,cfg = parse_config()
+    if args.func=='visualize_dataset':
+        visualize_dataset()
+    elif args.func=='visualize_file':
+        visualize_file()

@@ -398,6 +398,7 @@ class WaymoDataset(DatasetTemplate):
                 gt_boxes_lidar = gt_boxes_lidar[mask]
                 annos['num_points_in_gt'] = annos['num_points_in_gt'][mask]
 
+
             input_dict.update({
                 'gt_names': annos['name'],
                 'gt_boxes': gt_boxes_lidar,
@@ -406,7 +407,7 @@ class WaymoDataset(DatasetTemplate):
 
         data_dict = self.prepare_data(data_dict=input_dict)
         data_dict['metadata'] = info.get('metadata', info['frame_id'])
-        data_dict.pop('num_points_in_gt', None)
+        # data_dict.pop('num_points_in_gt', None)
         return data_dict
 
     def evaluation(self, det_annos, class_names, **kwargs):
