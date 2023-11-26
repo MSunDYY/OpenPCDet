@@ -75,7 +75,7 @@ def parse_config():
     parser.add_argument('--ckpt', type=str,
                         default='../output/waymo_models/centerpoint_4frames/default/ckpt/latest_model.pth',
                         help='specify the pretrained model')
-    parser.add_argument('--func',type=str,default='visualize_file',help='func you want to excecute')
+    parser.add_argument('--func', type=str, default='visualize_file', help='func you want to excecute')
     parser.add_argument('--dataset', type=str, default='waymo', help='dataset you want to visualize')
     parser.add_argument('--ext', type=str, default='.npy', help='specify the extension of your point cloud data file')
     parser.add_argument('--frame_rate', type=int, default=100, help='frame_rate of auto-displaying')
@@ -199,28 +199,36 @@ def visualize_dataset():
             for j, label in enumerate(train_info['annos']['name']):
                 if label in WAYMO_CLASSES:
                     gt_label_mask[j] = True
-                    gt_label.append(WAYMO_CLASSES.index(label)+3*i)
+                    gt_label.append(WAYMO_CLASSES.index(label) + 3 * i)
             gt_boxes[-1] = gt_boxes[-1][gt_label_mask]
 
         points = np.concatenate(points, axis=0)
-        gt_boxes = np.concatenate(gt_boxes,axis=0)
-
+        gt_boxes = np.concatenate(gt_boxes, axis=0)
 
         V.draw_scenes(
             points=points, gt_boxes=gt_boxes[:, :7], gt_labels=gt_label
         )
 
+
 def visualize_file():
-    args,cfg = parse_config()
+    args, cfg = parse_config()
     # data_file = args.data_file
     if args.data_path.endswith('.npy'):
         V.draw_scenes(
             points=np.load(args.data_path),
         )
 
-if __name__ == '__main__':
+def visualize_files():
     args,cfg = parse_config()
-    if args.func=='visualize_dataset':
+    files=args.data_path.split(',')
+    V.draw_scenes(points=np.concatenate([np.load(file)[:,:3] for file in files]))
+
+
+if __name__ == '__main__':
+    args, cfg = parse_config()
+    if args.func == 'visualize_dataset':
         visualize_dataset()
-    elif args.func=='visualize_file':
+    elif args.func == 'visualize_file':
         visualize_file()
+    elif args.func == 'visualize_files':
+        visualize_files()
