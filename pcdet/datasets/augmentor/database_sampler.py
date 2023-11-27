@@ -429,14 +429,24 @@ class DataBaseSampler(object):
         large_sampled_gt_boxes = box_utils.enlarge_box3d(
             sampled_gt_boxes[:, 0:7], extra_width=self.sampler_cfg.REMOVE_EXTRA_WIDTH
         )
-        points = box_utils.remove_points_in_boxes3d(points, large_sampled_gt_boxes)
-        points = np.concatenate([obj_points[:, :points.shape[-1]], points], axis=0)
+        index = 0
+        points_temp=[]
+        points_num_temp=[]
+        for points_num in data_dict['num_points_all']:
+            points = points[index:index+points_num]
+            index+=points_num
+            points = box_utils.remove_points_in_boxes3d(points, large_sampled_gt_boxes)
+            points = np.concatenate([obj_points[:, :points.shape[-1]], points], axis=0)
+            points_temp.append(points)
+            points_num_temp.append(points.shape[0])
+        points=np.concatenate(points_temp)
+
         gt_names = np.concatenate([gt_names, sampled_gt_names], axis=0)
         gt_boxes = np.concatenate([gt_boxes, sampled_gt_boxes], axis=0)
         data_dict['gt_boxes'] = gt_boxes
         data_dict['gt_names'] = gt_names
         data_dict['points'] = points
-
+        data_dict['num_points_all']=np.array(points_num_temp)
         if self.img_aug_type is not None:
             data_dict = self.copy_paste_to_image(img_aug_gt_dict, data_dict, points)
 

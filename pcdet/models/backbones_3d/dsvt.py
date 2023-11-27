@@ -472,7 +472,7 @@ class DSVTInputLayer(nn.Module):
         '''
         This is one of the core operation of DSVT. 
         Given voxels' window ids and relative-coords inner window, we partition them into window-bounded and size-equivalent local sets.
-        To make it clear and easy to follow, we do not use loop to process two shifts.
+        To make it clear and easy to follow, we do not use loop to process_models two shifts.
         Args:
             voxel_info (dict): 
                 The dict contains the following keys

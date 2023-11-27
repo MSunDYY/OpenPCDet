@@ -101,7 +101,7 @@ class PandasetDataset(DatasetTemplate):
     def __getitem__(self, index):
         """
         To support a custom dataset, implement this function to load the raw data (and labels), then transform them to
-        the unified normative coordinate (x pointing forward, z pointing upwards) and call the function self.prepare_data() to process the data and send them
+        the unified normative coordinate (x pointing forward, z pointing upwards) and call the function self.prepare_data() to process_models the data and send them
         to the model.
 
         Args:

@@ -248,7 +248,7 @@ class WaymoDataset(DatasetTemplate):
             ordered_bboxes[bs_idx, :len(pred_bboxes[bs_idx])] = pred_bboxes[bs_idx]
         return ordered_bboxes
 
-    def get_sequence_data(self, info, points, sequence_name, sample_idx, sequence_cfg, load_pred_boxes=False):
+    def get_sequence_data(self, info, points, sequence_name, sample_idx, sequence_cfg, load_pred_boxes=False,get_gt=False):
         """
         Args:
             info:
@@ -284,9 +284,16 @@ class WaymoDataset(DatasetTemplate):
             points = np.hstack([points, onehot_cur])
         else:
             points = np.hstack([points, np.zeros((points.shape[0], 1)).astype(points.dtype)])
-        points_pre_all = []
+        if get_gt:
+            gt_boxes_cur = info['annos']['gt_boxes_lidar']
+            box_idxs_of_pts = roiaware_pool3d_utils.points_in_boxes_gpu(
+                torch.from_numpy(points[:, 0:3]).unsqueeze(dim=0).float().cuda(),
+                torch.from_numpy(gt_boxes_cur[:, 0:7]).unsqueeze(dim=0).float().cuda()
+            ).long().squeeze(dim=0).cpu().numpy()
+            points_gt_cur = points[box_idxs_of_pts >= 0]
+            points_gt_all = []
         num_points_pre = []
-
+        points_pre_all=[]
         pose_all = [pose_cur]
         pred_boxes_all = []
         if load_pred_boxes:
@@ -298,12 +305,27 @@ class WaymoDataset(DatasetTemplate):
         for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
 
             points_pre = self.get_lidar(sequence_name, sample_idx_pre)
+            if get_gt:
+                num_points_pre_temp=points_pre.shape[0]
+                info_pre = sequence_info[sample_idx_pre]
+                gt_boxes_pre=info_pre['annos']['gt_boxes_lidar']
+                box_idxs_of_pts = roiaware_pool3d_utils.points_in_boxes_gpu(
+                    torch.from_numpy(points_pre[:, 0:3]).unsqueeze(dim=0).float().cuda(),
+                    torch.from_numpy(gt_boxes_pre[:, 0:7]).unsqueeze(dim=0).float().cuda()
+                ).long().squeeze(dim=0).cpu().numpy()
+                points_gt_pre=points_pre[box_idxs_of_pts>=0]
+                points_pre=np.concatenate([points_pre,points_gt_pre])
             pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
             expand_points_pre = np.concatenate([points_pre[:, :3], np.ones((points_pre.shape[0], 1))], axis=-1)
             points_pre_global = np.dot(expand_points_pre, pose_pre.T)[:, :3]
             expand_points_pre_global = np.concatenate([points_pre_global, np.ones((points_pre_global.shape[0], 1))], axis=-1)
             points_pre2cur = np.dot(expand_points_pre_global, np.linalg.inv(pose_cur.T))[:, :3]
             points_pre = np.concatenate([points_pre2cur, points_pre[:, 3:]], axis=-1)
+            if get_gt:
+                points_pre, points_gt_pre = np.split(points_pre, [num_points_pre_temp])
+                points_gt_all.append(points_gt_pre)
+
+
             if sequence_cfg.get('ONEHOT_TIMESTAMP', False):
                 onehot_vector = np.zeros((points_pre.shape[0], len(sample_idx_pre_list) + 1))
                 onehot_vector[:, idx + 1] = 1
@@ -311,6 +333,9 @@ class WaymoDataset(DatasetTemplate):
             else:
                 # add timestamp
                 points_pre = np.hstack([points_pre, 0.1 * (sample_idx - sample_idx_pre) * np.ones((points_pre.shape[0], 1)).astype(points_pre.dtype)])  # one frame 0.1s
+
+
+
             points_pre = remove_ego_points(points_pre, 1.0)
             points_pre_all.append(points_pre)
             num_points_pre.append(points_pre.shape[0])
@@ -321,7 +346,8 @@ class WaymoDataset(DatasetTemplate):
                 pred_boxes = load_pred_boxes_from_dict(sequence_name, sample_idx_pre)
                 pred_boxes = self.transform_prebox_to_current(pred_boxes, pose_pre, pose_cur)
                 pred_boxes_all.append(pred_boxes)
-
+        if get_gt:
+            points_gt_all.append(points_gt_cur[:,:5])
         points = np.concatenate([points] + points_pre_all, axis=0).astype(np.float32)
         num_points_all = np.array([num_pts_cur] + num_points_pre).astype(np.int32)
         poses = np.concatenate(pose_all, axis=0).astype(np.float32)
@@ -333,6 +359,8 @@ class WaymoDataset(DatasetTemplate):
             pred_labels = temp_pred_boxes[:, :, 10]
         else:
             pred_boxes = pred_scores = pred_labels = None
+        if get_gt:
+            return points, num_points_all, sample_idx_pre_list, poses, pred_boxes, pred_scores, pred_labels,points_gt_all
 
         return points, num_points_all, sample_idx_pre_list, poses, pred_boxes, pred_scores, pred_labels
 
@@ -364,12 +392,15 @@ class WaymoDataset(DatasetTemplate):
                 info, points, sequence_name, sample_idx, self.dataset_cfg['SEQUENCE_CONFIG'],
                 load_pred_boxes=self.dataset_cfg.get('USE_PREDBOX', False)
             )
+
+            input_dict['num_points_all'] = num_points_all
             input_dict['poses'] = poses
             if self.dataset_cfg.get('USE_PREDBOX', False):
                 input_dict.update({
                     'roi_boxes': pred_boxes,
                     'roi_scores': pred_scores,
                     'roi_labels': pred_labels,
+
                 })
 
 
@@ -407,7 +438,7 @@ class WaymoDataset(DatasetTemplate):
 
         data_dict = self.prepare_data(data_dict=input_dict)
         data_dict['metadata'] = info.get('metadata', info['frame_id'])
-        # data_dict.pop('num_points_in_gt', None)
+        data_dict.pop('num_points_in_gt', None)
         return data_dict
 
     def evaluation(self, det_annos, class_names, **kwargs):
@@ -462,6 +493,44 @@ class WaymoDataset(DatasetTemplate):
             raise NotImplementedError
 
         return ap_result_str, ap_dict
+
+    def create_waymo_flow_infos(self,info_path,save_path,split_type='ground_truth'):
+        use_sequence_data = self.dataset_cfg.get('SEQUENCE_CONFIG',None) is not None and self.dataset_cfg.SEQUENCE_CONFIG.ENABLED
+        save_data_path = save_path/split_type
+        if use_sequence_data:
+            save_data_path.mkdir(parents=True,exist_ok=True)
+        with open(info_path,'rb') as f:
+            infos = pickle.load(f)
+        for i in tqdm(range(0,len(infos))):
+            info = infos[i]
+            pc_info = info['point_cloud']
+            sequence_name = pc_info['lidar_sequence']
+            sample_idx = pc_info['sample_idx']
+            points = self.get_lidar(sequence_name, sample_idx)
+            if use_sequence_data:
+                self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET=[-1,0]
+                points, num_points_all, sample_idx_pre_list, _, _, _, _ ,points_gt_all = self.get_sequence_data(
+                    info, points, sequence_name, sample_idx, self.dataset_cfg.SEQUENCE_CONFIG,get_gt=split_type=='ground_truth'
+                )
+            if split_type=='without_ground':
+                for i,num_points in enumerate(num_points_all):
+                    points_single ,points= np.array_split(points,[num_points])
+                    points_single = points_single[points_single[:,2]>0.5]
+                    np.save(save_data_path/('%s_%d_%d'%(sequence_name,sample_idx,i)),points_single)
+            else:
+
+                annos = info['annos']
+                names = annos['name']
+                difficulty = annos['difficulty']
+                gt_boxes = annos['gt_boxes_lidar']
+                num_obj = gt_boxes.shape[0]
+                if num_obj == 0:
+                    continue
+                for i,points_gt in enumerate(points_gt_all):
+                    np.save(save_data_path/('%s_%d_%d'%(sequence_name,sample_idx,i)),points_gt)
+
+
+
 
     def create_groundtruth_database(self, info_path, save_path, used_classes=None, split='train', sampled_interval=10,
                                     processed_data_tag=None):
@@ -787,6 +856,16 @@ def create_waymo_gt_database(
         )
     print('---------------Data preparation Done---------------')
 
+def create_waymo_flow_infos(dataset_cfg, class_names, data_path, save_path, processed_data_tag='waymo_processed_data',
+    workers=min(16, multiprocessing.cpu_count()), use_parallel=False, crop_gt_with_tail=False):
+    dataset = WaymoDataset(
+        dataset_cfg=dataset_cfg, class_names=class_names, root_path=data_path,
+        training=False, logger=common_utils.create_logger()
+    )
+    train_split = 'train'
+    dataset.set_split(train_split)
+    train_filename = save_path / ('%s_infos_%s.pkl' % (processed_data_tag, train_split))
+    dataset.create_waymo_flow_infos(info_path=train_filename,save_path=save_path)
 
 if __name__ == '__main__':
     import argparse
@@ -795,7 +874,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='arg parser')
     parser.add_argument('--cfg_file', type=str, default='../../../tools/cfgs/dataset_configs/waymo_dataset_multiframe.yaml', help='specify the config of dataset')
-    parser.add_argument('--func', type=str, default='create_waymo_gt_database', help='')
+    parser.add_argument('--func', type=str, default='create_waymo_flow_infos', help='')
     parser.add_argument('--processed_data_tag', type=str, default='waymo_processed_data_v0_5_0', help='')
     parser.add_argument('--update_info_only', default=False, help='')
     parser.add_argument('--use_parallel', action='store_true', default=False, help='')
@@ -837,5 +916,19 @@ if __name__ == '__main__':
             use_parallel=args.use_parallel, 
             crop_gt_with_tail=not args.wo_crop_gt_with_tail
         )
+    elif args.func == 'create_waymo_flow_infos':
+        try:
+            yaml_config = yaml.sage_load(open(args.cfg_file),Loader = yaml.FullLoader)
+        except:
+            yaml_config = yaml.safe_load(open(args.cfg_file))
+        dataset_cfg = EasyDict(yaml_config)
+        dataset_cfg.PROCESSED_DATA_TAG = args.processed_data_tag
+        create_waymo_flow_infos(dataset_cfg=dataset_cfg,
+                                class_names=['Vehicle','Pedestrian','Cyclist'],
+                                data_path=ROOT_DIR/'data'/'waymo',
+                                save_path = ROOT_DIR/'data'/'waymo',
+                                processed_data_tag=args.processed_data_tag,
+                                use_parallel=args.use_parallel,
+                                )
     else:
         raise NotImplementedError

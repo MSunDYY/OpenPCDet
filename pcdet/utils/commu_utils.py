@@ -116,7 +116,7 @@ def reduce_dict(input_dict, average=True):
     Args:
         input_dict (dict): all the values will be reduced
         average (bool): whether to do average or sum
-    Reduce the values in the dictionary from all processes so that process with rank
+    Reduce the values in the dictionary from all processes so that process_models with rank
     0 has the averaged results. Returns a dict with the same fields as
     input_dict, after reduction.
     """
@@ -133,7 +133,7 @@ def reduce_dict(input_dict, average=True):
         values = torch.stack(values, dim=0)
         dist.reduce(values, dst=0)
         if dist.get_rank() == 0 and average:
-            # only main process gets accumulated, so only divide by
+            # only main process_models gets accumulated, so only divide by
             # world_size in this case
             values /= world_size
         reduced_dict = {k: v for k, v in zip(names, values)}

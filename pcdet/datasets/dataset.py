@@ -121,7 +121,7 @@ class DatasetTemplate(torch_data.Dataset):
     def __getitem__(self, index):
         """
         To support a custom dataset, implement this function to load the raw data (and labels), then transform them to
-        the unified normative coordinate and call the function self.prepare_data() to process the data and send them
+        the unified normative coordinate and call the function self.prepare_data() to process_models the data and send them
         to the model.
 
         Args:
@@ -196,7 +196,7 @@ class DatasetTemplate(torch_data.Dataset):
             selected = common_utils.keep_arrays_by_name(data_dict['gt_names'], self.class_names)
             data_dict['gt_boxes'] = data_dict['gt_boxes'][selected]
             data_dict['gt_names'] = data_dict['gt_names'][selected]
-            data_dict['num_points_in_gt']=data_dict['num_points_in_gt'][selected]
+            #data_dict['num_points_in_gt']=data_dict['num_points_in_gt'][selected]
             gt_classes = np.array([self.class_names.index(n) + 1 for n in data_dict['gt_names']], dtype=np.int32)
             gt_boxes = np.concatenate((data_dict['gt_boxes'], gt_classes.reshape(-1, 1).astype(np.float32)), axis=1)
             data_dict['gt_boxes'] = gt_boxes

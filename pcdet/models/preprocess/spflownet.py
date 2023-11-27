@@ -278,10 +278,24 @@ class SPFlowNet(torch.nn.Module):
         loss = loss_consistency_forward + loss_consistency_backward
         return weight_const*loss
 
-    def forward(self, pc0, pc1, feature0, feature1):
-        (B, N_s, _) = pc0.size()
-        npoint = N_s//self.down_scale
-        nsample = 16
-        flows0, flows1 = self.process(pc0, pc1, npoint, nsample)
-        loss = self.cal_consistency_loss(pc0, pc1, flows0, flows1, self.weight_const)
-        return flows0, loss
+    def forward(self, batch_dict):
+        points = torch.flip(batch_dict['points'], dims=[0])
+        num_points_all = torch.flip(batch_dict['num_points_all'].squeeze(),dims=[0])
+        index=0
+        for i in range(len(batch_dict['num_points_all'])-1):
+            pc0 = points[index:num_points_all[i]]
+            pc1 = points[index+num_points_all[i]:index+num_points_all[i]+num_points_all[i+1]]
+            feature0 = torch.ones_like(pc0)
+            feature1 = torch.ones_like(pc1)
+            (B, N_s, _) = pc0.size()
+            npoint = N_s//self.down_scale
+            nsample = 16
+            flows0, flows1 = self.process(pc0, pc1, npoint, nsample)
+            pc1 = pc0+flows0[-1]
+            points[index+num_points_all[i]:index+num_points_all[i]+num_points_all[i+1]]=pc1
+            index+=num_points_all[i]
+        # loss = self.cal_consistency_loss(pc0, pc1, flows0, flows1, self.weight_const)
+
+        batch_dict['points'] = torch.flip(points,dims=[0])
+
+        return batch_dict

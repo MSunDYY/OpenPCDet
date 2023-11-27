@@ -3,6 +3,8 @@ import os
 import torch
 import torch.nn as nn
 import numpy as np
+import yaml
+
 from ...ops.iou3d_nms import iou3d_nms_utils
 from ...utils.spconv_utils import find_all_spconv_keys
 from .. import backbones_2d, backbones_3d, dense_heads, roi_heads
@@ -11,6 +13,8 @@ from ..backbones_3d import pfe, vfe
 from ..model_utils import model_nms_utils
 from pcdet import device
 from tools.visual_utils.open3d_vis_utils import draw_scenes
+from ..preprocess.spflownet import SPFlowNet
+from utils.easydict import EasyDict
 
 class Detector3DTemplate(nn.Module):
     def __init__(self, model_cfg, num_class, dataset):
@@ -22,8 +26,8 @@ class Detector3DTemplate(nn.Module):
         self.register_buffer('global_step', torch.LongTensor(1).zero_())
 
         self.module_topology = [
-            'vfe', 'backbone_3d', 'map_to_bev_module', 'pfe',
-            'backbone_2d', 'dense_head',  'point_head', 'roi_head'
+            'preprocess', 'vfe', 'backbone_3d', 'map_to_bev_module', 'pfe',
+            'backbone_2d', 'dense_head', 'point_head', 'roi_head'
         ]
 
     @property
@@ -49,6 +53,19 @@ class Detector3DTemplate(nn.Module):
             )
             self.add_module(module_name, module)
         return model_info_dict['module_list']
+
+    def build_preprocess(self, model_info_dict):
+
+        if self.model_cfg.get('PREPROCESS', None) is None:
+            return None, model_info_dict
+        yaml_path = 'cfgs/process_models/config_train_waymo.yaml'
+        with open(yaml_path,'r') as fd:
+            args = yaml.safe_load(fd)
+            args = EasyDict(d=args)
+
+        preprocess_module = SPFlowNet(args)
+        model_info_dict['module_list'].append(preprocess_module)
+        return preprocess_module,model_info_dict
 
     def build_vfe(self, model_info_dict):
         if self.model_cfg.get('VFE', None) is None:
@@ -128,7 +145,8 @@ class Detector3DTemplate(nn.Module):
             return None, model_info_dict
         dense_head_module = dense_heads.__all__[self.model_cfg.DENSE_HEAD.NAME](
             model_cfg=self.model_cfg.DENSE_HEAD,
-            input_channels=model_info_dict['num_bev_features'] if 'num_bev_features' in model_info_dict else self.model_cfg.DENSE_HEAD.INPUT_FEATURES,
+            input_channels=model_info_dict[
+                'num_bev_features'] if 'num_bev_features' in model_info_dict else self.model_cfg.DENSE_HEAD.INPUT_FEATURES,
             num_class=self.num_class if not self.model_cfg.DENSE_HEAD.CLASS_AGNOSTIC else 1,
             class_names=self.class_names,
             grid_size=model_info_dict['grid_size'],
@@ -165,7 +183,7 @@ class Detector3DTemplate(nn.Module):
             model_cfg=self.model_cfg.ROI_HEAD,
             num_class=self.num_class if not self.model_cfg.ROI_HEAD.CLASS_AGNOSTIC else 1,
             input_channels=model_info_dict['num_point_features'],
-            backbone_channels= model_info_dict.get('backbone_channels', None),
+            backbone_channels=model_info_dict.get('backbone_channels', None),
             point_cloud_range=model_info_dict['point_cloud_range'],
             voxel_size=model_info_dict['voxel_size'],
         )
@@ -207,7 +225,7 @@ class Detector3DTemplate(nn.Module):
 
             box_preds = batch_dict['batch_box_preds'][batch_mask]
             src_box_preds = box_preds
-            
+
             if not isinstance(batch_dict['batch_cls_preds'], list):
                 cls_preds = batch_dict['batch_cls_preds'][batch_mask]
 
@@ -254,7 +272,7 @@ class Detector3DTemplate(nn.Module):
                     label_key = 'roi_labels' if 'roi_labels' in batch_dict else 'batch_pred_labels'
                     label_preds = batch_dict[label_key][index]
                 else:
-                    label_preds = label_preds + 1 
+                    label_preds = label_preds + 1
                 selected, selected_scores = model_nms_utils.class_agnostic_nms(
                     box_scores=cls_preds, box_preds=box_preds,
                     nms_config=post_process_cfg.NMS_CONFIG,
@@ -268,12 +286,12 @@ class Detector3DTemplate(nn.Module):
                 final_scores = selected_scores
                 final_labels = label_preds[selected]
                 final_boxes = box_preds[selected]
-                    
+
             recall_dict = self.generate_recall_record(
                 box_preds=final_boxes if 'rois' not in batch_dict else src_box_preds,
                 recall_dict=recall_dict, batch_index=index, data_dict=batch_dict,
                 thresh_list=post_process_cfg.RECALL_THRESH_LIST
-            )        
+            )
 
             record_dict = {
                 'pred_boxes': final_boxes,
@@ -285,13 +303,14 @@ class Detector3DTemplate(nn.Module):
         return pred_dicts, recall_dict
 
     @staticmethod
-    def generate_recall_record(box_preds, recall_dict, batch_index, data_dict=None, thresh_list=None,visualization=False):
+    def generate_recall_record(box_preds, recall_dict, batch_index, data_dict=None, thresh_list=None,
+                               visualization=False):
         if 'gt_boxes' not in data_dict:
             return recall_dict
 
-        recall_boxes={}
-        recall_labels={}
-        recall_scores={}
+        recall_boxes = {}
+        recall_labels = {}
+        recall_scores = {}
         rois = data_dict['rois'][batch_index] if 'rois' in data_dict else None
         gt_boxes = data_dict['gt_boxes'][batch_index]
 
@@ -300,7 +319,6 @@ class Detector3DTemplate(nn.Module):
             for cur_thresh in thresh_list:
                 recall_dict['roi_%s' % (str(cur_thresh))] = 0
                 recall_dict['rcnn_%s' % (str(cur_thresh))] = 0
-
 
         cur_gt = gt_boxes
         k = cur_gt.__len__() - 1
@@ -322,9 +340,11 @@ class Detector3DTemplate(nn.Module):
                     recall_dict['rcnn_%s' % str(cur_thresh)] += 0
                 else:
                     rcnn_recalled = (iou3d_rcnn.max(dim=0)[0] > cur_thresh).sum().item()
-                    recall_boxes['roi_%s' % (str(cur_thresh))]=box_preds[iou3d_rcnn.max(dim=1)[0] > cur_thresh]
-                    recall_labels['roi_%s' % (str(cur_thresh))]=data_dict['final_box_dicts'][0]['pred_labels'][iou3d_rcnn.max(dim=1)[0] > cur_thresh]
-                    recall_scores['roi_%s' % (str(cur_thresh))]=data_dict['final_box_dicts'][0]['pred_scores'][iou3d_rcnn.max(dim=1)[0] > cur_thresh]
+                    recall_boxes['roi_%s' % (str(cur_thresh))] = box_preds[iou3d_rcnn.max(dim=1)[0] > cur_thresh]
+                    recall_labels['roi_%s' % (str(cur_thresh))] = data_dict['final_box_dicts'][0]['pred_labels'][
+                        iou3d_rcnn.max(dim=1)[0] > cur_thresh]
+                    recall_scores['roi_%s' % (str(cur_thresh))] = data_dict['final_box_dicts'][0]['pred_scores'][
+                        iou3d_rcnn.max(dim=1)[0] > cur_thresh]
 
                     recall_dict['rcnn_%s' % str(cur_thresh)] += rcnn_recalled
                 if rois is not None:
@@ -336,10 +356,10 @@ class Detector3DTemplate(nn.Module):
             gt_iou = box_preds.new_zeros(box_preds.shape[0])
         if visualization:
             draw_scenes(points=data_dict['points'][:, 1:4], gt_boxes=data_dict['gt_boxes'][0][:, :7],
-                    ref_boxes=recall_boxes['roi_0.3'][:, :7],
-                    ref_labels=recall_labels['roi_0.3'],
-                    ref_scores=recall_scores['roi_0.3']
-                    )
+                        ref_boxes=recall_boxes['roi_0.3'][:, :7],
+                        ref_labels=recall_labels['roi_0.3'],
+                        ref_scores=recall_scores['roi_0.3']
+                        )
         return recall_dict
 
     def _load_state_dict(self, model_state_disk, *, strict=True):
@@ -385,7 +405,7 @@ class Detector3DTemplate(nn.Module):
             pretrain_checkpoint = torch.load(pre_trained_path, map_location=loc_type)
             pretrain_model_state_disk = pretrain_checkpoint['model_state']
             model_state_disk.update(pretrain_model_state_disk)
-            
+
         version = checkpoint.get("version", None)
         if version is not None:
             logger.info('==> Checkpoint trained from version: %s' % version)

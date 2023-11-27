@@ -110,7 +110,7 @@ python -m pcdet.datasets.waymo.waymo_dataset --func create_waymo_infos \
 # for single-frame or multi-frame setting
 python -m pcdet.datasets.waymo.waymo_dataset --func create_waymo_infos \
     --cfg_file tools/cfgs/dataset_configs/waymo_dataset_multiframe.yaml
-# Ignore 'CUDA_ERROR_NO_DEVICE' error as this process does not require GPU.
+# Ignore 'CUDA_ERROR_NO_DEVICE' error as this process_models does not require GPU.
 ```
 
 Note that you do not need to install `waymo-open-dataset` if you have already processed the data before and do not need to evaluate with official Waymo Metrics. 
