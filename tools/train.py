@@ -21,7 +21,7 @@ import SharedArray
 
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
-    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/pv_rcnn_plusplus.yaml', help='specify the config for training')
+    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/mynet.yaml', help='specify the config for training')
 
     parser.add_argument('--batch_size', type=int, default=1, required=False, help='batch size for training')
     parser.add_argument('--epochs', type=int, default=None, required=False, help='number of epochs to train for')
@@ -104,7 +104,7 @@ def main():
     if dist_train:
         logger.info('Training in distributed mode : total_batch_size: %d' % (total_gpus * args.batch_size))
     else:
-        logger.info('Training with a single process')
+        logger.info('Training with a single process_models')
         
     for key, val in vars(args).items():
         logger.info('{:16} {}'.format(key, val))

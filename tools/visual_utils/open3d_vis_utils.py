@@ -151,6 +151,7 @@ def draw_scenes_pcd(data_path):
 def draw_scenes(points, file_name=None, gt_boxes=None, gt_labels=None, ref_boxes=None, ref_labels=None, ref_scores=None,
                 point_colors=None,
                 draw_origin=True):
+    print('points num:',points.shape[0])
     if isinstance(points, torch.Tensor):
         points = points.cpu().numpy()
     if isinstance(gt_boxes, torch.Tensor):
