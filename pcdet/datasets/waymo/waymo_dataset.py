@@ -68,6 +68,7 @@ class WaymoDataset(DatasetTemplate):
             sequence_name = os.path.splitext(self.sample_sequence_list[k])[0]
             info_path = self.data_path / sequence_name / ('%s.pkl' % sequence_name)
             info_path = self.check_sequence_name_with_all_version(info_path)
+            print(info_path)
             if not info_path.exists():
                 num_skipped_infos += 1
                 continue
