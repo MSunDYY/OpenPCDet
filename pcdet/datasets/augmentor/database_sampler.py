@@ -36,7 +36,8 @@ class DataBaseSampler(object):
                 sampler_cfg['DB_DATA_PATH'][0] = sampler_cfg['BACKUP_DB_INFO']['DB_DATA_PATH']
                 db_info_path = self.root_path.resolve() / sampler_cfg.DB_INFO_PATH[0]
                 sampler_cfg['NUM_POINT_FEATURES'] = sampler_cfg['BACKUP_DB_INFO']['NUM_POINT_FEATURES']
-            print(self.root_path)
+            print('self.root_path:',self.root_path)
+            print('self.root.resolve:',self.root_path.resolve())
             with open(str(db_info_path), 'rb') as f:
                 infos = pickle.load(f)
                 [self.db_infos[cur_class].extend(infos[cur_class]) for cur_class in class_names]
