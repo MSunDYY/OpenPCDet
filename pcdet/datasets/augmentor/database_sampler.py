@@ -36,7 +36,7 @@ class DataBaseSampler(object):
                 sampler_cfg['DB_DATA_PATH'][0] = sampler_cfg['BACKUP_DB_INFO']['DB_DATA_PATH']
                 db_info_path = self.root_path.resolve() / sampler_cfg.DB_INFO_PATH[0]
                 sampler_cfg['NUM_POINT_FEATURES'] = sampler_cfg['BACKUP_DB_INFO']['NUM_POINT_FEATURES']
-
+            print(self.root_path)
             with open(str(db_info_path), 'rb') as f:
                 infos = pickle.load(f)
                 [self.db_infos[cur_class].extend(infos[cur_class]) for cur_class in class_names]
@@ -503,10 +503,10 @@ class DataBaseSampler(object):
         if total_valid_sampled_dict.__len__() > 0:
             sampled_gt_boxes2d = np.concatenate(sampled_gt_boxes2d, axis=0) if len(sampled_gt_boxes2d) > 0 else None
             sampled_mv_height = np.concatenate(sampled_mv_height, axis=0) if len(sampled_mv_height) > 0 else None
-
-            data_dict = self.add_sampled_boxes_to_scene(
-                data_dict, sampled_gt_boxes, total_valid_sampled_dict, sampled_mv_height, sampled_gt_boxes2d
-            )
+            if self.sampler_cfg['ADD_GT_POINTS']:
+                data_dict = self.add_sampled_boxes_to_scene(
+                    data_dict, sampled_gt_boxes, total_valid_sampled_dict, sampled_mv_height, sampled_gt_boxes2d
+                )
 
         data_dict.pop('gt_boxes_mask')
         return data_dict
