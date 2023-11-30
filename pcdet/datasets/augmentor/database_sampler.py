@@ -504,7 +504,7 @@ class DataBaseSampler(object):
         if total_valid_sampled_dict.__len__() > 0:
             sampled_gt_boxes2d = np.concatenate(sampled_gt_boxes2d, axis=0) if len(sampled_gt_boxes2d) > 0 else None
             sampled_mv_height = np.concatenate(sampled_mv_height, axis=0) if len(sampled_mv_height) > 0 else None
-            if self.sampler_cfg['ADD_GT_POINTS']:
+            if self.sampler_cfg.get('ADD_GT_POINTS',False):
                 data_dict = self.add_sampled_boxes_to_scene(
                     data_dict, sampled_gt_boxes, total_valid_sampled_dict, sampled_mv_height, sampled_gt_boxes2d
                 )
