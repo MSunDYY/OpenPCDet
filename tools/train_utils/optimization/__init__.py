@@ -10,9 +10,9 @@ from .learning_schedules_fastai import CosineWarmupLR, OneCycle, CosineAnnealing
 
 def build_optimizer(model, optim_cfg):
     if optim_cfg.OPTIMIZER == 'adam':
-        if hasattr(model,'preprocess'):
-            for param in model.preprocess.parameters():
-                param.requires_grad = False
+        # if hasattr(model,'preprocess'):
+        #     for param in model.preprocess.parameters():
+        #         param.requires_grad = False
         optimizer = optim.Adam(model.parameters(), lr=optim_cfg.LR, weight_decay=optim_cfg.WEIGHT_DECAY)
     elif optim_cfg.OPTIMIZER == 'sgd':
         optimizer = optim.SGD(
