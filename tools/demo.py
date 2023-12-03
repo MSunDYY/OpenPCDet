@@ -69,6 +69,7 @@ def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
     parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/centerpoint_4frames.yaml',
                         help='specify the config for demo')
+    parser.add_argument('--window_name' , type=str, default='open3d',help = 'window_name')
     parser.add_argument('--data_path', type=str,
                         default='/media/msun/Seagate/waymo/waymo_processed_data_v0_5_0/segment-1005081002024129653_5313_150_5333_150_with_camera_labels/0001.npy',
                         help='specify the point cloud data file or directory')
@@ -216,12 +217,16 @@ def visualize_file():
     if args.data_path.endswith('.npy'):
         V.draw_scenes(
             points=np.load(args.data_path),
-        )
+            window_name=args.window_name)
+    elif args.data_path.endswith('.bin'):
+        with open(args.data_path, 'rb') as file_name:
+            points = np.fromfile(file_name, dtype=np.float32).reshape((-1, 4))
+        V.draw_scenes(points=points)
 
 def visualize_files():
     args,cfg = parse_config()
     files=args.data_path.split(',')
-    V.draw_scenes(points=np.concatenate([np.load(file)[:,:3] for file in files]))
+    V.draw_scenes(points=np.concatenate([np.load(file)[:,:3] for file in files]),window_name=args.window_name)
 
 
 if __name__ == '__main__':

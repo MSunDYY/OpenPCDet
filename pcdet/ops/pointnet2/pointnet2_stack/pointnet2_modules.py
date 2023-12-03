@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from . import pointnet2_utils
 
 
-def build_local_aggregation_module(input_channels, config):
+def build_local_aggregation_module(input_channels, config,use_xyz = True):
     local_aggregation_name = config.get('NAME', 'StackSAModuleMSG')
 
     if local_aggregation_name == 'StackSAModuleMSG':
@@ -15,7 +15,7 @@ def build_local_aggregation_module(input_channels, config):
         for k in range(len(mlps)):
             mlps[k] = [input_channels] + mlps[k]
         cur_layer = StackSAModuleMSG(
-            radii=config.POOL_RADIUS, nsamples=config.NSAMPLE, mlps=mlps, use_xyz=True, pool_method='max_pool',
+            radii=config.POOL_RADIUS, nsamples=config.NSAMPLE, mlps=mlps, use_xyz=use_xyz, pool_method='max_pool',
         )
         num_c_out = sum([x[-1] for x in mlps])
     elif local_aggregation_name == 'VectorPoolAggregationModuleMSG':

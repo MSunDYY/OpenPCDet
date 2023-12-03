@@ -1,4 +1,3 @@
-import _init_path
 import argparse
 import datetime
 import glob
@@ -6,6 +5,7 @@ import os
 from pathlib import Path
 from test import repeat_eval_ckpt
 from pcdet import device
+from pcdet.models.sampler.point_sampler import Sampler
 
 import torch
 import torch.nn as nn
@@ -17,12 +17,11 @@ from pcdet.models import build_network, model_fn_decorator
 from pcdet.utils import common_utils
 from train_utils.optimization import build_optimizer, build_scheduler
 from train_utils.train_utils import train_model
-import SharedArray
+
 
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
-    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/mynet.yaml', help='specify the config for training')
-
+    parser.add_argument('--cfg_file', type=str, default='cfgs/kitti_models/pv_rcnn.yaml', help='specify the config for training')
     parser.add_argument('--batch_size', type=int, default=1, required=False, help='batch size for training')
     parser.add_argument('--epochs', type=int, default=None, required=False, help='number of epochs to train for')
     parser.add_argument('--workers', type=int, default=4, help='number of workers for dataloader')
@@ -39,20 +38,22 @@ def parse_config():
     parser.add_argument('--merge_all_iters_to_one_epoch', action='store_true', default=False, help='')
     parser.add_argument('--set', dest='set_cfgs', default=None, nargs=argparse.REMAINDER,
                         help='set extra config keys if needed')
-
     parser.add_argument('--max_waiting_mins', type=int, default=0, help='max waiting minutes')
     parser.add_argument('--start_epoch', type=int, default=0, help='')
     parser.add_argument('--num_epochs_to_eval', type=int, default=0, help='number of checkpoints to be evaluated')
     parser.add_argument('--save_to_file', action='store_true', default=False, help='')
-    
     parser.add_argument('--use_tqdm_to_record', action='store_true', default=False, help='if True, the intermediate losses will not be logged to file, only tqdm will be used')
-    parser.add_argument('--logger_iter_interval', type=int, default=50, help='')
+    parser.add_argument('--logger_iter_interval', type=int, default=20, help='')
     parser.add_argument('--ckpt_save_time_interval', type=int, default=300, help='in terms of seconds')
     parser.add_argument('--wo_gpu_stat', action='store_true', help='')
     parser.add_argument('--use_amp', action='store_true', help='use mix precision training')
-    
+    parser.add_argument('--train_sampler',action = 'store_true',default=True,help='train the pointsampler model')
+
 
     args = parser.parse_args()
+    if args.train_sampler:
+        args.cfg_file='cfgs/process_models/point_sampler.yaml'
+
 
     cfg_from_yaml_file(args.cfg_file, cfg)
     cfg.TAG = Path(args.cfg_file).stem
@@ -66,8 +67,8 @@ def parse_config():
     return args, cfg
 
 
-def main():
-    args, cfg = parse_config()
+
+def main(args,cfgs):
     if args.launcher == 'none':
         dist_train = False
         total_gpus = 1
@@ -174,6 +175,7 @@ def main():
     logger.info('**********************Start training %s/%s(%s)**********************'
                 % (cfg.EXP_GROUP_PATH, cfg.TAG, args.extra_tag))
 
+
     train_model(
         model,
         optimizer,
@@ -198,7 +200,7 @@ def main():
         use_logger_to_record=not args.use_tqdm_to_record, 
         show_gpu_stat=not args.wo_gpu_stat,
         use_amp=args.use_amp,
-        cfg=cfg
+        cfg=cfg,
     )
 
     if hasattr(train_set, 'use_shared_memory') and train_set.use_shared_memory:
@@ -227,6 +229,114 @@ def main():
     logger.info('**********************End evaluation %s/%s(%s)**********************' %
                 (cfg.EXP_GROUP_PATH, cfg.TAG, args.extra_tag))
 
+def train_sampler(args,cfg):
+
+    if args.launcher == 'none':
+        dist_train = False
+        total_gpus = 1
+    else:
+        total_gpus, cfg.LOCAL_RANK = getattr(common_utils, 'init_dist_%s' % args.launcher)(
+            args.tcp_port, args.local_rank, backend='nccl'
+        )
+        dist_train = True
+    output_dir = cfg.ROOT_DIR / 'output' / cfg.EXP_GROUP_PATH / cfg.TAG / args.extra_tag
+    ckpt_dir = output_dir / 'ckpt'
+    output_dir.mkdir(parents=True, exist_ok=True)
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+    args.epochs = cfg.OPTIMIZATION.NUM_EPOCHS if args.epochs is None else args.epochs
+    log_file = output_dir / ('train_%s.log' % datetime.datetime.now().strftime('%Y%m%d-%H%M%S'))
+    logger = common_utils.create_logger(log_file, rank=cfg.LOCAL_RANK)
+    train_set, train_loader, train_sampler = build_dataloader(
+        dataset_cfg=cfg.DATA_CONFIG,
+        class_names=cfg.CLASS_NAMES,
+        batch_size=args.batch_size,
+        dist=dist_train, workers=args.workers,
+        logger=logger,
+        training=True,
+        merge_all_iters_to_one_epoch=args.merge_all_iters_to_one_epoch,
+        total_epochs=args.epochs,
+        seed=666 if args.fix_random_seed else None
+    )
+
+    model = Sampler(model_cfg=cfg.MODEL,num_class=len(cfg.CLASS_NAMES),dataset=train_set)
+
+
+    test_set, test_loader, sampler = build_dataloader(
+        dataset_cfg=cfg.DATA_CONFIG,
+        class_names=cfg.CLASS_NAMES,
+        batch_size=1,
+        dist=dist_train, workers=args.workers, logger=logger, training=False
+    )
+    tb_log = SummaryWriter(log_dir=str(output_dir / 'tensorboard')) if cfg.LOCAL_RANK == 0 else None
+    if args.sync_bn:
+        model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
+
+    model.to(device)
+
+    optimizer = build_optimizer(model, cfg.OPTIMIZATION)
+
+    # load checkpoint if it is possible
+    start_epoch = it = 0
+    last_epoch = -1
+    if args.pretrained_model is not None:
+        model.load_params_from_file(filename=args.pretrained_model, to_cpu=dist_train, logger=logger)
+
+    if args.ckpt is not None:
+        it, start_epoch = model.load_params_with_optimizer(args.ckpt, to_cpu=dist_train, optimizer=optimizer,
+                                                           logger=logger)
+        last_epoch = start_epoch + 1
+    else:
+        ckpt_list = glob.glob(str(ckpt_dir / '*.pth'))
+
+        if len(ckpt_list) > 0:
+            ckpt_list.sort(key=os.path.getmtime)
+            while len(ckpt_list) > 0:
+                try:
+                    it, start_epoch = model.load_params_with_optimizer(
+                        ckpt_list[-1], to_cpu=dist_train, optimizer=optimizer, logger=logger
+                    )
+                    last_epoch = start_epoch + 1
+                    break
+                except:
+                    ckpt_list = ckpt_list[:-1]
+
+
+
+    model.train()
+    if dist_train:
+        model = nn.parallel.DistributedDataParallel(model,device_ids=[cfg.LOCAL_RANK % torch.cuda.device_count()])
+    lr_schedular,lr_warmup_scheduler = build_scheduler(optimizer,total_iters_each_epoch=len(train_loader),total_epochs=args.epochs,
+                                                       last_epoch=last_epoch,optim_cfg=cfg.OPTIMIZATION)
+    train_model(model,
+                optimizer,
+                train_loader,
+                model_func=model_fn_decorator(),
+                lr_scheduler=lr_schedular,
+                optim_cfg=cfg.OPTIMIZATION,
+                start_epoch=start_epoch,
+                total_epochs=args.epochs,
+                start_iter=it,
+                rank=cfg.LOCAL_RANK,
+                tb_log=tb_log,
+                ckpt_save_dir=ckpt_dir,
+                train_sampler=train_sampler,
+                lr_warmup_scheduler=lr_warmup_scheduler,
+                ckpt_save_interval=args.ckpt_save_interval,
+                max_ckpt_save_num=args.max_ckpt_save_num,
+                merge_all_iters_to_one_epoch=args.merge_all_iters_to_one_epoch,
+                logger=logger,
+                logger_iter_interval=args.logger_iter_interval,
+                ckpt_save_time_interval=args.ckpt_save_time_interval,
+                use_logger_to_record=not args.use_tqdm_to_record,
+                show_gpu_stat=not args.wo_gpu_stat,
+                use_amp=args.use_amp,
+                cfg=cfg,
+                test_loader=test_loader
+                )
 
 if __name__ == '__main__':
-    main()
+    args, cfg = parse_config()
+    if not args.train_sampler:
+        main(args,cfg)
+    else:
+        train_sampler(args,cfg)

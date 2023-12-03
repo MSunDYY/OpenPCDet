@@ -32,9 +32,11 @@ class DatasetTemplate(torch_data.Dataset):
         self.data_augmentor = DataAugmentor(
             self.root_path, self.dataset_cfg['DATA_AUGMENTOR'], self.class_names, logger=self.logger
         ) if self.training else None
+
+        label = 1 if dataset_cfg.get('GET_LABEL') else 0
         self.data_processor = DataProcessor(
             self.dataset_cfg['DATA_PROCESSOR'], point_cloud_range=self.point_cloud_range,
-            training=self.training, num_point_features=self.point_feature_encoder.num_point_features
+            training=self.training, num_point_features=self.point_feature_encoder.num_point_features+label
         )
 
         self.grid_size = self.data_processor.grid_size
@@ -207,6 +209,9 @@ class DatasetTemplate(torch_data.Dataset):
         if data_dict.get('points', None) is not None:
             data_dict = self.point_feature_encoder.forward(data_dict)
 
+        if self.dataset_cfg.get('GET_LABEL',False) :
+            data_dict['points'] = np.concatenate((data_dict['points'],data_dict['label'].reshape(-1,1)),axis=1)
+
         data_dict = self.data_processor.forward(
             data_dict=data_dict
         )
@@ -317,8 +322,16 @@ class DatasetTemplate(torch_data.Dataset):
                     ret[key] = np.stack(points, axis=0)
                 elif key in ['camera_imgs']:
                     ret[key] = torch.stack([torch.stack(imgs,dim=0) for imgs in val],dim=0)
+                elif key in ['gt_data']:
+                    val = [torch.cat((torch.full((val[i].shape[0],1),i),val[i]),dim=1) for i in range(len(val))]
+                    ret[key] = torch.cat(val)
+                elif key in ['label']:
+                    ret[key]=np.concatenate(val)
+
                 else:
                     ret[key] = np.stack(val, axis=0)
+
+
             except:
                 print('Error in collate_batch: key=%s' % key)
                 raise TypeError

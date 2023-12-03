@@ -5,6 +5,7 @@ from skimage import transform
 import torch
 import torchvision
 from ...utils import box_utils, common_utils
+from pcdet import device
 
 tv = None
 try:
@@ -86,7 +87,7 @@ class DataProcessor(object):
 
         if data_dict.get('gt_boxes', None) is not None and config.REMOVE_OUTSIDE_BOXES and self.training:
             mask = box_utils.mask_boxes_outside_range_numpy(
-                data_dict['gt_boxes'], self.point_cloud_range, min_num_corners=config.get('min_num_corners', 1), 
+                data_dict['gt_boxes'], self.point_cloud_range, min_num_corners=config.get('min_num_corners', 1),
                 use_center_to_filter=config.get('USE_CENTER_TO_FILTER', True)
             )
             data_dict['gt_boxes'] = data_dict['gt_boxes'][mask]
@@ -111,7 +112,7 @@ class DataProcessor(object):
             self.grid_size = np.round(grid_size).astype(np.int64)
             self.voxel_size = config.VOXEL_SIZE
             return partial(self.transform_points_to_voxels_placeholder, config=config)
-        
+
         return data_dict
 
     def double_flip(self, points):
@@ -147,10 +148,57 @@ class DataProcessor(object):
                 max_num_points_per_voxel=config.MAX_POINTS_PER_VOXEL,
                 max_num_voxels=config.MAX_NUMBER_OF_VOXELS[self.mode],
             )
-
         points = data_dict['points']
         voxel_output = self.voxel_generator.generate(points)
         voxels, coordinates, num_points = voxel_output
+
+        if config.get('POINT_FEATURES', None) is not None:
+            import spconv
+
+            L, W, H = self.grid_size
+            dense_voxel = torch.zeros((L, W, H, voxels.shape[-1] * voxels.shape[-2]))
+            split = [coordinates[:, -i - 1] for i in range(coordinates.shape[1])]
+            dense_voxel[split] = torch.from_numpy(voxels.reshape(voxels.shape[0], -1))
+
+            H, W, D, C = dense_voxel.size()
+            dense_voxel = dense_voxel.reshape((H * W, D * voxels.shape[-2], -1))
+
+            points_num_pillar = ((dense_voxel[:, :, 1] != 0) + (dense_voxel[:, :, 2] != 0) + (
+                    dense_voxel[:, :, 3] != 0)).sum(axis=-1)
+            dense_voxel = dense_voxel[points_num_pillar != 0]
+            points_num_pillar = points_num_pillar[points_num_pillar != 0]
+
+            point_features = [dense_voxel[:, :, :-1]]
+            num_point_features = self.num_point_features
+            if 'mean_z' in config['POINT_FEATURES']:
+                mean_z = torch.sum(dense_voxel[:, :, 2], dim=-1) / points_num_pillar
+                mean_z = mean_z.unsqueeze(dim=-1).unsqueeze(dim=-1)
+                point_features.append(mean_z.expand(-1, dense_voxel.shape[1], -1))
+                num_point_features += 1
+            if 'height' in config['POINT_FEATURES']:
+                height = torch.max(dense_voxel[:, :, 2], dim=-1)[0] - \
+                         torch.min(dense_voxel[:, :, 2], dim=-1)[0]
+                height = height.unsqueeze(dim=-1).unsqueeze(dim=-1)
+                point_features.append(height.expand(-1, dense_voxel.shape[1], -1))
+                num_point_features += 1
+
+            voxel_generator = VoxelGeneratorWrapper(
+                vsize_xyz=config.VOXEL_SIZE,
+                coors_range_xyz=self.point_cloud_range,
+                num_point_features=num_point_features,
+                max_num_points_per_voxel=config.MAX_POINTS_PER_VOXEL,
+                max_num_voxels=config.MAX_NUMBER_OF_VOXELS[self.mode],
+            )
+
+            point_features.append(dense_voxel[:, :, -1].unsqueeze(-1))
+            point_features = np.concatenate(point_features, axis=-1)
+            point_features = point_features.reshape(-1, point_features.shape[-1])
+            point_features = point_features[
+                (point_features[:, 1] != 0) * (point_features[:, 2] != 0) * (point_features[:, 3] != 0)]
+
+            voxel_output = voxel_generator.generate(point_features)
+            voxels, coordinates, num_points = voxel_output
+            data_dict['points'] = point_features
 
         if not data_dict['use_lead_xyz']:
             voxels = voxels[..., 3:]  # remove xyz in voxels(N, 3)
@@ -198,7 +246,7 @@ class DataProcessor(object):
                 near_idxs_choice = np.random.choice(near_idxs, num_points - len(far_idxs_choice), replace=False)
                 choice = np.concatenate((near_idxs_choice, far_idxs_choice), axis=0) \
                     if len(far_idxs_choice) > 0 else near_idxs_choice
-            else: 
+            else:
                 choice = np.arange(0, len(points), dtype=np.int32)
                 choice = np.random.choice(choice, num_points, replace=False)
             np.random.shuffle(choice)
@@ -229,7 +277,7 @@ class DataProcessor(object):
             factors=(self.depth_downsample_factor, self.depth_downsample_factor)
         )
         return data_dict
-    
+
     def image_normalize(self, data_dict=None, config=None):
         if data_dict is None:
             return partial(self.image_normalize, config=config)
@@ -243,8 +291,8 @@ class DataProcessor(object):
         )
         data_dict["camera_imgs"] = [compose(img) for img in data_dict["camera_imgs"]]
         return data_dict
-    
-    def image_calibrate(self,data_dict=None, config=None):
+
+    def image_calibrate(self, data_dict=None, config=None):
         if data_dict is None:
             return partial(self.image_calibrate, config=config)
         img_process_infos = data_dict['img_process_infos']
