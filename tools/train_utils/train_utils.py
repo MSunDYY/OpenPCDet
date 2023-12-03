@@ -181,26 +181,6 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
             else:
                 cur_scheduler = lr_scheduler
 
-            if type(model)==Sampler:
-                accuracy_all = 0
-                accuracy_average = 0
-                model.eval()
-                for i, batch_dict in tqdm.tqdm(enumerate(test_loader)):
-                    load_data_to_gpu(batch_dict)
-                    batch_dict = model(batch_dict)
-                    pred_label = batch_dict['predict_class'] > 0.5
-                    accuracy = (pred_label == batch_dict['key_points_label']).sum() / pred_label.shape[0]
-                    accuracy_average += accuracy
-                accuracy_average=accuracy_average/(i+1)
-                print('-----------accuracy_all_%f = %f----------' % (0.5, accuracy_all))
-
-                if accuracy_average>accuracy_all:
-                    accuracy_all=accuracy_average
-                    save_checkpoint(
-                        checkpoint_state(model, optimizer, trained_epoch, accumulated_iter), filename='best_model',
-                    )
-
-
 
             augment_disable_flag = disable_augmentation_hook(hook_config, dataloader_iter, total_epochs, cur_epoch, cfg, augment_disable_flag, logger)
             model.train()
@@ -219,7 +199,7 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
                 show_gpu_stat=show_gpu_stat,
                 use_amp=use_amp
             )
-            if type(model)==Sampler:
+            if type(model)==Sampler and cur_epoch%4==0:
                 accuracy_all = 0
                 accuracy_average = 0
                 model.eval()
@@ -231,7 +211,7 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
                     print('----------accuracy_%f = %f---------' % (0.5, accuracy))
                     accuracy_average += accuracy
                 accuracy_average=accuracy_average/(i+1)
-                print('-----------accuracy_all_%f = %f----------' % (0.5, accuracy_all))
+                print('-----------accuracy_all_%f = %f----------' % (0.5, accuracy_average))
 
                 if accuracy_average>accuracy_all:
                     accuracy_all=accuracy_average
@@ -254,7 +234,7 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
                 save_checkpoint(
                     checkpoint_state(model, optimizer, trained_epoch, accumulated_iter), filename=ckpt_name,
                 )
-
+    print('---------best_accuracy= %f ------------'%(accuracy_all))
 
 def model_state_to_cpu(model_state):
     model_state_cpu = type(model_state)()  # ordered dict
