@@ -67,7 +67,7 @@ def eval_sampler_one_epoch(model, test_loader, args, eval_output_dir, logger, ep
                                 pre_trained_path=args.pretrained_model)
     model.to(device)
     accuracy_all=0
-    for i, batch_dict in enumerate(test_loader):
+    for i, batch_dict in tqdm.tqdm(enumerate(test_loader)):
         load_data_to_gpu(batch_dict)
         batch_dict = model(batch_dict)
         pred_label = batch_dict['predict_class'] > threshold

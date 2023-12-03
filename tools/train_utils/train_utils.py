@@ -185,12 +185,11 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
                 accuracy_all = 0
                 accuracy_average = 0
                 model.eval()
-                for i, batch_dict in enumerate(test_loader):
+                for i, batch_dict in tqdm.tqdm(enumerate(test_loader)):
                     load_data_to_gpu(batch_dict)
                     batch_dict = model(batch_dict)
                     pred_label = batch_dict['predict_class'] > 0.5
                     accuracy = (pred_label == batch_dict['key_points_label']).sum() / pred_label.shape[0]
-                    print('----------accuracy_%f = %f---------' % (0.5, accuracy))
                     accuracy_average += accuracy
                 accuracy_average=accuracy_average/(i+1)
                 print('-----------accuracy_all_%f = %f----------' % (0.5, accuracy_all))
