@@ -181,16 +181,7 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
             else:
                 cur_scheduler = lr_scheduler
 
-            model.eval()
-            with torch.no_grad():
-                accuracy_all = 0
-                accuracy_average = 0
-                for i, batch_dict in enumerate(tqdm.tqdm(test_loader,leave=True,position=0)):
-                    load_data_to_gpu(batch_dict)
-                    batch_dict = model(batch_dict)
-                    pred_label = batch_dict['predict_class'] > 0.5
-                    accuracy = (pred_label == batch_dict['key_points_label']).sum() / pred_label.shape[0]
-                    accuracy_average += accuracy
+
 
 
             augment_disable_flag = disable_augmentation_hook(hook_config, dataloader_iter, total_epochs, cur_epoch, cfg, augment_disable_flag, logger)
