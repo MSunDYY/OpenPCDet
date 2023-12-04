@@ -264,7 +264,7 @@ def train_sampler(args,cfg):
     test_set, test_loader, sampler = build_dataloader(
         dataset_cfg=cfg.DATA_CONFIG,
         class_names=cfg.CLASS_NAMES,
-        batch_size=args.batch_size,
+        batch_size=1,
         dist=dist_train, workers=args.workers, logger=logger, training=False
     )
     tb_log = SummaryWriter(log_dir=str(output_dir / 'tensorboard')) if cfg.LOCAL_RANK == 0 else None

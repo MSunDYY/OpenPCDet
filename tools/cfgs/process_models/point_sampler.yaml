@@ -1,7 +1,7 @@
 CLASS_NAMES: [ 'Vehicle', 'Pedestrian', 'Cyclist' ]
 
 DATA_CONFIG:
-  _BASE_CONFIG_: cfgs/dataset_configs/waymo_dataset.yaml
+  _BASE_CONFIG_: cfgs/dataset_configs/sampler.yaml
 
   GET_LABEL: True
   GT_DATA_PATH: ../data/waymo/flow_data/ground_truth
@@ -53,13 +53,13 @@ MODEL:
         DOWNSAMPLE_FACTOR: 1
         MLPS: [ [ 16, 16 ], [ 32, 32 ] ]
         POOL_RADIUS: [ 0.4, 0.8 ]
-        NSAMPLE: [ 16, 16 ]
+        NSAMPLE: [ 2, 2 ]
         INPUT_CHANNELS: 7
       x_conv2:
         DOWNSAMPLE_FACTOR: 2
         MLPS: [ [ 16, 16 ], [ 32, 32 ] ]
         POOL_RADIUS: [ 0.8, 1.2 ]
-        NSAMPLE: [ 16, 32 ]
+        NSAMPLE: [ 2, 2 ]
         INPUT_CHANNELS: 7
     EVAL_METRIC: waymo
 

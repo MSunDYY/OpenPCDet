@@ -181,9 +181,21 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
             else:
                 cur_scheduler = lr_scheduler
 
+            model.eval()
+            with torch.no_grad():
+                accuracy_all = 0
+                accuracy_average = 0
+                for i, batch_dict in enumerate(tqdm.tqdm(test_loader,leave=True,position=0)):
+                    load_data_to_gpu(batch_dict)
+                    batch_dict = model(batch_dict)
+                    pred_label = batch_dict['predict_class'] > 0.5
+                    accuracy = (pred_label == batch_dict['key_points_label']).sum() / pred_label.shape[0]
+                    accuracy_average += accuracy
+
 
             augment_disable_flag = disable_augmentation_hook(hook_config, dataloader_iter, total_epochs, cur_epoch, cfg, augment_disable_flag, logger)
             model.train()
+
             accumulated_iter = train_one_epoch(
                 model, optimizer, train_loader, model_func,
                 lr_scheduler=cur_scheduler,
@@ -200,23 +212,24 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
                 use_amp=use_amp
             )
             if type(model)==Sampler and cur_epoch%4==0:
-                accuracy_all = 0
-                accuracy_average = 0
+
                 model.eval()
-                for i, batch_dict in enumerate(test_loader):
-                    load_data_to_gpu(batch_dict)
-                    batch_dict = model(batch_dict)
-                    pred_label = batch_dict['predict_class'] > 0.5
-                    accuracy = (pred_label == batch_dict['key_points_label']).sum() / pred_label.shape[0]
-                    print('----------accuracy_%f = %f---------' % (0.5, accuracy))
-                    accuracy_average += accuracy
-                accuracy_average=accuracy_average/(i+1)
-                print('-----------accuracy_all_%f = %f----------' % (0.5, accuracy_average))
+                with torch.no_grad():
+                    accuracy_average = 0
+                    for i, batch_dict in enumerate(tqdm.tqdm(test_loader,leave=True,position=0)):
+                        load_data_to_gpu(batch_dict)
+                        batch_dict = model(batch_dict)
+                        pred_label = batch_dict['predict_class'] > 0.5
+                        accuracy = (pred_label == batch_dict['key_points_label']).sum() / pred_label.shape[0]
+
+                        accuracy_average += accuracy
+                    accuracy_average=accuracy_average/(i+1)
+                    print('-----------accuracy_all_%f = %f----------' % (0.5, accuracy_average))
 
                 if accuracy_average>accuracy_all:
                     accuracy_all=accuracy_average
                     save_checkpoint(
-                        checkpoint_state(model, optimizer, trained_epoch, accumulated_iter), filename='best_model',
+                        checkpoint_state(model, optimizer, trained_epoch, accumulated_iter), filename='best_model.pth',
                     )
 
             # save trained model

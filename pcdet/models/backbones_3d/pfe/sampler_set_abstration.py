@@ -406,5 +406,5 @@ class SamplerSetAbstraction(nn.Module):
         point_features = self.vsa_point_feature_fusion(point_features.view(-1, point_features.shape[-1]))
 
         batch_dict['point_features'] = point_features  # (BxN, C)
-        batch_dict['point_coords'] = keypoints  # (BxN, 4)
+        batch_dict['point_coords'] = keypoints[:,:4]  # (BxN, 4)
         return batch_dict

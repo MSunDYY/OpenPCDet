@@ -61,17 +61,59 @@ class SamplerVFE(VFETemplate):
         return self.num_point_features
 
     def forward(self, batch_dict, **kwargs):
-        batch_size = batch_dict['batch_size']
-        voxel_features, voxel_num_points, coords = batch_dict['voxels'], batch_dict['voxel_num_points'], batch_dict['voxel_coords']
+
+        torch.cuda.empty_cache()
+        voxels, voxel_num_points, coordinates = batch_dict['voxels'], batch_dict['voxel_num_points'], batch_dict['voxel_coords']
+        batch_label = torch.zeros(voxels.shape[0],voxels.shape[1],1).to(device)
+        batch_label[:] = coordinates[:,0:1].unsqueeze(1).expand(-1,voxels.shape[-2],-1)
+        voxels = torch.cat((batch_label,voxels),dim=-1)
+
+        L,W,H=self.grid_size
+        B=batch_dict['batch_size']
+        dense_voxel = torch.zeros((B,L, W, H, voxels.shape[-1] * voxels.shape[-2])).cuda()
+        coordinates_np = coordinates.to('cpu').numpy()
+
+        split = [coordinates_np[:,0],coordinates_np[:,-1],coordinates_np[:,-2],coordinates_np[:,-3]]
+        dense_voxel[split] = voxels.reshape(voxels.shape[0],-1)
+        B, H, W, D, C = dense_voxel.size()
+        dense_voxel = dense_voxel.reshape((B*H*W,D*voxels.shape[-2],-1))
+        points_num_pillar = ((dense_voxel[:, :, 1] != 0) + (dense_voxel[:, :, 2] != 0) + (
+                dense_voxel[:, :, 3] != 0)).sum(axis=-1)
+        dense_voxel = dense_voxel[points_num_pillar!=0]
+
+        point_features = [dense_voxel[:, :, :-1]]
+        num_point_features = dense_voxel.shape[-1]
+        mean_z = torch.sum(dense_voxel[:, :, 3], dim=-1) / points_num_pillar[points_num_pillar!=0]
+        mean_z = mean_z.unsqueeze(dim=-1).unsqueeze(dim=-1)
+        point_features.append(mean_z.expand(-1, dense_voxel.shape[1], -1))
+        num_point_features += 1
+
+        height = torch.max(dense_voxel[:, :, 3], dim=-1)[0] - \
+                 torch.min(dense_voxel[:, :, 3], dim=-1)[0]
+        height = height.unsqueeze(dim=-1).unsqueeze(dim=-1)
+        point_features.append(height.expand(-1, dense_voxel.shape[1], -1))
+        num_point_features += 1
+
+        point_features.append(dense_voxel[:, :, -1].unsqueeze(-1))
+        point_features = torch.cat(point_features, axis=-1)
+
+
+        point_features = point_features.reshape(-1,D,voxels.shape[-2] ,point_features.shape[-1])
+
+        point_mask = ((point_features[:,:,:,1]!=0)+(point_features[:,:,:,2]!=0)+(point_features[:,:,:,3]!=0))
+        point_num_voxel = point_mask.sum(axis=-1)
+
+        voxel_features = point_features[point_num_voxel>0]
 
         voxel_mask = voxel_num_points>3
-        key_points_all=[]
-        for bc in range(batch_size):
-            minimized_voxel = voxel_features[(coords[:,0]==bc)*voxel_mask][:,:2]
-            key_points=minimized_voxel.reshape(-1,minimized_voxel.shape[-1])
-            key_points=torch.cat([torch.full((key_points.shape[0],1),bc).to(device),key_points],dim=1)
-            key_points_all.append(key_points)
-        batch_dict['key_points_label'] = torch.cat(key_points_all,dim=0)[:,-1]
-        batch_dict['key_points'] = torch.cat(key_points_all,dim=0)[:,:-1]
-        batch_dict['points'] = batch_dict['points'][:,:-1]
+
+        point_features = point_features[point_mask]
+
+        minimized_voxel = voxel_features[voxel_mask][:,:2]
+        key_points=minimized_voxel.reshape(-1,minimized_voxel.shape[-1])
+
+        batch_dict['key_points_label'] = key_points[:,-1]
+        batch_dict['key_points'] = key_points[:,:-1]
+        batch_dict['points'] = point_features[:,:-1]
+
         return batch_dict
