@@ -48,7 +48,7 @@ def parse_config():
     parser.add_argument('--wo_gpu_stat', action='store_true', help='')
     parser.add_argument('--use_amp', action='store_true', help='use mix precision training')
     parser.add_argument('--train_sampler',action = 'store_true',default=True,help='train the pointsampler model')
-
+    parser.add_argument('--retrain',action = 'store_true',default = False , help='whether retrain')
 
     args = parser.parse_args()
     if args.train_sampler:
@@ -264,7 +264,7 @@ def train_sampler(args,cfg):
     test_set, test_loader, sampler = build_dataloader(
         dataset_cfg=cfg.DATA_CONFIG,
         class_names=cfg.CLASS_NAMES,
-        batch_size=1,
+        batch_size=args.batch_size,
         dist=dist_train, workers=args.workers, logger=logger, training=False
     )
     tb_log = SummaryWriter(log_dir=str(output_dir / 'tensorboard')) if cfg.LOCAL_RANK == 0 else None
@@ -281,26 +281,26 @@ def train_sampler(args,cfg):
     if args.pretrained_model is not None:
         model.load_params_from_file(filename=args.pretrained_model, to_cpu=dist_train, logger=logger)
 
-    if args.ckpt is not None:
-        it, start_epoch = model.load_params_with_optimizer(args.ckpt, to_cpu=dist_train, optimizer=optimizer,
-                                                           logger=logger)
-        last_epoch = start_epoch + 1
-    else:
-        ckpt_list = glob.glob(str(ckpt_dir / '*.pth'))
+    if not args.retrain:
 
-        if len(ckpt_list) > 0:
-            ckpt_list.sort(key=os.path.getmtime)
-            while len(ckpt_list) > 0:
-                try:
-                    it, start_epoch = model.load_params_with_optimizer(
-                        ckpt_list[-1], to_cpu=dist_train, optimizer=optimizer, logger=logger
-                    )
-                    last_epoch = start_epoch + 1
-                    break
-                except:
-                    ckpt_list = ckpt_list[:-1]
+        if args.ckpt is not None:
+            it, start_epoch = model.load_params_with_optimizer(args.ckpt, to_cpu=dist_train, optimizer=optimizer,
+                                                               logger=logger)
+            last_epoch = start_epoch + 1
+        else:
+            ckpt_list = glob.glob(str(ckpt_dir / '*.pth'))
 
-
+            if len(ckpt_list) > 0:
+                ckpt_list.sort(key=os.path.getmtime)
+                while len(ckpt_list) > 0:
+                    try:
+                        it, start_epoch = model.load_params_with_optimizer(
+                            ckpt_list[-1], to_cpu=dist_train, optimizer=optimizer, logger=logger
+                        )
+                        last_epoch = start_epoch + 1
+                        break
+                    except:
+                        ckpt_list = ckpt_list[:-1]
 
     model.train()
     if dist_train:
