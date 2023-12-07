@@ -43,6 +43,7 @@ class FlowNet(Detector3DTemplate):
         self.module_list = self.build_networks()
 
 
+
     def get_training_loss(self, batch_dict):
         disp_dict = {}
         loss_function = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(0.8))

@@ -268,12 +268,12 @@ class MyFlow(torch.nn.Module):
         mask1 = torch.arange(0, voxels.shape[-2], 1).unsqueeze(0).expand(voxels1.shape[0], -1).to(
             device)
         mask1 = mask1 < voxel_num_points1.reshape((-1, 1))
-        mask1 *= self.sigmoid(batch_dict['key_pillars_pred'][:num_voxel1] > self.threshold)
+        mask1 *= (self.sigmoid(batch_dict['key_pillars_pred'][:num_voxel1]) > self.threshold).unsqueeze(-1)
 
         mask2 = torch.arange(0, voxels.shape[-2], 1).unsqueeze(0).expand(voxels2.shape[0], -1).to(
             device)
         mask2 = mask2 < voxel_num_points2.reshape((-1, 1))
-        mask2 *= self.sigmoid(batch_dict['key_pillars_pred'][num_voxel1:(num_voxel2+num_voxel1)]>self.threshold)
+        mask2 *= (self.sigmoid(batch_dict['key_pillars_pred'][num_voxel1:(num_voxel2+num_voxel1)]>self.threshold)).unsqueeze()
 
         points1 = voxels1[mask1]
         points2 = voxels2[mask2]

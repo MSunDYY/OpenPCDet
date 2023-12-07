@@ -164,6 +164,9 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
     augment_disable_flag = False
     accuracy_all = 0
     recall_all = 0
+    for sub_model in model.module_list:
+        if getattr(sub_model,'is_train',True):
+            pass
     with tqdm.trange(start_epoch, total_epochs, desc='epochs', dynamic_ncols=True, leave=(rank == 0)) as tbar:
         total_it_each_epoch = len(train_loader)
         if merge_all_iters_to_one_epoch:
@@ -218,6 +221,11 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
                     save_checkpoint(
                         checkpoint_state(model, optimizer, trained_epoch, accumulated_iter), filename=best_file_name,
                     )
+                    for sub_model in model.module_list:
+                        best_file_dir = ckpt_save_dir/model.name
+                        best_file_dir.mkdir(parents=True, exist_ok=True)
+                        best_file_name = best_file_dir/'best_model.pth'
+                        torch.save(sub_model, best_file_name, _use_new_zipfile_serialization=False)
 
             if trained_epoch % ckpt_save_interval == 0 and rank == 0:
 

@@ -58,7 +58,7 @@ class PillarSamplerVFE(VFETemplate):
         self.use_absoluto_xyz = self.model_cfg.get('USE_ABSOLUTE_XYZ', False)
         self.num_point_features += 6 if self.use_absoluto_xyz else 3
         self.num_features_layers = [self.num_point_features] + list(model_cfg.NUM_FILTERS)
-
+        self.name = 'pillar_sampler_vfe'
         pfn = []
         for i in range(len(self.num_features_layers) - 1):
             in_channels = self.num_features_layers[i]
