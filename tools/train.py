@@ -6,6 +6,7 @@ from pathlib import Path
 from test import repeat_eval_ckpt
 from pcdet import device
 from pcdet.models.sampler.point_sampler import Sampler
+from pcdet.models.sampler.pillar_sampler import PillarSampler
 
 import torch
 import torch.nn as nn
@@ -21,7 +22,7 @@ from train_utils.train_utils import train_model
 
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
-    parser.add_argument('--cfg_file', type=str, default='cfgs/kitti_models/pv_rcnn.yaml', help='specify the config for training')
+    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/pointpillar_1x.yaml', help='specify the config for training')
     parser.add_argument('--batch_size', type=int, default=1, required=False, help='batch size for training')
     parser.add_argument('--epochs', type=int, default=None, required=False, help='number of epochs to train for')
     parser.add_argument('--workers', type=int, default=4, help='number of workers for dataloader')
@@ -48,11 +49,10 @@ def parse_config():
     parser.add_argument('--wo_gpu_stat', action='store_true', help='')
     parser.add_argument('--use_amp', action='store_true', help='use mix precision training')
     parser.add_argument('--train_sampler',action = 'store_true',default=True,help='train the pointsampler model')
-    parser.add_argument('--retrain',action = 'store_true',default = False , help='whether retrain')
-
+    parser.add_argument('--retrain',action = 'store_true',default = True , help='whether retrain')
     args = parser.parse_args()
     if args.train_sampler:
-        args.cfg_file='cfgs/process_models/point_sampler.yaml'
+        args.cfg_file='cfgs/process_models/pillar_sampler.yaml'
 
 
     cfg_from_yaml_file(args.cfg_file, cfg)
@@ -65,7 +65,6 @@ def parse_config():
         cfg_from_list(args.set_cfgs, cfg)
 
     return args, cfg
-
 
 
 def main(args,cfgs):
@@ -257,10 +256,7 @@ def train_sampler(args,cfg):
         total_epochs=args.epochs,
         seed=666 if args.fix_random_seed else None
     )
-
-    model = Sampler(model_cfg=cfg.MODEL,num_class=len(cfg.CLASS_NAMES),dataset=train_set)
-
-
+    model = PillarSampler(model_cfg=cfg.MODEL,num_class=len(cfg.CLASS_NAMES),dataset=train_set)
     test_set, test_loader, sampler = build_dataloader(
         dataset_cfg=cfg.DATA_CONFIG,
         class_names=cfg.CLASS_NAMES,
@@ -270,11 +266,8 @@ def train_sampler(args,cfg):
     tb_log = SummaryWriter(log_dir=str(output_dir / 'tensorboard')) if cfg.LOCAL_RANK == 0 else None
     if args.sync_bn:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
-
     model.to(device)
-
     optimizer = build_optimizer(model, cfg.OPTIMIZATION)
-
     # load checkpoint if it is possible
     start_epoch = it = 0
     last_epoch = -1
@@ -282,7 +275,6 @@ def train_sampler(args,cfg):
         model.load_params_from_file(filename=args.pretrained_model, to_cpu=dist_train, logger=logger)
 
     if not args.retrain:
-
         if args.ckpt is not None:
             it, start_epoch = model.load_params_with_optimizer(args.ckpt, to_cpu=dist_train, optimizer=optimizer,
                                                                logger=logger)

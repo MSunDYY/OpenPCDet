@@ -144,13 +144,28 @@ class DataProcessor(object):
             self.voxel_generator = VoxelGeneratorWrapper(
                 vsize_xyz=config.VOXEL_SIZE,
                 coors_range_xyz=self.point_cloud_range,
-                num_point_features=self.num_point_features,
+                num_point_features=self.num_point_features+1 if data_dict.get('label',False) is not False else 0,
                 max_num_points_per_voxel=config.MAX_POINTS_PER_VOXEL,
                 max_num_voxels=config.MAX_NUMBER_OF_VOXELS[self.mode],
             )
         points = data_dict['points']
-        voxel_output = self.voxel_generator.generate(points)
-        voxels, coordinates, num_points = voxel_output
+        if config.get('GET_FLOW_VOXELS'):
+            voxels = []
+            coordinates = []
+            nums_points = []
+            for frame in range(int(points[:, -2].max() * 10)+1):
+                voxel_output = self.voxel_generator.generate(points[points[:,-2]==frame/10])
+                voxel, coordinate, num_points = voxel_output
+                coordinate = np.concatenate([frame*np.ones((coordinate.shape[0],1)),coordinate],axis=1)
+                voxels.append(voxel)
+                nums_points.append(num_points)
+                coordinates.append(coordinate)
+            voxels = np.concatenate(voxels, axis=0)
+            coordinates = np.concatenate(coordinates, axis=0)
+            num_points = np.concatenate(nums_points)
+        else:
+            voxel_output = self.voxel_generator.generate(points)
+            voxels, coordinates, num_points = voxel_output
 
         # if config.get('POINT_FEATURES', None) is not None:
         #

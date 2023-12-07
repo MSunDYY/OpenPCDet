@@ -64,9 +64,9 @@ class SamplerVFE(VFETemplate):
 
         torch.cuda.empty_cache()
         voxels, voxel_num_points, coordinates = batch_dict['voxels'], batch_dict['voxel_num_points'], batch_dict['voxel_coords']
-        batch_label = torch.zeros(voxels.shape[0],voxels.shape[1],1).to(device)
-        batch_label[:] = coordinates[:,0:1].unsqueeze(1).expand(-1,voxels.shape[-2],-1)
-        voxels = torch.cat((batch_label,voxels),dim=-1)
+        batch_num = torch.zeros(voxels.shape[0],voxels.shape[1],1).to(device)
+        batch_num[:] = coordinates[:,0:1].unsqueeze(1).expand(-1,voxels.shape[-2],-1)
+        voxels = torch.cat((batch_num,voxels),dim=-1)
 
         L,W,H=self.grid_size
         B=batch_dict['batch_size']

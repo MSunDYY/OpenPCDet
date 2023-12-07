@@ -85,6 +85,8 @@ class SamplerDataset(DatasetTemplate):
         if self.dataset_cfg['SAMPLED_INTERVAL'][mode] > 1:
             sampled_waymo_infos = []
             for k in range(0, len(self.infos), self.dataset_cfg['SAMPLED_INTERVAL'][mode]):
+                if int(self.infos[k]['frame_id'].split('_')[-1])<4:
+                    continue
                 sampled_waymo_infos.append(self.infos[k])
             self.infos = sampled_waymo_infos
             self.logger.info('Total sampled samples for Waymo dataset: %d' % len(self.infos))
@@ -297,16 +299,12 @@ class SamplerDataset(DatasetTemplate):
         else:
             points = np.hstack([points, np.zeros((points.shape[0], 1)).astype(points.dtype)])
         if get_gt:
-            label = np.zeros((points.shape[0]))
-            gt_boxes_cur = info['annos']['gt_boxes_lidar']
-            box_idxs_of_pts = roiaware_pool3d_utils.points_in_boxes_gpu(
-                torch.from_numpy(points[:, 0:3]).unsqueeze(dim=0).float().cuda(),
-                torch.from_numpy(gt_boxes_cur[:, 0:7]).unsqueeze(dim=0).float().cuda()
-            ).long().squeeze(dim=0).cpu().numpy()
-            points_gt_cur = points[box_idxs_of_pts >= 0]
-            label = np.zeros(points.shape[0])
-            label[box_idxs_of_pts >= 0] = 1
-            points_gt_all = []
+            label = np.load(self.gt_data_path / (sequence_name + '_%03d_label.npy' % sample_idx))
+            points = np.concatenate([points, label.reshape(-1, 1)], axis=1)
+
+        if sequence_cfg.get('FILTER_GROUND', False):
+            points = points[points[:, 2] >= 0.1]
+
         num_points_pre = []
         points_pre_all = []
         pose_all = [pose_cur]
@@ -316,20 +314,13 @@ class SamplerDataset(DatasetTemplate):
             pred_boxes_all.append(pred_boxes)
 
         sequence_info = self.seq_name_to_infos[sequence_name]
-
+        sample_idx_pre_list =[(idx + max(0, 3 - sample_idx_pre_list[0])) for idx in sample_idx_pre_list]
         for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
 
             points_pre = self.get_lidar(sequence_name, sample_idx_pre)
-            if get_gt:
-                num_points_pre_temp = points_pre.shape[0]
-                info_pre = sequence_info[sample_idx_pre]
-                gt_boxes_pre = info_pre['annos']['gt_boxes_lidar']
-                box_idxs_of_pts = roiaware_pool3d_utils.points_in_boxes_gpu(
-                    torch.from_numpy(points_pre[:, 0:3]).unsqueeze(dim=0).float().cuda(),
-                    torch.from_numpy(gt_boxes_pre[:, 0:7]).unsqueeze(dim=0).float().cuda()
-                ).long().squeeze(dim=0).cpu().numpy()
-                points_gt_pre = points_pre[box_idxs_of_pts >= 0]
-                points_pre = np.concatenate([points_pre, points_gt_pre])
+            points_pre = np.hstack(
+                [points_pre, 0.1 * (sample_idx - sample_idx_pre) * np.ones((points_pre.shape[0], 1))])
+
             pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
             expand_points_pre = np.concatenate([points_pre[:, :3], np.ones((points_pre.shape[0], 1))], axis=-1)
             points_pre_global = np.dot(expand_points_pre, pose_pre.T)[:, :3]
@@ -337,21 +328,14 @@ class SamplerDataset(DatasetTemplate):
                                                       axis=-1)
             points_pre2cur = np.dot(expand_points_pre_global, np.linalg.inv(pose_cur.T))[:, :3]
             points_pre = np.concatenate([points_pre2cur, points_pre[:, 3:]], axis=-1)
-            if get_gt:
-                points_pre, points_gt_pre = np.split(points_pre, [num_points_pre_temp])
-                points_gt_all.append(points_gt_pre)
 
-            if sequence_cfg.get('ONEHOT_TIMESTAMP', False):
-                onehot_vector = np.zeros((points_pre.shape[0], len(sample_idx_pre_list) + 1))
-                onehot_vector[:, idx + 1] = 1
-                points_pre = np.hstack([points_pre, onehot_vector])
-            else:
-                # add timestamp
-                points_pre = np.hstack([points_pre,
-                                        0.1 * (sample_idx - sample_idx_pre) * np.ones((points_pre.shape[0], 1)).astype(
-                                            points_pre.dtype)])  # one frame 0.1s
+            if get_gt:
+                label_pre = np.load(self.gt_data_path / (sequence_name + '_%03d_label.npy' % sample_idx_pre))
+                points_pre = np.concatenate([points_pre, label_pre.reshape(-1, 1)], axis=1)
 
             points_pre = remove_ego_points(points_pre, 1.0)
+            if sequence_cfg.get('FILTER_GROUND', False):
+                points_pre = points_pre[points_pre[:, 2] >= 0.1]
             points_pre_all.append(points_pre)
             num_points_pre.append(points_pre.shape[0])
             pose_all.append(pose_pre)
@@ -361,8 +345,7 @@ class SamplerDataset(DatasetTemplate):
                 pred_boxes = load_pred_boxes_from_dict(sequence_name, sample_idx_pre)
                 pred_boxes = self.transform_prebox_to_current(pred_boxes, pose_pre, pose_cur)
                 pred_boxes_all.append(pred_boxes)
-        if get_gt:
-            points_gt_all.append(points_gt_cur[:, :5])
+
         points = np.concatenate([points] + points_pre_all, axis=0).astype(np.float32)
         num_points_all = np.array([num_pts_cur] + num_points_pre).astype(np.int32)
         poses = np.concatenate(pose_all, axis=0).astype(np.float32)
@@ -375,7 +358,7 @@ class SamplerDataset(DatasetTemplate):
         else:
             pred_boxes = pred_scores = pred_labels = None
         if get_gt:
-            return points, num_points_all, sample_idx_pre_list, poses, pred_boxes, pred_scores, pred_labels, points_gt_all, label
+            return points, num_points_all, sample_idx_pre_list, poses, pred_boxes, pred_scores, pred_labels, label
 
         return points, num_points_all, sample_idx_pre_list, poses, pred_boxes, pred_scores, pred_labels
 
@@ -405,9 +388,6 @@ class SamplerDataset(DatasetTemplate):
         if data_dict.get('points', None) is not None:
             data_dict = self.point_feature_encoder.forward(data_dict)
 
-        if self.dataset_cfg.get('GET_LABEL', False):
-            data_dict['points'] = np.concatenate((data_dict['points'], data_dict['label'].reshape(-1, 1)), axis=1)
-
         data_dict = self.data_processor.forward(
             data_dict=data_dict
         )
@@ -436,6 +416,17 @@ class SamplerDataset(DatasetTemplate):
         else:
             points = self.get_lidar(sequence_name, sample_idx)
 
+        if self.dataset_cfg.get('SEQUENCE_CONFIG', False):
+            points, num_points_all, sample_idx_pre_list, poses, pred_boxes, pred_scores, pred_labels, label = self.get_sequence_data(
+                info, points, sequence_name, sample_idx, self.dataset_cfg['SEQUENCE_CONFIG'],
+                load_pred_boxes=self.dataset_cfg.get('USE_PREDBOX', False), get_gt=True
+            )
+            input_dict['num_points_all'] = num_points_all
+        elif self.dataset_cfg.get('GT_DATA_PATH', False) is not False:
+            lidar_file = self.gt_data_path / (sequence_name + ('_%03d_label.npy' % sample_idx))
+            label = np.load(lidar_file)
+            points = np.concatenate([points, np.reshape(label, (-1, 1))], axis=1)
+
         input_dict.update({
             'points': points,
             'frame_id': info['frame_id'],
@@ -448,9 +439,10 @@ class SamplerDataset(DatasetTemplate):
             if self.dataset_cfg.get('GT_DATA_PATH', None) is not None:
                 gt_data = torch.from_numpy(np.load(self.gt_data_path / (info['frame_id'] + '_0.npy')))
                 input_dict['gt_data'] = gt_data
-                label = torch.from_numpy(np.load(self.gt_data_path / (info['frame_id'] + '_label.npy')))
+                label = points[:, -1]
                 input_dict['label'] = label
-                assert label.shape[0] == points.shape[0]
+
+            input_dict['gt_boxes'] = annos['gt_boxes_lidar']
 
         data_dict = self.prepare_data(data_dict=input_dict)
         data_dict.pop('num_points_in_gt', None)
@@ -556,23 +548,23 @@ class SamplerDataset(DatasetTemplate):
 
         if use_sequence_data:
             st_frame, ed_frame = self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[0], \
-            self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[1]
+                self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[1]
             self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[0] = min(-4,
                                                                     st_frame)  # at least we use 5 frames for generating gt database to support various sequence configs (<= 5 frames)
             st_frame = self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[0]
             database_save_path = save_path / ('%s_gt_database_%s_sampled_%d_multiframe_%s_to_%s' % (
-            processed_data_tag, split, sampled_interval, st_frame, ed_frame))
+                processed_data_tag, split, sampled_interval, st_frame, ed_frame))
             db_info_save_path = save_path / ('%s_waymo_dbinfos_%s_sampled_%d_multiframe_%s_to_%s.pkl' % (
-            processed_data_tag, split, sampled_interval, st_frame, ed_frame))
+                processed_data_tag, split, sampled_interval, st_frame, ed_frame))
             db_data_save_path = save_path / ('%s_gt_database_%s_sampled_%d_multiframe_%s_to_%s_global.npy' % (
-            processed_data_tag, split, sampled_interval, st_frame, ed_frame))
+                processed_data_tag, split, sampled_interval, st_frame, ed_frame))
         else:
             database_save_path = save_path / (
-                        '%s_gt_database_%s_sampled_%d' % (processed_data_tag, split, sampled_interval))
+                    '%s_gt_database_%s_sampled_%d' % (processed_data_tag, split, sampled_interval))
             db_info_save_path = save_path / (
-                        '%s_waymo_dbinfos_%s_sampled_%d.pkl' % (processed_data_tag, split, sampled_interval))
+                    '%s_waymo_dbinfos_%s_sampled_%d.pkl' % (processed_data_tag, split, sampled_interval))
             db_data_save_path = save_path / (
-                        '%s_gt_database_%s_sampled_%d_global.npy' % (processed_data_tag, split, sampled_interval))
+                    '%s_gt_database_%s_sampled_%d_global.npy' % (processed_data_tag, split, sampled_interval))
 
         database_save_path.mkdir(parents=True, exist_ok=True)
         all_db_infos = {}
@@ -760,19 +752,19 @@ class SamplerDataset(DatasetTemplate):
                                                  None) is not None and self.dataset_cfg.SEQUENCE_CONFIG.ENABLED
         if use_sequence_data:
             st_frame, ed_frame = self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[0], \
-            self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[1]
+                self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[1]
             self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[0] = min(-4,
                                                                     st_frame)  # at least we use 5 frames for generating gt database to support various sequence configs (<= 5 frames)
             st_frame = self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[0]
             database_save_path = save_path / ('%s_gt_database_%s_sampled_%d_multiframe_%s_to_%s_%sparallel' % (
-            processed_data_tag, split, sampled_interval, st_frame, ed_frame, 'tail_' if crop_gt_with_tail else ''))
+                processed_data_tag, split, sampled_interval, st_frame, ed_frame, 'tail_' if crop_gt_with_tail else ''))
             db_info_save_path = save_path / ('%s_waymo_dbinfos_%s_sampled_%d_multiframe_%s_to_%s_%sparallel.pkl' % (
-            processed_data_tag, split, sampled_interval, st_frame, ed_frame, 'tail_' if crop_gt_with_tail else ''))
+                processed_data_tag, split, sampled_interval, st_frame, ed_frame, 'tail_' if crop_gt_with_tail else ''))
         else:
             database_save_path = save_path / (
-                        '%s_gt_database_%s_sampled_%d_parallel' % (processed_data_tag, split, sampled_interval))
+                    '%s_gt_database_%s_sampled_%d_parallel' % (processed_data_tag, split, sampled_interval))
             db_info_save_path = save_path / (
-                        '%s_waymo_dbinfos_%s_sampled_%d_parallel.pkl' % (processed_data_tag, split, sampled_interval))
+                    '%s_waymo_dbinfos_%s_sampled_%d_parallel.pkl' % (processed_data_tag, split, sampled_interval))
 
         database_save_path.mkdir(parents=True, exist_ok=True)
 
@@ -863,8 +855,6 @@ def create_waymo_infos(dataset_cfg, class_names, data_path, save_path,
         used_classes=['Vehicle', 'Pedestrian', 'Cyclist'], processed_data_tag=processed_data_tag
     )
     print('---------------Data preparation Done---------------')
-
-
 
 
 def create_waymo_flow_infos(dataset_cfg, class_names, data_path, save_path, processed_data_tag='waymo_processed_data',

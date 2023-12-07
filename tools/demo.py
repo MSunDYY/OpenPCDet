@@ -24,6 +24,8 @@ from pcdet.datasets import DatasetTemplate
 from pcdet.models import build_network, load_data_to_gpu
 from pcdet.utils import common_utils
 
+WAYMO_CLASSES = ['Vehicle', 'Pedestrian', 'Cyclist']
+
 
 class DemoDataset(DatasetTemplate):
     def __init__(self, dataset_cfg, class_names, training=True, root_path=None, logger=None, ext='.bin'):
@@ -69,20 +71,22 @@ def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
     parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/centerpoint_4frames.yaml',
                         help='specify the config for demo')
-    parser.add_argument('--window_name' , type=str, default='open3d',help = 'window_name')
+    parser.add_argument('--window_name', type=str, default='open3d', help='window_name')
     parser.add_argument('--data_path', type=str,
-                        default='/media/msun/Seagate/waymo/waymo_processed_data_v0_5_0/segment-1005081002024129653_5313_150_5333_150_with_camera_labels/0001.npy',
+                        default='/media/msun/Seagate/waymo/waymo_processed_data_v0_5_0/segment-1005081002024129653_5313_150_5333_150_with_camera_labels',
                         help='specify the point cloud data file or directory')
+    parser.add_argument('--filter_ground',action='store_true',default=False,help='whether to filter ground')
     parser.add_argument('--ckpt', type=str,
                         default='../output/waymo_models/centerpoint_4frames/default/ckpt/latest_model.pth',
                         help='specify the pretrained model')
-    parser.add_argument('--func', type=str, default='visualize_file', help='func you want to excecute')
+    parser.add_argument('--func', type=str, default='show', help='func you want to excecute')
+    parser.add_argument('--ground_z',type = float ,default=0.1,help = 'the height of ground')
     parser.add_argument('--dataset', type=str, default='waymo', help='dataset you want to visualize')
     parser.add_argument('--ext', type=str, default='.npy', help='specify the extension of your point cloud data file')
     parser.add_argument('--frame_rate', type=int, default=100, help='frame_rate of auto-displaying')
     parser.add_argument('--auto_display', type=bool, default=False, help='whether to display automately')
-    parser.add_argument('--index', type=int, default=9, help='index of data in your dataset')
-    parser.add_argument('--frames', type=int, default=1, help='frames to cat')
+    parser.add_argument('--index', type=int, default=524, help='index of data in your dataset')
+    parser.add_argument('--frames', type=int, default=3, help='frames to cat')
     args = parser.parse_args()
 
     cfg_from_yaml_file(args.cfg_file, cfg)
@@ -129,6 +133,8 @@ def show():
     # data_path = '/media/msun/Seagate/nuscenes/v1.0-mini/raw_data/n015-2018-11-21-19-38-26+0800__LIDAR_TOP__1542801003948191.npy'
     args, cfg = parse_config()
     data_path = args.data_path
+    train_infos = pickle.load(open(os.path.join(args.data_path,args.data_path.split('/')[-1]+'.pkl'), 'rb'))
+
     if os.path.isfile(data_path):
         if data_path.endswith('.npy'):
             V.draw_scenes(
@@ -147,10 +153,20 @@ def show():
         frames = []
         file_names = []
         if not args.auto_display:
+            frame = 0
             for file in files:
                 if file.endswith('.npy'):
                     points = np.load(os.path.join(data_path, file))
-                    V.draw_scenes(points=points)
+                    if args.filter_ground:
+                        points = points[points[:,2]>args.ground_z]
+                    info = train_infos[frame]
+                    frame += 1
+                    gt_boxes = info['annos']['gt_boxes_lidar']
+                    gt_names = info['annos']['name']
+                    gt_label_mask = [gt_name in WAYMO_CLASSES for gt_name in gt_names]
+                    gt_label = [WAYMO_CLASSES.index(gt_names[i]) for i in range(len(gt_names)) if gt_label_mask[i]]
+                    gt_boxes = gt_boxes[gt_label_mask]
+                    V.draw_scenes(points=points,gt_boxes=gt_boxes,gt_labels=gt_label)
                 elif file.endswith('.bin'):
                     with open(os.path.join(data_path, file), 'rb') as file_name:
                         points = np.fromfile(file_name, dtype=np.float32)
@@ -170,7 +186,7 @@ def show():
                 frames.append(points[:, :3])
                 if (len(frames) > 200):
                     break
-        V.draw_scenes_frames(frames, file_names, auto=True, color=True, frame_rate=cfg.frame_rate)
+        V.draw_scenes_frames(frames, file_names, auto=True, color=True, frame_rate=10)
         if not OPEN3D_FLAG:
             mlab.show(stop=True)
 
@@ -181,7 +197,7 @@ def visualize_dataset():
     index = args.index
     if args.dataset == 'waymo':
         root_data = '/media/msun/Seagate/waymo'
-        WAYMO_CLASSES = ['Vehicle', 'Pedestrian', 'Cyclist']
+
         train_infos = pickle.load(open('/media/msun/Seagate/waymo/waymo_processed_data_v0_5_0_infos_train.pkl', 'rb'))
         points = []
         gt_boxes = []
@@ -192,6 +208,7 @@ def visualize_dataset():
             data_path = os.path.join(root_data, 'waymo_processed_data_v0_5_0',
                                      train_info['point_cloud']['lidar_sequence'] + '/{:04d}.npy'.format(
                                          train_info['point_cloud']['sample_idx']))
+            print(data_path)
             points.append(np.load(data_path))
             if train_info['point_cloud']['sample_idx'] == 0:
                 break
@@ -200,7 +217,7 @@ def visualize_dataset():
             for j, label in enumerate(train_info['annos']['name']):
                 if label in WAYMO_CLASSES:
                     gt_label_mask[j] = True
-                    gt_label.append(WAYMO_CLASSES.index(label) + 3 * i)
+                    gt_label.append(WAYMO_CLASSES.index(label) + 3 * min(i, 1))
             gt_boxes[-1] = gt_boxes[-1][gt_label_mask]
 
         points = np.concatenate(points, axis=0)
@@ -223,10 +240,11 @@ def visualize_file():
             points = np.fromfile(file_name, dtype=np.float32).reshape((-1, 4))
         V.draw_scenes(points=points)
 
+
 def visualize_files():
-    args,cfg = parse_config()
-    files=args.data_path.split(',')
-    V.draw_scenes(points=np.concatenate([np.load(file)[:,:3] for file in files]),window_name=args.window_name)
+    args, cfg = parse_config()
+    files = args.data_path.split(',')
+    V.draw_scenes(points=np.concatenate([np.load(file)[:, :3] for file in files]), window_name=args.window_name)
 
 
 if __name__ == '__main__':
@@ -237,3 +255,5 @@ if __name__ == '__main__':
         visualize_file()
     elif args.func == 'visualize_files':
         visualize_files()
+    else:
+        show()

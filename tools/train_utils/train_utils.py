@@ -181,9 +181,6 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
             else:
                 cur_scheduler = lr_scheduler
 
-
-
-
             augment_disable_flag = disable_augmentation_hook(hook_config, dataloader_iter, total_epochs, cur_epoch, cfg, augment_disable_flag, logger)
             model.train()
 
@@ -221,11 +218,10 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
                         accuracy_average += accuracy
                     accuracy_average=accuracy_average/(i+1)
                     print('-----------accuracy_all_%f = %f----------' % (0.5, accuracy_average))
-
                 if accuracy_average>accuracy_all:
                     accuracy_all=accuracy_average
                     save_checkpoint(
-                        checkpoint_state(model, optimizer, trained_epoch, accumulated_iter), filename='best_model.pth',
+                        checkpoint_state(model, optimizer, trained_epoch, accumulated_iter), filename='best_model',
                     )
 
             if trained_epoch % ckpt_save_interval == 0 and rank == 0:

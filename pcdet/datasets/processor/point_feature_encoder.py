@@ -26,9 +26,15 @@ class PointFeatureEncoder(object):
                 use_lead_xyz: whether to use xyz as point-wise features
                 ...
         """
-        data_dict['points'], use_lead_xyz = getattr(self, self.point_encoding_config.encoding_type)(
-            data_dict['points']
-        )
+        if data_dict.get('label',False) is not False:
+            point_features, use_lead_xyz = getattr(self, self.point_encoding_config.encoding_type)(
+            data_dict['points'][:,:-1]
+            )
+        else:
+            point_features, use_lead_xyz = getattr(self, self.point_encoding_config.encoding_type)(
+                data_dict['points']
+            )
+        data_dict['points'][:,:point_features.shape[1]] = point_features
         data_dict['use_lead_xyz'] = use_lead_xyz
        
         if self.point_encoding_config.get('filter_sweeps', False) and 'timestamp' in self.src_feature_list:
