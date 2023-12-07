@@ -192,11 +192,7 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
             augment_disable_flag = disable_augmentation_hook(hook_config, dataloader_iter, total_epochs, cur_epoch, cfg, augment_disable_flag, logger)
             model.train()
 
-            for sub_model in model.module_list:
-                best_file_dir = ckpt_save_dir / model.name
-                best_file_dir.mkdir(parents=True, exist_ok=True)
-                best_file_name = best_file_dir / 'best_model.pth'
-                torch.save(sub_model, best_file_name, _use_new_zipfile_serialization=False)
+
 
             accumulated_iter = train_one_epoch(
                 model, optimizer, train_loader, model_func,
@@ -231,7 +227,7 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
                         checkpoint_state(model, optimizer, trained_epoch, accumulated_iter), filename=best_file_name,
                     )
                     for sub_model in model.module_list:
-                        best_file_dir = ckpt_save_dir/model.name
+                        best_file_dir = ckpt_save_dir/sub_model.name
                         best_file_dir.mkdir(parents=True, exist_ok=True)
                         best_file_name = best_file_dir/'best_model.pth'
                         torch.save(sub_model, best_file_name, _use_new_zipfile_serialization=False)
