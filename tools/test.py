@@ -89,8 +89,10 @@ def eval_sampler_one_epoch(model, test_loader, logger, dist_test=False, args=Non
 
         accuracy_all += accuracy
         recall_all += recall
-    print('-----------accuracy_all_%f = %f----------' % (threshold, accuracy_all / (i + 1)))
-    print('------------recall_all_%f = %f-----------' % (threshold, recall_all / (i + 1)))
+    accuracy_all /= (i+1)
+    recall_all /= (i+1)
+    print('-----------accuracy_all_%f = %f----------' % (threshold, accuracy_all ))
+    print('------------recall_all_%f = %f-----------' % (threshold, recall_all ))
     return accuracy_all, recall_all
 
 

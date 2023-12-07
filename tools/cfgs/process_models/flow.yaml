@@ -44,6 +44,7 @@ MODEL:
 
     FLOW:
         NAME: MyFlow
+        THRESHOLD: 0.4
 
     POST_PROCESSING:
         RECALL_THRESH_LIST: [ 0.3, 0.5, 0.7 ]

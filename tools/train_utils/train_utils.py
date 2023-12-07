@@ -162,7 +162,8 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
     # use for disable data augmentation hook
     hook_config = cfg.get('HOOK', None) 
     augment_disable_flag = False
-
+    accuracy_all = 0
+    recall_all = 0
     with tqdm.trange(start_epoch, total_epochs, desc='epochs', dynamic_ncols=True, leave=(rank == 0)) as tbar:
         total_it_each_epoch = len(train_loader)
         if merge_all_iters_to_one_epoch:
@@ -209,8 +210,7 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
 
                 model.eval()
                 with torch.no_grad():
-                    accuracy_all = 0
-                    recall_all = 0
+
                     accuracy_average,recall_average = eval_sampler_one_epoch(model,test_loader,logger = logger,is_print=False)
                 if recall_average>recall_all:
                     recall_all =recall_average

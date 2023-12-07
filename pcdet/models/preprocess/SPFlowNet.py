@@ -34,10 +34,10 @@ class GRU(nn.Module):
         h = (1 - z) * h + z * q
         return h
 
-class MyFlow(torch.nn.Module):
+class SPFlowNet(torch.nn.Module):
     def __init__(self, args):
 
-        super(MyFlow, self).__init__()
+        super(SPFlowNet, self).__init__()
 
         n = 32
         self.k_decay_fact = 1.0

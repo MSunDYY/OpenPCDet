@@ -13,6 +13,7 @@ class PillarSampler(Detector3DTemplate):
         self.linear2 = nn.Linear(64, 1)
         self.sigmoid = nn.Sigmoid()
 
+
     def get_training_loss(self, batch_dict):
         disp_dict = {}
         loss_function = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(0.8))

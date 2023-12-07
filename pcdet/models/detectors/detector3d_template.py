@@ -2,7 +2,6 @@ import os
 
 import torch
 import torch.nn as nn
-import numpy as np
 import yaml
 
 from ...ops.iou3d_nms import iou3d_nms_utils
@@ -13,8 +12,9 @@ from ..backbones_3d import pfe, vfe
 from ..model_utils import model_nms_utils
 from pcdet import device
 from tools.visual_utils.open3d_vis_utils import draw_scenes
-from ..preprocess.spflownet import SPFlowNet
+from pcdet.models.preprocess.SPFlowNet import SPFlowNet
 from utils.easydict import EasyDict
+from .. import flow
 
 class Detector3DTemplate(nn.Module):
     def __init__(self, model_cfg, num_class, dataset):
@@ -26,7 +26,7 @@ class Detector3DTemplate(nn.Module):
         self.register_buffer('global_step', torch.LongTensor(1).zero_())
 
         self.module_topology = [
-            'preprocess', 'vfe', 'backbone_3d', 'map_to_bev_module', 'pfe',
+            'preprocess', 'vfe', 'flow', 'backbone_3d', 'map_to_bev_module', 'pfe',
             'backbone_2d', 'dense_head', 'point_head', 'roi_head'
         ]
 
@@ -59,14 +59,28 @@ class Detector3DTemplate(nn.Module):
         if self.model_cfg.get('PREPROCESS', None) is None:
             return None, model_info_dict
         yaml_path = 'cfgs/process_models/config_train_waymo.yaml'
-        with open(yaml_path,'r') as fd:
+        with open(yaml_path, 'r') as fd:
             args = yaml.safe_load(fd)
             args = EasyDict(d=args)
 
         preprocess_module = SPFlowNet(args)
         model_info_dict['module_list'].append(preprocess_module)
-        return preprocess_module,model_info_dict
+        return preprocess_module, model_info_dict
 
+    def build_flow(self, model_info_dict):
+        if self.model_cfg.get('FLOW', None) is None:
+            return None, model_info_dict
+
+        flow_module = flow.__all__[self.model_cfg.FLOW.NAME](
+            model_cfg=self.model_cfg.FLOW,
+            num_point_features=model_info_dict['num_rawpoint_features'],
+            point_cloud_range=model_info_dict['point_cloud_range'],
+            voxel_size=model_info_dict['voxel_size'],
+            grid_size=model_info_dict['grid_size'],
+            depth_downsample_factor=model_info_dict['depth_downsample_factor']
+        )
+        model_info_dict['module_list'].append(flow_module)
+        return flow_module,model_info_dict
     def build_vfe(self, model_info_dict):
         if self.model_cfg.get('VFE', None) is None:
             return None, model_info_dict
@@ -132,7 +146,7 @@ class Detector3DTemplate(nn.Module):
             model_cfg=self.model_cfg.PFE,
             voxel_size=model_info_dict['voxel_size'],
             point_cloud_range=model_info_dict['point_cloud_range'],
-            num_bev_features=model_info_dict.get('num_bev_features',None),
+            num_bev_features=model_info_dict.get('num_bev_features', None),
             num_rawpoint_features=model_info_dict['num_rawpoint_features']
         )
         model_info_dict['module_list'].append(pfe_module)
