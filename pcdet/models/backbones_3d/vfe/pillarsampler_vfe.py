@@ -118,6 +118,7 @@ class PillarSamplerVFE(VFETemplate):
         if self.use_absoluto_xyz:
             features = [voxels[:, :, :5], f_cluster, f_center]
 
+
         features = torch.cat(features, dim=-1)
         padding = torch.arange(voxels.shape[-2]).reshape((1, -1)).repeat(voxels.shape[0], 1).to(device)
         mask = padding < voxel_num_points.reshape((-1, 1))
@@ -151,14 +152,11 @@ class PillarSamplerVFE(VFETemplate):
         pred_label = self.classifier(pillar_map)
         pred_label = torch.permute(pred_label.reshape((B, H, W, -1)), (3, 0, 1, 2))
         interest_num = (coordinates[0] < 2).sum()
-        try:
-            pred_label = pred_label[[coor[:interest_num] for coor in coordinates]]
-        except:
-            pass
-        if self.training:
-            key_pillar_label = torch.zeros((F, B, H, W)).to(device)
-            key_pillar_label[coordinates] = (voxels[:, :, 6].sum(dim=-1) > 0).type(torch.float)
-            key_pillar_label = key_pillar_label[[coor[:interest_num] for coor in coordinates]]
+        pred_label = pred_label[[coor[:interest_num] for coor in coordinates]]
+
+        key_pillar_label = torch.zeros((F, B, H, W)).to(device)
+        key_pillar_label[coordinates] = (voxels[:, :, 6].sum(dim=-1) > 0).type(torch.float)
+        key_pillar_label = key_pillar_label[[coor[:interest_num] for coor in coordinates]]
 
         batch_dict['key_pillars_pred'] = pred_label
         batch_dict['key_pillars_label'] = key_pillar_label

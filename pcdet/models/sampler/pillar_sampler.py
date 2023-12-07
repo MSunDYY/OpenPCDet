@@ -18,7 +18,7 @@ class PillarSampler(Detector3DTemplate):
 
     def get_training_loss(self, batch_dict):
         disp_dict = {}
-        loss_function = torch.nn.BCEWithLogitsLoss(pos_weight=0.8)
+        loss_function = torch.nn.BCEWithLogitsLoss(pos_weight = torch.tensor(0.8))
         key_pillars_pred = batch_dict['key_pillars_pred']
         key_pillars_label = batch_dict['key_pillars_label']
         loss = loss_function(key_pillars_pred,key_pillars_label)
@@ -40,4 +40,6 @@ class PillarSampler(Detector3DTemplate):
             ret_dict = {'loss':loss}
             return ret_dict , tb_dict,disp_dict
         else:
+
+            batch_dict['key_pillars_pred'] = self.sigmoid(batch_dict['key_pillars_pred'])
             return batch_dict

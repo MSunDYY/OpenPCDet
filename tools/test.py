@@ -11,6 +11,7 @@ import numpy as np
 import torch
 from tensorboardX import SummaryWriter
 from pcdet.models.sampler.point_sampler import Sampler
+from pcdet.models.sampler.pillar_sampler import PillarSampler
 from eval_utils import eval_utils
 from pcdet.config import cfg, cfg_from_list, cfg_from_yaml_file, log_config_to_file
 from pcdet.datasets import build_dataloader
@@ -47,8 +48,8 @@ def parse_config():
     parser.add_argument('--test_sampler', action='store_true', default=True, help='train the pointsampler model')
     args = parser.parse_args()
     if args.test_sampler:
-        args.cfg_file = 'cfgs/process_models/point_sampler.yaml'
-        args.ckpt = '../output/process_models/point_sampler/default/ckpt/latest_model.pth'
+        args.cfg_file = 'cfgs/process_models/pillar_sampler.yaml'
+        args.ckpt = '../output/process_models/pillar_sampler/default/ckpt/latest_model.pth'
 
     cfg_from_yaml_file(args.cfg_file, cfg)
     cfg.TAG = Path(args.cfg_file).stem
@@ -70,8 +71,14 @@ def eval_sampler_one_epoch(model, test_loader, args, eval_output_dir, logger, ep
     for i, batch_dict in tqdm.tqdm(enumerate(test_loader)):
         load_data_to_gpu(batch_dict)
         batch_dict = model(batch_dict)
-        pred_label = batch_dict['predict_class'] > threshold
-        accuracy = (pred_label==batch_dict['key_points_label']).sum()/pred_label.shape[0]
+        if isinstance(model,PillarSampler):
+            pred_label = (batch_dict['key_pillars_pred'] > threshold).float()
+            real_label = batch_dict['key_pillars_label']
+        elif isinstance(model,Sampler):
+            pred_label = batch_dict['pred_label']
+            real_label = batch_dict['real_label']
+
+        accuracy = (pred_label==real_label).sum()/pred_label.shape[0]
         print('----------accuracy_%f = %f---------'%(threshold,accuracy))
         accuracy_all+=accuracy
     print('-----------accuracy_all_%f = %f----------'%(threshold,accuracy_all/i+1))
@@ -164,7 +171,7 @@ def evaluate_sampler(args, cfg):
         dist=dist_test, workers=args.workers, logger=logger, training=False
     )
 
-    model = Sampler(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=test_set)
+    model = PillarSampler(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=test_set)
     model.to(device)
     model.eval()
     with torch.no_grad():

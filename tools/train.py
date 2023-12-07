@@ -49,7 +49,7 @@ def parse_config():
     parser.add_argument('--wo_gpu_stat', action='store_true', help='')
     parser.add_argument('--use_amp', action='store_true', help='use mix precision training')
     parser.add_argument('--train_sampler',action = 'store_true',default=True,help='train the pointsampler model')
-    parser.add_argument('--retrain',action = 'store_true',default = True , help='whether retrain')
+    parser.add_argument('--retrain',action = 'store_true',default = False , help='whether retrain')
     args = parser.parse_args()
     if args.train_sampler:
         args.cfg_file='cfgs/process_models/pillar_sampler.yaml'

@@ -82,14 +82,15 @@ class SamplerDataset(DatasetTemplate):
         self.logger.info('Total skipped info %s' % num_skipped_infos)
         self.logger.info('Total samples for Waymo dataset: %d' % (len(waymo_infos)))
 
-        if self.dataset_cfg['SAMPLED_INTERVAL'][mode] > 1:
+        if self.dataset_cfg['SAMPLED_INTERVAL'][mode] > 0:
             sampled_waymo_infos = []
             for k in range(0, len(self.infos), self.dataset_cfg['SAMPLED_INTERVAL'][mode]):
-                if int(self.infos[k]['frame_id'].split('_')[-1])<4:
+                if int(self.infos[k]['frame_id'].split('_')[-1]) < 4:
                     continue
                 sampled_waymo_infos.append(self.infos[k])
             self.infos = sampled_waymo_infos
             self.logger.info('Total sampled samples for Waymo dataset: %d' % len(self.infos))
+
 
         use_sequence_data = self.dataset_cfg.get('SEQUENCE_CONFIG', None) is not None and self.dataset_cfg[
             'SEQUENCE_CONFIG'].ENABLED
@@ -314,7 +315,7 @@ class SamplerDataset(DatasetTemplate):
             pred_boxes_all.append(pred_boxes)
 
         sequence_info = self.seq_name_to_infos[sequence_name]
-        sample_idx_pre_list =[(idx + max(0, 3 - sample_idx_pre_list[0])) for idx in sample_idx_pre_list]
+        sample_idx_pre_list = [(idx + max(0, 3 - sample_idx_pre_list[0])) for idx in sample_idx_pre_list]
         for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
 
             points_pre = self.get_lidar(sequence_name, sample_idx_pre)
