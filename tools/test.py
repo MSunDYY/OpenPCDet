@@ -63,11 +63,10 @@ def parse_config():
     return args, cfg
 
 
-def eval_sampler_one_epoch(model, test_loader, logger, epoch_id, dist_test=False,args=None,
-                           threshold=0.5,print=True ):
+def eval_sampler_one_epoch(model, test_loader, logger, dist_test=False, args=None, threshold=0.5, is_print=True):
     if args != None:
         model.load_params_from_file(filename=args.ckpt, logger=logger, to_cpu=dist_test,
-                                pre_trained_path=args.pretrained_model)
+                                    pre_trained_path=args.pretrained_model)
     model.to(device)
     accuracy_all = 0
     recall_all = 0
@@ -83,13 +82,16 @@ def eval_sampler_one_epoch(model, test_loader, logger, epoch_id, dist_test=False
         interest_mask = (pred_label + real_label).bool()
         accuracy = ((pred_label[interest_mask] == real_label[interest_mask]).sum() / interest_mask.sum())
         recall = ((pred_label[interest_mask] == real_label[interest_mask]).sum() / real_label.sum())
-        if print:
-            print('---accuracy_%f = %f---,---recall_%f = %f---' % (threshold, accuracy, threshold, recall))
+        if is_print:
+            print(
+                '---accuracy_%f = %f---,---recall_%f = %f---' % (threshold, accuracy, threshold, recall))
+
         accuracy_all += accuracy
         recall_all += recall
     print('-----------accuracy_all_%f = %f----------' % (threshold, accuracy_all / (i + 1)))
     print('------------recall_all_%f = %f-----------' % (threshold, recall_all / (i + 1)))
-    return accuracy_all,recall_all
+    return accuracy_all, recall_all
+
 
 def eval_single_ckpt(model, test_loader, args, eval_output_dir, logger, epoch_id, dist_test=False):
     # load checkpoint
@@ -183,7 +185,8 @@ def evaluate_sampler(args, cfg):
     model.to(device)
     model.eval()
     with torch.no_grad():
-        eval_sampler_one_epoch(model, test_loader, args, eval_output_dir, logger, ckpt_dir, dist_test, threshold=0.4)
+        eval_sampler_one_epoch(model=model, test_loader=test_loader, logger=logger, dist_test=dist_test, args=args,
+                               threshold=0.4)
 
 
 def repeat_eval_ckpt(model, test_loader, args, eval_output_dir, logger, ckpt_dir, dist_test=False):

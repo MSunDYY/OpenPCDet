@@ -209,9 +209,9 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
 
                 model.eval()
                 with torch.no_grad():
-                    acucracy_all = 0
+                    accuracy_all = 0
                     recall_all = 0
-                    accuracy_average,recall_average = eval_sampler_one_epoch(model,test_loader,logger = logger,print=False)
+                    accuracy_average,recall_average = eval_sampler_one_epoch(model,test_loader,logger = logger,is_print=False)
                 if recall_average>recall_all:
                     recall_all =recall_average
                     save_checkpoint(
@@ -231,7 +231,7 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
                 save_checkpoint(
                     checkpoint_state(model, optimizer, trained_epoch, accumulated_iter), filename=ckpt_name,
                 )
-    print('---------best_accuracy= %f ------------'%(accuracy_all))
+    print('---best_accuracy= %f ---,---best_recall=%f'%(accuracy_all,recall_all))
 
 def model_state_to_cpu(model_state):
     model_state_cpu = type(model_state)()  # ordered dict
