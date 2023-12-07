@@ -7,7 +7,7 @@ from test import repeat_eval_ckpt
 from pcdet import device
 from pcdet.models.sampler.point_sampler import Sampler
 from pcdet.models.sampler.pillar_sampler import PillarSampler
-
+from pcdet.models.flow.flow import FlowNet
 import torch
 import torch.nn as nn
 from tensorboardX import SummaryWriter
@@ -22,7 +22,8 @@ from train_utils.train_utils import train_model
 
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
-    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/pointpillar_1x.yaml', help='specify the config for training')
+    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/pointpillar_1x.yaml',
+                        help='specify the config for training')
     parser.add_argument('--batch_size', type=int, default=1, required=False, help='batch size for training')
     parser.add_argument('--epochs', type=int, default=None, required=False, help='number of epochs to train for')
     parser.add_argument('--workers', type=int, default=4, help='number of workers for dataloader')
@@ -43,22 +44,23 @@ def parse_config():
     parser.add_argument('--start_epoch', type=int, default=0, help='')
     parser.add_argument('--num_epochs_to_eval', type=int, default=0, help='number of checkpoints to be evaluated')
     parser.add_argument('--save_to_file', action='store_true', default=False, help='')
-    parser.add_argument('--use_tqdm_to_record', action='store_true', default=False, help='if True, the intermediate losses will not be logged to file, only tqdm will be used')
+    parser.add_argument('--use_tqdm_to_record', action='store_true', default=False,
+                        help='if True, the intermediate losses will not be logged to file, only tqdm will be used')
     parser.add_argument('--logger_iter_interval', type=int, default=20, help='')
     parser.add_argument('--ckpt_save_time_interval', type=int, default=300, help='in terms of seconds')
     parser.add_argument('--wo_gpu_stat', action='store_true', help='')
     parser.add_argument('--use_amp', action='store_true', help='use mix precision training')
-    parser.add_argument('--train_sampler',action = 'store_true',default=True,help='train the pointsampler model')
-    parser.add_argument('--retrain',action = 'store_true',default = False , help='whether retrain')
+    parser.add_argument('--model_name',type=str, default='FlowNet', help='the model to be trained')
+    parser.add_argument('--retrain', action='store_true', default=False, help='whether retrain')
     args = parser.parse_args()
-    if args.train_sampler:
-        args.cfg_file='cfgs/process_models/pillar_sampler.yaml'
-
-
+    if args.model_name=='Sampler':
+        args.cfg_file = 'cfgs/process_models/pillar_sampler.yaml'
+    elif args.model_name == 'FlowNet':
+        args.cfg_file = 'cfgs/process_models/flow.yaml'
     cfg_from_yaml_file(args.cfg_file, cfg)
     cfg.TAG = Path(args.cfg_file).stem
     cfg.EXP_GROUP_PATH = '/'.join(args.cfg_file.split('/')[1:-1])  # remove 'cfgs' and 'xxxx.yaml'
-    
+
     args.use_amp = args.use_amp or cfg.OPTIMIZATION.get('USE_AMP', False)
 
     if args.set_cfgs is not None:
@@ -67,7 +69,7 @@ def parse_config():
     return args, cfg
 
 
-def main(args,cfgs):
+def main(args, cfgs):
     if args.launcher == 'none':
         dist_train = False
         total_gpus = 1
@@ -105,7 +107,7 @@ def main(args,cfgs):
         logger.info('Training in distributed mode : total_batch_size: %d' % (total_gpus * args.batch_size))
     else:
         logger.info('Training with a single process_models')
-        
+
     for key, val in vars(args).items():
         logger.info('{:16} {}'.format(key, val))
     log_config_to_file(cfg, logger=logger)
@@ -142,11 +144,12 @@ def main(args,cfgs):
         model.load_params_from_file(filename=args.pretrained_model, to_cpu=dist_train, logger=logger)
 
     if args.ckpt is not None:
-        it, start_epoch = model.load_params_with_optimizer(args.ckpt, to_cpu=dist_train, optimizer=optimizer, logger=logger)
+        it, start_epoch = model.load_params_with_optimizer(args.ckpt, to_cpu=dist_train, optimizer=optimizer,
+                                                           logger=logger)
         last_epoch = start_epoch + 1
     else:
         ckpt_list = glob.glob(str(ckpt_dir / '*.pth'))
-              
+
         if len(ckpt_list) > 0:
             ckpt_list.sort(key=os.path.getmtime)
             while len(ckpt_list) > 0:
@@ -162,7 +165,8 @@ def main(args,cfgs):
     model.train()  # before wrap to DistributedDataParallel to support fixed some parameters
     if dist_train:
         model = nn.parallel.DistributedDataParallel(model, device_ids=[cfg.LOCAL_RANK % torch.cuda.device_count()])
-    logger.info(f'----------- Model {cfg.MODEL.NAME} created, param count: {sum([m.numel() for m in model.parameters()])} -----------')
+    logger.info(
+        f'----------- Model {cfg.MODEL.NAME} created, param count: {sum([m.numel() for m in model.parameters()])} -----------')
     logger.info(model)
 
     lr_scheduler, lr_warmup_scheduler = build_scheduler(
@@ -173,7 +177,6 @@ def main(args,cfgs):
     # -----------------------start training---------------------------
     logger.info('**********************Start training %s/%s(%s)**********************'
                 % (cfg.EXP_GROUP_PATH, cfg.TAG, args.extra_tag))
-
 
     train_model(
         model,
@@ -192,11 +195,11 @@ def main(args,cfgs):
         lr_warmup_scheduler=lr_warmup_scheduler,
         ckpt_save_interval=args.ckpt_save_interval,
         max_ckpt_save_num=args.max_ckpt_save_num,
-        merge_all_iters_to_one_epoch=args.merge_all_iters_to_one_epoch, 
-        logger=logger, 
+        merge_all_iters_to_one_epoch=args.merge_all_iters_to_one_epoch,
+        logger=logger,
         logger_iter_interval=args.logger_iter_interval,
         ckpt_save_time_interval=args.ckpt_save_time_interval,
-        use_logger_to_record=not args.use_tqdm_to_record, 
+        use_logger_to_record=not args.use_tqdm_to_record,
         show_gpu_stat=not args.wo_gpu_stat,
         use_amp=args.use_amp,
         cfg=cfg,
@@ -218,7 +221,8 @@ def main(args,cfgs):
     )
     eval_output_dir = output_dir / 'eval' / 'eval_with_train'
     eval_output_dir.mkdir(parents=True, exist_ok=True)
-    args.start_epoch = max(args.epochs - args.num_epochs_to_eval, 0)  # Only evaluate the last args.num_epochs_to_eval epochs
+    args.start_epoch = max(args.epochs - args.num_epochs_to_eval,
+                           0)  # Only evaluate the last args.num_epochs_to_eval epochs
 
     repeat_eval_ckpt(
         model.module if dist_train else model,
@@ -228,8 +232,8 @@ def main(args,cfgs):
     logger.info('**********************End evaluation %s/%s(%s)**********************' %
                 (cfg.EXP_GROUP_PATH, cfg.TAG, args.extra_tag))
 
-def train_sampler(args,cfg):
 
+def train_my_model(args, cfg):
     if args.launcher == 'none':
         dist_train = False
         total_gpus = 1
@@ -256,7 +260,11 @@ def train_sampler(args,cfg):
         total_epochs=args.epochs,
         seed=666 if args.fix_random_seed else None
     )
-    model = PillarSampler(model_cfg=cfg.MODEL,num_class=len(cfg.CLASS_NAMES),dataset=train_set)
+    if args.model_name == 'Sampler':
+        model = PillarSampler(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=train_set)
+    elif args.model_name == 'FlowNet':
+        model = FlowNet(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES),dataset=train_set)
+
     test_set, test_loader, sampler = build_dataloader(
         dataset_cfg=cfg.DATA_CONFIG,
         class_names=cfg.CLASS_NAMES,
@@ -296,9 +304,10 @@ def train_sampler(args,cfg):
 
     model.train()
     if dist_train:
-        model = nn.parallel.DistributedDataParallel(model,device_ids=[cfg.LOCAL_RANK % torch.cuda.device_count()])
-    lr_schedular,lr_warmup_scheduler = build_scheduler(optimizer,total_iters_each_epoch=len(train_loader),total_epochs=args.epochs,
-                                                       last_epoch=last_epoch,optim_cfg=cfg.OPTIMIZATION)
+        model = nn.parallel.DistributedDataParallel(model, device_ids=[cfg.LOCAL_RANK % torch.cuda.device_count()])
+    lr_schedular, lr_warmup_scheduler = build_scheduler(optimizer, total_iters_each_epoch=len(train_loader),
+                                                        total_epochs=args.epochs,
+                                                        last_epoch=last_epoch, optim_cfg=cfg.OPTIMIZATION)
     train_model(model,
                 optimizer,
                 train_loader,
@@ -326,9 +335,10 @@ def train_sampler(args,cfg):
                 test_loader=test_loader
                 )
 
+
 if __name__ == '__main__':
     args, cfg = parse_config()
-    if not args.train_sampler:
-        main(args,cfg)
+    if args.model_name=='detection':
+        main(args, cfg)
     else:
-        train_sampler(args,cfg)
+        train_my_model(args, cfg)

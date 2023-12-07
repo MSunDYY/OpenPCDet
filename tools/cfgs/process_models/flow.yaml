@@ -32,7 +32,7 @@ DATA_CONFIG:
 
 
 MODEL:
-    NAME: PillarSampler
+    NAME: FlowNet
 
     VFE:
         NAME: PillarSamplerVFE
@@ -40,7 +40,10 @@ MODEL:
         USE_ABSOLUTE_XYZ: True
         USE_NORM: True
         NUM_FILTERS: [ 16, 32 ]
-        TRAIN: True
+        TRAIN: False
+
+    FLOW:
+        NAME: MyFlow
 
     POST_PROCESSING:
         RECALL_THRESH_LIST: [ 0.3, 0.5, 0.7 ]

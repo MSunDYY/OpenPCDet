@@ -214,8 +214,9 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
                     accuracy_average,recall_average = eval_sampler_one_epoch(model,test_loader,logger = logger,is_print=False)
                 if recall_average>recall_all:
                     recall_all =recall_average
+                    best_file_name = ckpt_save_dir/'best_model'
                     save_checkpoint(
-                        checkpoint_state(model, optimizer, trained_epoch, accumulated_iter), filename='best_model',
+                        checkpoint_state(model, optimizer, trained_epoch, accumulated_iter), filename=best_file_name,
                     )
 
             if trained_epoch % ckpt_save_interval == 0 and rank == 0:

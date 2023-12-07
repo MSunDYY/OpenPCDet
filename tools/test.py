@@ -72,7 +72,8 @@ def eval_sampler_one_epoch(model, test_loader, logger, dist_test=False, args=Non
     recall_all = 0
     for i, batch_dict in tqdm.tqdm(enumerate(test_loader)):
         load_data_to_gpu(batch_dict)
-        batch_dict = model(batch_dict)
+        with torch.no_grad():
+            batch_dict = model(batch_dict)
         if isinstance(model, PillarSampler):
             pred_label = (batch_dict['key_pillars_pred'] > threshold).float()
             real_label = batch_dict['key_pillars_label']
