@@ -18,10 +18,14 @@ class PillarSampler(Detector3DTemplate):
 
     def get_training_loss(self, batch_dict):
         disp_dict = {}
-        loss_function = torch.nn.BCEWithLogitsLoss()
+        loss_function = torch.nn.BCEWithLogitsLoss(pos_weight=0.8)
         key_pillars_pred = batch_dict['key_pillars_pred']
         key_pillars_label = batch_dict['key_pillars_label']
-        loss = loss_function(key_pillars_label,key_pillars_pred)
+        loss = loss_function(key_pillars_pred,key_pillars_label)
+
+
+        if loss.item()<0:
+            pass
         tb_dict = {'cls_loss':loss}
         return loss, tb_dict,disp_dict
 
