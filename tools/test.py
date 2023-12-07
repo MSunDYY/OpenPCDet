@@ -15,7 +15,7 @@ from pcdet.models.sampler.pillar_sampler import PillarSampler
 from eval_utils import eval_utils
 from pcdet.config import cfg, cfg_from_list, cfg_from_yaml_file, log_config_to_file
 from pcdet.datasets import build_dataloader
-from pcdet.models import build_network , load_data_to_gpu
+from pcdet.models import build_network, load_data_to_gpu
 from pcdet.utils import common_utils
 from pcdet import device
 import tqdm
@@ -63,25 +63,33 @@ def parse_config():
     return args, cfg
 
 
-def eval_sampler_one_epoch(model, test_loader, args, eval_output_dir, logger, epoch_id,  dist_test=False,threshold=0.5,):
-    model.load_params_from_file(filename=args.ckpt, logger=logger, to_cpu=dist_test,
+def eval_sampler_one_epoch(model, test_loader, logger, epoch_id, dist_test=False,args=None,
+                           threshold=0.5,print=True ):
+    if args != None:
+        model.load_params_from_file(filename=args.ckpt, logger=logger, to_cpu=dist_test,
                                 pre_trained_path=args.pretrained_model)
     model.to(device)
-    accuracy_all=0
+    accuracy_all = 0
+    recall_all = 0
     for i, batch_dict in tqdm.tqdm(enumerate(test_loader)):
         load_data_to_gpu(batch_dict)
         batch_dict = model(batch_dict)
-        if isinstance(model,PillarSampler):
+        if isinstance(model, PillarSampler):
             pred_label = (batch_dict['key_pillars_pred'] > threshold).float()
             real_label = batch_dict['key_pillars_label']
-        elif isinstance(model,Sampler):
+        elif isinstance(model, Sampler):
             pred_label = batch_dict['pred_label']
             real_label = batch_dict['real_label']
-
-        accuracy = (pred_label==real_label).sum()/pred_label.shape[0]
-        print('----------accuracy_%f = %f---------'%(threshold,accuracy))
-        accuracy_all+=accuracy
-    print('-----------accuracy_all_%f = %f----------'%(threshold,accuracy_all/i+1))
+        interest_mask = (pred_label + real_label).bool()
+        accuracy = ((pred_label[interest_mask] == real_label[interest_mask]).sum() / interest_mask.sum())
+        recall = ((pred_label[interest_mask] == real_label[interest_mask]).sum() / real_label.sum())
+        if print:
+            print('---accuracy_%f = %f---,---recall_%f = %f---' % (threshold, accuracy, threshold, recall))
+        accuracy_all += accuracy
+        recall_all += recall
+    print('-----------accuracy_all_%f = %f----------' % (threshold, accuracy_all / (i + 1)))
+    print('------------recall_all_%f = %f-----------' % (threshold, recall_all / (i + 1)))
+    return accuracy_all,recall_all
 
 def eval_single_ckpt(model, test_loader, args, eval_output_dir, logger, epoch_id, dist_test=False):
     # load checkpoint
@@ -175,7 +183,8 @@ def evaluate_sampler(args, cfg):
     model.to(device)
     model.eval()
     with torch.no_grad():
-        eval_sampler_one_epoch(model,test_loader,args,eval_output_dir,logger,ckpt_dir,dist_test,threshold=0.5)
+        eval_sampler_one_epoch(model, test_loader, args, eval_output_dir, logger, ckpt_dir, dist_test, threshold=0.4)
+
 
 def repeat_eval_ckpt(model, test_loader, args, eval_output_dir, logger, ckpt_dir, dist_test=False):
     # evaluated ckpt record

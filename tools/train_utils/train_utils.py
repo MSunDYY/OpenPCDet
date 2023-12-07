@@ -7,6 +7,7 @@ import glob
 from torch.nn.utils import clip_grad_norm_
 from pcdet.utils import common_utils, commu_utils
 from pcdet.models.sampler.point_sampler import Sampler
+from pcdet.models.sampler.pillar_sampler import PillarSampler
 from pcdet.models import build_network , load_data_to_gpu
 
 from tools.test import eval_sampler_one_epoch
@@ -204,22 +205,15 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
             # save trained model
             trained_epoch = cur_epoch + 1
 
-            if type(model)==Sampler and cur_epoch%4==0:
+            if (isinstance(model,Sampler) or isinstance(model,PillarSampler)) and cur_epoch%4==0:
 
                 model.eval()
                 with torch.no_grad():
-                    accuracy_average = 0
-                    for i, batch_dict in enumerate(tqdm.tqdm(test_loader,leave=True,position=0)):
-                        load_data_to_gpu(batch_dict)
-                        batch_dict = model(batch_dict)
-                        pred_label = batch_dict['predict_class'] > 0.5
-                        accuracy = (pred_label == batch_dict['key_points_label']).sum() / pred_label.shape[0]
-
-                        accuracy_average += accuracy
-                    accuracy_average=accuracy_average/(i+1)
-                    print('-----------accuracy_all_%f = %f----------' % (0.5, accuracy_average))
-                if accuracy_average>accuracy_all:
-                    accuracy_all=accuracy_average
+                    acucracy_all = 0
+                    recall_all = 0
+                    accuracy_average,recall_average = eval_sampler_one_epoch(model,test_loader,logger = logger,print=False)
+                if recall_average>recall_all:
+                    recall_all =recall_average
                     save_checkpoint(
                         checkpoint_state(model, optimizer, trained_epoch, accumulated_iter), filename='best_model',
                     )
