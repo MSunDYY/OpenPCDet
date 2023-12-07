@@ -167,6 +167,9 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
     for sub_model in model.module_list:
         if getattr(sub_model,'is_train',True):
             pass
+    for i,sub_model in enumerate(model.module_list):
+        if getattr(sub_model,'is_train',True) is False:
+            model.module_list[i] = torch.load(sub_model.ckpt)
     with tqdm.trange(start_epoch, total_epochs, desc='epochs', dynamic_ncols=True, leave=(rank == 0)) as tbar:
         total_it_each_epoch = len(train_loader)
         if merge_all_iters_to_one_epoch:
@@ -188,6 +191,12 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
 
             augment_disable_flag = disable_augmentation_hook(hook_config, dataloader_iter, total_epochs, cur_epoch, cfg, augment_disable_flag, logger)
             model.train()
+
+            for sub_model in model.module_list:
+                best_file_dir = ckpt_save_dir / model.name
+                best_file_dir.mkdir(parents=True, exist_ok=True)
+                best_file_name = best_file_dir / 'best_model.pth'
+                torch.save(sub_model, best_file_name, _use_new_zipfile_serialization=False)
 
             accumulated_iter = train_one_epoch(
                 model, optimizer, train_loader, model_func,

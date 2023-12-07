@@ -51,6 +51,8 @@ class PillarSamplerVFE(VFETemplate):
     def __init__(self, model_cfg, num_point_features, voxel_size, grid_size, point_cloud_range, **kwargs):
         super().__init__(model_cfg=model_cfg)
         self.is_train = model_cfg.get('TRAIN',True)
+        self.ckpt = model_cfg.get('CKPT',None)
+
         self.num_point_features = num_point_features
         self.voxel_size = voxel_size
         self.grid_size = grid_size

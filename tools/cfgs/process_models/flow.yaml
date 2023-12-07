@@ -41,6 +41,7 @@ MODEL:
         USE_NORM: True
         NUM_FILTERS: [ 16, 32 ]
         TRAIN: False
+        CKPT:  ../output
 
     FLOW:
         NAME: MyFlow
