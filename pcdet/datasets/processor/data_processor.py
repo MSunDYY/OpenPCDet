@@ -144,7 +144,7 @@ class DataProcessor(object):
             self.voxel_generator = VoxelGeneratorWrapper(
                 vsize_xyz=config.VOXEL_SIZE,
                 coors_range_xyz=self.point_cloud_range,
-                num_point_features=self.num_point_features+1 if data_dict.get('label',False) is not False else 0,
+                num_point_features=self.num_point_features+(1 if data_dict.get('label',False) is not False else 0),
                 max_num_points_per_voxel=config.MAX_POINTS_PER_VOXEL,
                 max_num_voxels=config.MAX_NUMBER_OF_VOXELS[self.mode],
             )

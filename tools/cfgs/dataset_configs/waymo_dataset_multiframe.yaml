@@ -11,7 +11,7 @@ DATA_SPLIT: {
 
 SAMPLED_INTERVAL: {
     'train': 5,
-    'test': 1
+    'test': 500
 }
 
 FILTER_EMPTY_BOXES_FOR_TRAIN: True

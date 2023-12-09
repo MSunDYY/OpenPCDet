@@ -19,6 +19,12 @@ from pcdet.models import build_network, load_data_to_gpu
 from pcdet.utils import common_utils
 from pcdet import device
 import tqdm
+import os
+import sys
+sys.path.insert(0,os.getcwd())
+current_file_path = os.path.dirname(__file__)
+os.chdir(current_file_path)
+
 
 
 def parse_config():
@@ -45,7 +51,7 @@ def parse_config():
     parser.add_argument('--ckpt_dir', type=str, default=None, help='specify a ckpt directory to be evaluated if needed')
     parser.add_argument('--save_to_file', action='store_true', default=False, help='')
     parser.add_argument('--infer_time', action='store_true', default=False, help='calculate inference latency')
-    parser.add_argument('--test_sampler', action='store_false', help='train the pointsampler model')
+    parser.add_argument('--test_sampler', action='store_false',default = False, help='train the pointsampler model')
     args = parser.parse_args()
     if args.test_sampler:
         args.cfg_file = 'cfgs/process_models/pillar_sampler.yaml'
