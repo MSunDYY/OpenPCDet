@@ -45,7 +45,7 @@ def parse_config():
     parser.add_argument('--ckpt_dir', type=str, default=None, help='specify a ckpt directory to be evaluated if needed')
     parser.add_argument('--save_to_file', action='store_true', default=False, help='')
     parser.add_argument('--infer_time', action='store_true', default=False, help='calculate inference latency')
-    parser.add_argument('--test_sampler', action='store_true', default=True, help='train the pointsampler model')
+    parser.add_argument('--test_sampler', action='store_false', help='train the pointsampler model')
     args = parser.parse_args()
     if args.test_sampler:
         args.cfg_file = 'cfgs/process_models/pillar_sampler.yaml'
@@ -311,6 +311,8 @@ def main(args, cfg):
 
 if __name__ == '__main__':
     args, cfg = parse_config()
+    print('test_sampler:',args.test_sampler)
+
     if not args.test_sampler:
         main(args, cfg)
     else:
