@@ -22,7 +22,7 @@ from train_utils.train_utils import train_model
 
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
-    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/pointpillar_1x.yaml',
+    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/centerpoint_4frames.yaml',
                         help='specify the config for training')
     parser.add_argument('--batch_size', type=int, default=1, required=False, help='batch size for training')
     parser.add_argument('--epochs', type=int, default=None, required=False, help='number of epochs to train for')
@@ -50,7 +50,7 @@ def parse_config():
     parser.add_argument('--ckpt_save_time_interval', type=int, default=300, help='in terms of seconds')
     parser.add_argument('--wo_gpu_stat', action='store_true', help='')
     parser.add_argument('--use_amp', action='store_true', help='use mix precision training')
-    parser.add_argument('--model_name',type=str, default='Sampler', help='the model to be trained')
+    parser.add_argument('--model_name',type=str, default='detection', help='the model to be trained')
     parser.add_argument('--retrain', action='store_true', default=False, help='whether retrain')
     args = parser.parse_args()
     if args.model_name=='Sampler':

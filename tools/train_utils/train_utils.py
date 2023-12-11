@@ -164,9 +164,7 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
     augment_disable_flag = False
     accuracy_all = 0
     recall_all = 0
-    for sub_model in model.module_list:
-        if getattr(sub_model,'is_train',True):
-            pass
+
     for i,sub_model in enumerate(model.module_list):
         if getattr(sub_model,'is_train',True) is False:
             model.module_list[i] = torch.load(sub_model.ckpt)
