@@ -16,7 +16,7 @@ from .voxelnext import VoxelNeXt
 from .transfusion import TransFusion
 from .bevfusion import BevFusion
 from .mynet import MyNet
-
+from .centerspeed import CenterSpeed
 __all__ = {
     'Detector3DTemplate': Detector3DTemplate,
     'SECONDNet': SECONDNet,
@@ -36,7 +36,8 @@ __all__ = {
     'VoxelNeXt': VoxelNeXt,
     'TransFusion': TransFusion,
     'BevFusion': BevFusion,
-    'MyNet': MyNet
+    'MyNet': MyNet,
+    'CenterSpeed': CenterSpeed
 }
 
 

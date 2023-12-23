@@ -149,23 +149,9 @@ class DataProcessor(object):
                 max_num_voxels=config.MAX_NUMBER_OF_VOXELS[self.mode],
             )
         points = data_dict['points']
-        if config.get('GET_FLOW_VOXELS'):
-            voxels = []
-            coordinates = []
-            nums_points = []
-            for frame in range(int(points[:, -2].max() * 10)+1):
-                voxel_output = self.voxel_generator.generate(points[points[:,-2]==frame/10])
-                voxel, coordinate, num_points = voxel_output
-                coordinate = np.concatenate([frame*np.ones((coordinate.shape[0],1)),coordinate],axis=1)
-                voxels.append(voxel)
-                nums_points.append(num_points)
-                coordinates.append(coordinate)
-            voxels = np.concatenate(voxels, axis=0)
-            coordinates = np.concatenate(coordinates, axis=0)
-            num_points = np.concatenate(nums_points)
-        else:
-            voxel_output = self.voxel_generator.generate(points)
-            voxels, coordinates, num_points = voxel_output
+
+        voxel_output = self.voxel_generator.generate(points)
+        voxels, coordinates, num_points = voxel_output
 
         # if config.get('POINT_FEATURES', None) is not None:
         #
@@ -236,10 +222,12 @@ class DataProcessor(object):
             data_dict['voxels'] = voxels_list
             data_dict['voxel_coords'] = voxel_coords_list
             data_dict['voxel_num_points'] = voxel_num_points_list
+
         else:
             data_dict['voxels'] = voxels
             data_dict['voxel_coords'] = coordinates
             data_dict['voxel_num_points'] = num_points
+
         return data_dict
 
     def sample_points(self, data_dict=None, config=None):

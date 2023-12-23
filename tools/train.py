@@ -18,11 +18,15 @@ from pcdet.models import build_network, model_fn_decorator
 from pcdet.utils import common_utils
 from train_utils.optimization import build_optimizer, build_scheduler
 from train_utils.train_utils import train_model
+import os
+
+if not os.getcwd().endswith('tools'):
+    os.chdir('tools')
 
 
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
-    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/centerpoint_4frames.yaml',
+    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/centerspeed.yaml',
                         help='specify the config for training')
     parser.add_argument('--batch_size', type=int, default=1, required=False, help='batch size for training')
     parser.add_argument('--epochs', type=int, default=None, required=False, help='number of epochs to train for')
@@ -50,10 +54,11 @@ def parse_config():
     parser.add_argument('--ckpt_save_time_interval', type=int, default=300, help='in terms of seconds')
     parser.add_argument('--wo_gpu_stat', action='store_true', help='')
     parser.add_argument('--use_amp', action='store_true', help='use mix precision training')
-    parser.add_argument('--model_name',type=str, default='detection', help='the model to be trained')
+    parser.add_argument('--model_name', type=str, default='detection', help='the model to be trained')
     parser.add_argument('--retrain', action='store_true', default=False, help='whether retrain')
     args = parser.parse_args()
-    if args.model_name=='Sampler':
+
+    if args.model_name == 'Sampler':
         args.cfg_file = 'cfgs/process_models/pillar_sampler.yaml'
     elif args.model_name == 'FlowNet':
         args.cfg_file = 'cfgs/process_models/flow.yaml'
@@ -78,6 +83,8 @@ def main(args, cfgs):
             args.tcp_port, args.local_rank, backend='nccl'
         )
         dist_train = True
+
+    # cfg.DATA_CONFIG.DATA_PATH = os.path.join('..',cfg.DATA_CONFIG.DATA_PATH)
 
     if args.batch_size is None:
         args.batch_size = cfg.OPTIMIZATION.BATCH_SIZE_PER_GPU
@@ -263,7 +270,7 @@ def train_my_model(args, cfg):
     if args.model_name == 'Sampler':
         model = PillarSampler(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=train_set)
     elif args.model_name == 'FlowNet':
-        model = FlowNet(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES),dataset=train_set)
+        model = FlowNet(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=train_set)
 
     test_set, test_loader, sampler = build_dataloader(
         dataset_cfg=cfg.DATA_CONFIG,
@@ -338,7 +345,7 @@ def train_my_model(args, cfg):
 
 if __name__ == '__main__':
     args, cfg = parse_config()
-    if args.model_name=='detection':
+    if args.model_name == 'detection':
         main(args, cfg)
     else:
         train_my_model(args, cfg)

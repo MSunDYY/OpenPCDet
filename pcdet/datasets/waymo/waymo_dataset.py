@@ -15,9 +15,9 @@ from tqdm import tqdm
 from pathlib import Path
 from functools import partial
 import sys
-
+import os
 sys.path.append('/home/msun/pan1/pointcloud/OpenPCDet/pcdet/datasets')
-
+sys.path.append(os.getcwd())
 from pcdet.ops.roiaware_pool3d import roiaware_pool3d_utils
 from pcdet.utils import box_utils, common_utils
 from pcdet.datasets.dataset import DatasetTemplate
@@ -949,8 +949,8 @@ if __name__ == '__main__':
         create_waymo_infos(
             dataset_cfg=dataset_cfg,
             class_names=['Vehicle', 'Pedestrian', 'Cyclist'],
-            data_path=ROOT_DIR / 'data' / 'waymo',
-            save_path=ROOT_DIR / 'data' / 'waymo',
+            data_path=ROOT_DIR / '../data' / 'waymo',
+            save_path=ROOT_DIR / '../data' / 'waymo',
             raw_data_tag='raw_data',
             processed_data_tag=args.processed_data_tag,
             update_info_only=args.update_info_only
@@ -965,8 +965,8 @@ if __name__ == '__main__':
         create_waymo_gt_database(
             dataset_cfg=dataset_cfg,
             class_names=['Vehicle', 'Pedestrian', 'Cyclist'],
-            data_path=ROOT_DIR / 'data' / 'waymo',
-            save_path=ROOT_DIR / 'data' / 'waymo',
+            data_path=ROOT_DIR / '../data' / 'waymo',
+            save_path=ROOT_DIR / '../data' / 'waymo',
             processed_data_tag=args.processed_data_tag,
             use_parallel=args.use_parallel,
             crop_gt_with_tail=not args.wo_crop_gt_with_tail

@@ -12,7 +12,7 @@ from ..backbones_3d import pfe, vfe
 from ..model_utils import model_nms_utils
 from pcdet import device
 from tools.visual_utils.open3d_vis_utils import draw_scenes
-from pcdet.models.preprocess.SPFlowNet import SPFlowNet
+from pcdet.models import preprocess
 from utils.easydict import EasyDict
 from .. import flow
 
@@ -45,7 +45,8 @@ class Detector3DTemplate(nn.Module):
             'grid_size': self.dataset.grid_size,
             'point_cloud_range': self.dataset.point_cloud_range,
             'voxel_size': self.dataset.voxel_size,
-            'depth_downsample_factor': self.dataset.depth_downsample_factor
+            'depth_downsample_factor': self.dataset.depth_downsample_factor,
+
         }
         for module_name in self.module_topology:
             module, model_info_dict = getattr(self, 'build_%s' % module_name)(
@@ -63,7 +64,14 @@ class Detector3DTemplate(nn.Module):
             args = yaml.safe_load(fd)
             args = EasyDict(d=args)
 
-        preprocess_module = SPFlowNet(args)
+        preprocess_module = preprocess.__all__[self.model_cfg.PREPROCESS.NAME](
+            model_cfg = self.model_cfg.PREPROCESS,
+            num_point_features = model_info_dict['num_rawpoint_features'],
+            point_cloud_range = model_info_dict['point_cloud_range'],
+            voxel_size = model_info_dict['voxel_size'],
+            grid_size = model_info_dict['grid_size'],
+            depth_downsampler_factor = model_info_dict['depth_downsample_factor']
+        )
         model_info_dict['module_list'].append(preprocess_module)
         return preprocess_module, model_info_dict
 
