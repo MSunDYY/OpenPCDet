@@ -9,7 +9,7 @@ from pcdet.utils import common_utils, commu_utils
 from pcdet.models.sampler.point_sampler import Sampler
 from pcdet.models.sampler.pillar_sampler import PillarSampler
 from pcdet.models import build_network , load_data_to_gpu
-
+from torch.nn.parallel import DistributedDataParallel
 from tools.test import eval_sampler_one_epoch
 
 def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, accumulated_iter, optim_cfg,
@@ -164,8 +164,11 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
     augment_disable_flag = False
     accuracy_all = 0
     recall_all = 0
-
-    for i,sub_model in enumerate(model.module_list):
+    if isinstance(model,DistributedDataParallel):
+        model_list = model.module.module_list
+    else:
+        model_list = model.module_list
+    for i,sub_model in enumerate(model_list):
         if getattr(sub_model,'is_train',True) is False:
             model.module_list[i] = torch.load(sub_model.ckpt)
     with tqdm.trange(start_epoch, total_epochs, desc='epochs', dynamic_ncols=True, leave=(rank == 0)) as tbar:
