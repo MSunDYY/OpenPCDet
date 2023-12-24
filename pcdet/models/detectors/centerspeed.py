@@ -50,4 +50,5 @@ class CenterSpeed(Detector3DTemplate):
             )
 
 
-        return final_pred_dict, recall_dict
+
+        return final_pred_dict, recall_dict ,speed_diff

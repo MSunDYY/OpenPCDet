@@ -4,9 +4,10 @@ DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/waymo_dataset_multiframe.yaml
     GET_FLOW_VOXELS: True
     SAMPLED_INTERVAL: {
-        'train': 1,
+        'train': 1000,
         'test': 1
     }
+    REMOVE_INITIAL_FRAME: 3
     SEQUENCE_CONFIG:
         ENABLED: True
         SAMPLE_OFFSET: [ -3, 0 ]
@@ -44,7 +45,7 @@ MODEL:
         USE_NORM: True
         NUM_FILTERS: [16, 32]
         TRAIN: True
-        MAX_POINTS_PER_VOXEL: 40
+        MAX_POINTS_PER_VOXEL: 2
         MAX_NUMBER_OF_VOXELS: {
             'train': 150000,
             'test': 150000

@@ -71,12 +71,14 @@ class WaymoDataset(DatasetTemplate):
             sequence_name = os.path.splitext(self.sample_sequence_list[k])[0]
             info_path = self.data_path / sequence_name / ('%s.pkl' % sequence_name)
             info_path = self.check_sequence_name_with_all_version(info_path)
+
             if not info_path.exists():
                 num_skipped_infos += 1
                 continue
             with open(info_path, 'rb') as f:
                 infos = pickle.load(f)
-                waymo_infos.extend(infos)
+                num_rm_frame = self.dataset_cfg.get('REMOVE_INITIAL_FRAME',0)
+                waymo_infos.extend(infos[num_rm_frame:])
             seq_name_to_infos[infos[0]['point_cloud']['lidar_sequence']] = infos
 
         self.infos.extend(waymo_infos[:])
