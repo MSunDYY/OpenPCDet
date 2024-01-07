@@ -359,8 +359,9 @@ class SpeedSampler(nn.Module):
         nums_points = []
         for batch in range(batch_dict['batch_size']):
             points = points_all[:, 1:][points_all[:, 0] == batch]
-            if self.model_cfg.get('FILTER_GROUND', False):
-                points = points[points[:, 2] > 0.2, :]
+
+            if self.model_cfg.get('FILTER_GROUND', False) is not False:
+                points = points[points[:, 2] > self.model_cfg.get('FILTER_GROUND'), :]
             for frame in range(frame_num):
                 points_single_frame = points[points[:, -1] == frame / 10].to('cpu').numpy()
                 voxel_output = voxel_generator.generate(points_single_frame)

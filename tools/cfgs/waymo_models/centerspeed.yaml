@@ -37,7 +37,7 @@ DATA_CONFIG:
               'train': 150000,
               'test': 150000
           }
-          GET_FLOW_VOXELS: True
+          GET_FLOW_VOXELS: 0.2
 
 MODEL:
     NAME: CenterSpeed
@@ -46,7 +46,7 @@ MODEL:
     PREPROCESS:
 
         NAME: SpeedSampler
-        STRIDE: [4,4,40]
+        STRIDE: [1,1,40]
         WITH_DISTANCE: False
         USE_ABSOLUTE_XYZ: False
         USE_NORM: True
