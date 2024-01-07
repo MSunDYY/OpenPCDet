@@ -2,7 +2,7 @@ import os
 import subprocess
 
 from setuptools import find_packages, setup
-from torch.utils.cpp_extension import BuildExtension, CUDAExtension
+from torch.utils.cpp_extension import BuildExtension, CUDAExtension,CppExtension
 
 
 def get_git_commit_number():
@@ -21,6 +21,12 @@ def make_cuda_ext(name, module, sources):
     )
     return cuda_ext
 
+def make_cpp_ext(name,module,sources):
+    cpp_ext = CppExtension(
+        name='%s.%s'%(module,name),
+        sources=[os.path.join(*module.split('.'),src) for src in sources]
+    )
+    return cpp_ext
 
 def write_version_to_file(version, target_file):
     with open(target_file, 'w') as f:
@@ -66,72 +72,82 @@ if __name__ == '__main__':
                     'src/iou3d_nms_kernel.cu',
                 ]
             ),
+            # make_cuda_ext(
+            #     name='roiaware_pool3d_cuda',
+            #     module='pcdet.ops.roiaware_pool3d',
+            #     sources=[
+            #         'src/roiaware_pool3d.cpp',
+            #         'src/roiaware_pool3d_kernel.cu',
+            #     ]
+            # ),
+            # make_cuda_ext(
+            #     name='roipoint_pool3d_cuda',
+            #     module='pcdet.ops.roipoint_pool3d',
+            #     sources=[
+            #         'src/roipoint_pool3d.cpp',
+            #         'src/roipoint_pool3d_kernel.cu',
+            #     ]
+            # ),
+            # make_cuda_ext(
+            #     name='pointnet2_stack_cuda',
+            #     module='pcdet.ops.pointnet2.pointnet2_stack',
+            #     sources=[
+            #         'src/pointnet2_api.cpp',
+            #         'src/ball_query.cpp',
+            #         'src/ball_query_gpu.cu',
+            #         'src/group_points.cpp',
+            #         'src/group_points_gpu.cu',
+            #         'src/sampling.cpp',
+            #         'src/sampling_gpu.cu',
+            #         'src/interpolate.cpp',
+            #         'src/interpolate_gpu.cu',
+            #         'src/voxel_query.cpp',
+            #         'src/voxel_query_gpu.cu',
+            #         'src/vector_pool.cpp',
+            #         'src/vector_pool_gpu.cu'
+            #     ],
+            # ),
             make_cuda_ext(
-                name='roiaware_pool3d_cuda',
-                module='pcdet.ops.roiaware_pool3d',
+                name='box2map',
+                module = 'pcdet.ops.box2map',
                 sources=[
-                    'src/roiaware_pool3d.cpp',
-                    'src/roiaware_pool3d_kernel.cu',
-                ]
-            ),
-            make_cuda_ext(
-                name='roipoint_pool3d_cuda',
-                module='pcdet.ops.roipoint_pool3d',
-                sources=[
-                    'src/roipoint_pool3d.cpp',
-                    'src/roipoint_pool3d_kernel.cu',
-                ]
-            ),
-            make_cuda_ext(
-                name='pointnet2_stack_cuda',
-                module='pcdet.ops.pointnet2.pointnet2_stack',
-                sources=[
-                    'src/pointnet2_api.cpp',
-                    'src/ball_query.cpp',
-                    'src/ball_query_gpu.cu',
-                    'src/group_points.cpp',
-                    'src/group_points_gpu.cu',
-                    'src/sampling.cpp',
-                    'src/sampling_gpu.cu', 
-                    'src/interpolate.cpp', 
-                    'src/interpolate_gpu.cu',
-                    'src/voxel_query.cpp', 
-                    'src/voxel_query_gpu.cu',
-                    'src/vector_pool.cpp',
-                    'src/vector_pool_gpu.cu'
+                    'src/box2map.cpp',
+                    'src/box2map_api.cpp',
+                    'src/box2map_cuda.cu',
+                    'src/box2map_gpu.cpp',
                 ],
             ),
-            make_cuda_ext(
-                name='pointnet2_batch_cuda',
-                module='pcdet.ops.pointnet2.pointnet2_batch',
-                sources=[
-                    'src/pointnet2_api.cpp',
-                    'src/ball_query.cpp',
-                    'src/ball_query_gpu.cu',
-                    'src/group_points.cpp',
-                    'src/group_points_gpu.cu',
-                    'src/interpolate.cpp',
-                    'src/interpolate_gpu.cu',
-                    'src/sampling.cpp',
-                    'src/sampling_gpu.cu',
-
-                ],
-            ),
-            make_cuda_ext(
-                name="bev_pool_ext",
-                module="pcdet.ops.bev_pool",
-                sources=[
-                    "src/bev_pool.cpp",
-                    "src/bev_pool_cuda.cu",
-                ],
-            ),
-            make_cuda_ext(
-                name='ingroup_inds_cuda',
-                module='pcdet.ops.ingroup_inds',
-                sources=[
-                    'src/ingroup_inds.cpp',
-                    'src/ingroup_inds_kernel.cu',
-                ]
-            ),
+            # make_cuda_ext(
+            #     name='pointnet2_batch_cuda',
+            #     module='pcdet.ops.pointnet2.pointnet2_batch',
+            #     sources=[
+            #         'src/pointnet2_api.cpp',
+            #         'src/ball_query.cpp',
+            #         'src/ball_query_gpu.cu',
+            #         'src/group_points.cpp',
+            #         'src/group_points_gpu.cu',
+            #         'src/interpolate.cpp',
+            #         'src/interpolate_gpu.cu',
+            #         'src/sampling.cpp',
+            #         'src/sampling_gpu.cu',
+            #
+            #     ],
+            # ),
+            # make_cuda_ext(
+            #     name="bev_pool_ext",
+            #     module="pcdet.ops.bev_pool",
+            #     sources=[
+            #         "src/bev_pool.cpp",
+            #         "src/bev_pool_cuda.cu",
+            #     ],
+            # ),
+            # make_cuda_ext(
+            #     name='ingroup_inds_cuda',
+            #     module='pcdet.ops.ingroup_inds',
+            #     sources=[
+            #         'src/ingroup_inds.cpp',
+            #         'src/ingroup_inds_kernel.cu',
+            #     ]
+            # ),
         ],
     )

@@ -344,6 +344,8 @@ class FocalLossCenterNet(nn.Module):
         return self.neg_loss(out, target, mask=mask)
 
 
+
+
 def _reg_loss(regr, gt_regr, mask):
     """
     Refer to https://github.com/tianweiy/CenterPoint
@@ -429,6 +431,7 @@ class FocalLossSparse(nn.Module):
 
     def forward(self, out, target):
         return self.neg_loss(out, target)
+
 
 
 class RegLossSparse(nn.Module):

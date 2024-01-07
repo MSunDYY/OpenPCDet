@@ -7,11 +7,18 @@ DATA_CONFIG:
         'train': 1,
         'test': 1
     }
+    CONCAT: FALSE
     REMOVE_INITIAL_FRAME: 3
     SEQUENCE_CONFIG:
         ENABLED: True
         SAMPLE_OFFSET: [ -3, 0 ]
         FILTER_GROUND: True
+
+    POINT_FEATURE_ENCODING: {
+        encoding_type: absolute_coordinates_encoding,
+        used_feature_list: [ 'x', 'y', 'z', 'intensity', 'elongation' ],
+        src_feature_list: [ 'x', 'y', 'z', 'intensity', 'elongation' ],
+    }
 
     DATA_PROCESSOR:
         - NAME: mask_points_and_boxes_outside_range
@@ -24,7 +31,7 @@ DATA_CONFIG:
           }
 
         - NAME: transform_points_to_voxels
-          VOXEL_SIZE: [ 0.1, 0.1, 0.15 ]
+          VOXEL_SIZE: [ 0.2, 0.2, 0.15 ]
           MAX_POINTS_PER_VOXEL: 5
           MAX_NUMBER_OF_VOXELS: {
               'train': 150000,
@@ -41,7 +48,7 @@ MODEL:
         NAME: SpeedSampler
         STRIDE: [4,4,40]
         WITH_DISTANCE: False
-        USE_ABSOLUTE_XYZ: True
+        USE_ABSOLUTE_XYZ: False
         USE_NORM: True
         NUM_FILTERS: [16, 32]
         TRAIN: True
@@ -50,6 +57,7 @@ MODEL:
             'train': 150000,
             'test': 150000
         }
+        FILTER_GROUND: True
 
     VFE:
         NAME: MeanVFE
@@ -82,7 +90,7 @@ MODEL:
         USE_BIAS_BEFORE_NORM: True
         NUM_HM_CONV: 2
         SEPARATE_HEAD_CFG:
-            HEAD_ORDER: ['center', 'center_z', 'dim', 'rot' , 'vel']
+            HEAD_ORDER: ['center', 'center_z', 'dim', 'rot' ]
             HEAD_DICT: {
                 'center': {'out_channels': 2, 'num_conv': 2},
                 'center_z': {'out_channels': 1, 'num_conv': 2},
@@ -100,8 +108,9 @@ MODEL:
             LOSS_WEIGHTS: {
                 'cls_weight': 1.0,
                 'loc_weight': 2.0,
-                'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 0.2]
+                'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 0.2]
             }
+            SPEED_THRESHOLD: 0.5
 
         POST_PROCESSING:
             SCORE_THRESH: 0.1

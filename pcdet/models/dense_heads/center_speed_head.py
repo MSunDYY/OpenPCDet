@@ -8,6 +8,10 @@ from ..model_utils import centernet_utils
 from ...utils import loss_utils
 from functools import partial
 import torch.nn.functional as F
+from pcdet import device
+from pcdet.ops.iou3d_nms import iou3d_nms_cuda
+from pcdet.ops.bev_pool import bev_pool_ext
+from pcdet.ops.box2map import box2map
 
 
 class SeparateHead(nn.Module):
@@ -104,7 +108,8 @@ class CenterSpeedHead(nn.Module):
     def build_losses(self):
         self.add_module('hm_loss_func', loss_utils.FocalLossCenterNet())
         self.add_module('reg_loss_func', loss_utils.RegLossCenterNet())
-
+        self.add_module('speed_loss_func',torch.nn.L1Loss())
+        # self.add_module('speed_loss_func',loss_utils.)
     def assign_target_of_single_head(
             self, num_classes, gt_boxes, feature_map_size, feature_map_stride, num_max_objs=500,
             gaussian_overlap=0.1, min_radius=2
@@ -118,12 +123,12 @@ class CenterSpeedHead(nn.Module):
 
         """
         heatmap = gt_boxes.new_zeros(num_classes, feature_map_size[0], feature_map_size[1])
-        ret_boxes = gt_boxes.new_zeros((num_max_objs, gt_boxes.shape[-1] - 1 + 1))
+        ret_boxes = gt_boxes.new_zeros((num_max_objs, gt_boxes.shape[-1] - 1 + 1-2))
         inds = gt_boxes.new_zeros(num_max_objs).long()
         mask = gt_boxes.new_zeros(num_max_objs).long()
         ret_boxes_src = gt_boxes.new_zeros(num_max_objs, gt_boxes.shape[-1])
         ret_boxes_src[:gt_boxes.shape[0]] = gt_boxes
-
+        ret_boxes_src=torch.concat([ret_boxes_src[:,:7],ret_boxes_src[:,-1:]],dim=-1)
         x, y, z = gt_boxes[:, 0], gt_boxes[:, 1], gt_boxes[:, 2]
         coord_x = (x - self.point_cloud_range[0]) / self.voxel_size[0] / feature_map_stride
         coord_y = (y - self.point_cloud_range[1]) / self.voxel_size[1] / feature_map_stride
@@ -140,6 +145,16 @@ class CenterSpeedHead(nn.Module):
 
         radius = centernet_utils.gaussian_radius(dx, dy, min_overlap=gaussian_overlap)
         radius = torch.clamp_min(radius.int(), min=min_radius)
+
+        boxes = gt_boxes[:, :7].contiguous()
+        speed = gt_boxes[:, 7:9].contiguous()
+        speed_map = torch.zeros([size * feature_map_stride for size in feature_map_size] + [speed.shape[-1]]).to(device)
+        boxes[:, :2] = (boxes[:, :2] - torch.from_numpy(self.point_cloud_range)[:2]) / torch.tensor(
+            self.voxel_size[:2])[None, :]
+        boxes[:, 3:5] = (boxes[:, 3:5]) / torch.tensor(self.voxel_size[:2])[None, :]
+        boxes[:, 6][boxes[:, 6] < 0] += torch.pi
+        box2map.box2map_gpu(boxes.to(device), speed_map, speed.to(device))
+
 
         for k in range(min(num_max_objs, gt_boxes.shape[0])):
             if dx[k] <= 0 or dy[k] <= 0:
@@ -159,10 +174,10 @@ class CenterSpeedHead(nn.Module):
             ret_boxes[k, 3:6] = gt_boxes[k, 3:6].log()
             ret_boxes[k, 6] = torch.cos(gt_boxes[k, 6])
             ret_boxes[k, 7] = torch.sin(gt_boxes[k, 6])
-            if gt_boxes.shape[1] > 8:
+            if ret_boxes.shape[1] > 8:
                 ret_boxes[k, 8:] = gt_boxes[k, 7:-1]
 
-        return heatmap, ret_boxes, inds, mask, ret_boxes_src
+        return heatmap, ret_boxes, inds, mask, ret_boxes_src, speed_map
 
     def assign_targets(self, gt_boxes, feature_map_size=None, **kwargs):
         """
@@ -186,11 +201,12 @@ class CenterSpeedHead(nn.Module):
             'masks': [],
             'heatmap_masks': [],
             'target_boxes_src': [],
+            'speed_map': []
         }
 
         all_names = np.array(['bg', *self.class_names])
         for idx, cur_class_names in enumerate(self.class_names_each_head):
-            heatmap_list, target_boxes_list, inds_list, masks_list, target_boxes_src_list = [], [], [], [], []
+            heatmap_list, target_boxes_list, inds_list, masks_list, target_boxes_src_list, speed_map_list = [], [], [], [], [], []
             for bs_idx in range(batch_size):
                 cur_gt_boxes = gt_boxes[bs_idx]
                 gt_class_names = all_names[cur_gt_boxes[:, -1].cpu().long().numpy()]
@@ -209,24 +225,26 @@ class CenterSpeedHead(nn.Module):
                 else:
                     gt_boxes_single_head = torch.cat(gt_boxes_single_head, dim=0)
 
-                heatmap, ret_boxes, inds, mask, ret_boxes_src = self.assign_target_of_single_head(
+                heatmap, ret_boxes, inds, mask, ret_boxes_src, speed_map = self.assign_target_of_single_head(
                     num_classes=len(cur_class_names), gt_boxes=gt_boxes_single_head.cpu(),
                     feature_map_size=feature_map_size, feature_map_stride=target_assigner_cfg.FEATURE_MAP_STRIDE,
                     num_max_objs=target_assigner_cfg.NUM_MAX_OBJS,
                     gaussian_overlap=target_assigner_cfg.GAUSSIAN_OVERLAP,
                     min_radius=target_assigner_cfg.MIN_RADIUS,
+
                 )
                 heatmap_list.append(heatmap.to(gt_boxes_single_head.device))
                 target_boxes_list.append(ret_boxes.to(gt_boxes_single_head.device))
                 inds_list.append(inds.to(gt_boxes_single_head.device))
                 masks_list.append(mask.to(gt_boxes_single_head.device))
                 target_boxes_src_list.append(ret_boxes_src.to(gt_boxes_single_head.device))
-
+                speed_map_list.append(speed_map.to(gt_boxes_single_head.device))
             ret_dict['heatmaps'].append(torch.stack(heatmap_list, dim=0))
             ret_dict['target_boxes'].append(torch.stack(target_boxes_list, dim=0))
             ret_dict['inds'].append(torch.stack(inds_list, dim=0))
             ret_dict['masks'].append(torch.stack(masks_list, dim=0))
             ret_dict['target_boxes_src'].append(torch.stack(target_boxes_src_list, dim=0))
+            ret_dict['speed_map'].append(torch.stack(speed_map_list, dim=0))
         return ret_dict
 
     def sigmoid(self, x):
@@ -244,6 +262,15 @@ class CenterSpeedHead(nn.Module):
             pred_dict['hm'] = self.sigmoid(pred_dict['hm'])
             hm_loss = self.hm_loss_func(pred_dict['hm'], target_dicts['heatmaps'][idx])
             hm_loss *= self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['cls_weight']
+            speed_map = target_dicts['speed_map'][idx]
+            speed_pred = pred_dict['speed_pred']
+            abs_speed_map = torch.norm(speed_map,dim=-1,p=2)
+            pillar_coordinates = pred_dict['pillar_coords'].long()
+            speed_gt = speed_map[pillar_coordinates[:,0],pillar_coordinates[:,1],pillar_coordinates[:,2],pillar_coordinates[:,3]]
+            speed_loss = self.speed_loss_func(speed_pred,speed_gt)
+
+            motion_mask = abs_speed_map>self.model_cfg.LOSS_CONFIG.SPEED_THRESHOLD
+
 
             target_boxes = target_dicts['target_boxes'][idx]
             pred_boxes = torch.cat([pred_dict[head_name] for head_name in self.separate_head_cfg.HEAD_ORDER], dim=1)
@@ -391,21 +418,12 @@ class CenterSpeedHead(nn.Module):
 
         pred_dicts = []
         for head in self.heads_list:
-            pred_dicts.append(head(x))
+            pred_dict = head(x)
+            pred_dict['classification'] = data_dict['classification']
+            pred_dict['pillar_coords'] = data_dict['pillar_coords']
+            pred_dict['speed_pred'] =data_dict['speed_pred']
+            pred_dicts.append(pred_dict)
 
-        pred_speed = data_dict['pred_speed']
-        if pred_speed.shape[2] % 2:
-            pred_speed = F.pad(pred_speed, (0, 1, 0, 1), 'constant', 0)
-
-        B, C, H, W = pred_speed.shape
-        pred_speed = pred_speed.reshape(B*C,1,H,W)
-
-        unfolded_tensor = F.unfold(pred_speed, 2, stride=2)
-        abs_max_indices = torch.argmax(torch.abs(unfolded_tensor), dim=1)
-        max_pooled_tensor = torch.gather(unfolded_tensor, 1, abs_max_indices.unsqueeze(1))
-        pred_speed = max_pooled_tensor.permute(0,2,1).view(B,C,int(H/2),int(W/2))
-
-        pred_dicts[0]['vel'] = pred_speed
         if self.training:
             target_dict = self.assign_targets(
                 data_dict['gt_boxes'], feature_map_size=spatial_features_2d.size()[2:],
@@ -422,18 +440,6 @@ class CenterSpeedHead(nn.Module):
             )
 
             inds = target_dict['inds'][0]
-            mask = inds > 0
-            inds_list = []
-
-            for b in range(B):
-                ind = inds[b][mask[b]].unsqueeze(-1).repeat(1,2)
-                ind[:,0] = b
-                inds_list.append(ind)
-            inds = torch.concat(inds_list,dim=0)
-            speed_label = target_dict['target_boxes'][0][mask][:, 7:9]
-            pred_speed = pred_speed.reshape(B,-1,2)
-            pred_speed = pred_speed[inds[:,0],inds[:,1]]
-            speed_diff = torch.sqrt((pred_speed - speed_label)**2).sum()/mask.sum()
 
             pred_dicts = self.generate_predicted_boxes(
                 data_dict['batch_size'], pred_dicts
@@ -446,5 +452,5 @@ class CenterSpeedHead(nn.Module):
                 data_dict['has_class_labels'] = True
             else:
                 data_dict['final_box_dicts'] = pred_dicts
-                data_dict['speed_diff'] = speed_diff.item()
+
         return data_dict

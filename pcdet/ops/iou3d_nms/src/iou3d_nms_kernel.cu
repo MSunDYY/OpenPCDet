@@ -248,6 +248,7 @@ __global__ void boxes_overlap_kernel(const int num_a, const float *boxes_a, cons
     ans_overlap[a_idx * num_b + b_idx] = s_overlap;
 }
 
+
 __global__ void paired_boxes_overlap_kernel(const int num_a, const float *boxes_a, const int num_b, const float *boxes_b, float *ans_overlap){
     // params boxes_a: (N, 7) [x, y, z, dx, dy, dz, heading]
     // params boxes_b: (N, 7) [x, y, z, dx, dy, dz, heading]

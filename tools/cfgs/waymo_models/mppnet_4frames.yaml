@@ -3,7 +3,7 @@ CLASS_NAMES: ['Vehicle', 'Pedestrian', 'Cyclist']
 DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/waymo_dataset.yaml
     PROCESSED_DATA_TAG: 'waymo_processed_data_v0_5_0'
-
+    POINT_CLOUD_RANGE: [-75.2, -75.2, -2, 75.2, 75.2, 4]
     SAMPLED_INTERVAL: {
         'train': 1,
         'test': 1

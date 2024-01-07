@@ -16,6 +16,7 @@ from pathlib import Path
 from functools import partial
 import sys
 import os
+
 sys.path.append('/home/msun/pan1/pointcloud/OpenPCDet/pcdet/datasets')
 sys.path.append(os.getcwd())
 from pcdet.ops.roiaware_pool3d import roiaware_pool3d_utils
@@ -77,7 +78,7 @@ class WaymoDataset(DatasetTemplate):
                 continue
             with open(info_path, 'rb') as f:
                 infos = pickle.load(f)
-                num_rm_frame = self.dataset_cfg.get('REMOVE_INITIAL_FRAME',0)
+                num_rm_frame = self.dataset_cfg.get('REMOVE_INITIAL_FRAME', 0)
                 waymo_infos.extend(infos[num_rm_frame:])
             seq_name_to_infos[infos[0]['point_cloud']['lidar_sequence']] = infos
 
@@ -262,7 +263,7 @@ class WaymoDataset(DatasetTemplate):
         return ordered_bboxes
 
     def get_sequence_data(self, info, points, sequence_name, sample_idx, sequence_cfg, load_pred_boxes=False,
-                          get_gt=False):
+                          get_gt=False, concat=True):
         """
         Args:
             info:
@@ -366,7 +367,10 @@ class WaymoDataset(DatasetTemplate):
                 pred_boxes_all.append(pred_boxes)
         if get_gt:
             points_gt_all.append(points_gt_cur[:, :5])
-        points = np.concatenate([points] + points_pre_all, axis=0).astype(np.float32)
+        if concat:
+            points = np.concatenate([points] + points_pre_all, axis=0).astype(np.float32)
+        else:
+            points = [points] + points_pre_all
         num_points_all = np.array([num_pts_cur] + num_points_pre).astype(np.int32)
         poses = np.concatenate(pose_all, axis=0).astype(np.float32)
 
@@ -391,84 +395,142 @@ class WaymoDataset(DatasetTemplate):
     def __getitem__(self, index):
         if self._merge_all_iters_to_one_epoch:
             index = index % len(self.infos)
-
         info = copy.deepcopy(self.infos[index])
         pc_info = info['point_cloud']
         sequence_name = pc_info['lidar_sequence']
         sample_idx = pc_info['sample_idx']
-        input_dict = {
-            'sample_idx': sample_idx
-        }
-        if self.use_shared_memory and index < self.shared_memory_file_limit:
-            sa_key = f'{sequence_name}___{sample_idx}'
-            points = SharedArray.attach(f"shm://{sa_key}").copy()
+        if not self.dataset_cfg.get('CONCAT', True):
+            sample_idx_pre_list = np.clip(
+                sample_idx + np.arange(self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[0],
+                                       self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[1]), 0, 0x7FFFFFFF)
+            sample_idx_pre_list = sample_idx_pre_list[::-1]
+            self.dataset_cfg.SEQUENCE_CONFIG.ENABLED = False
+            sample_idx_list = [index] + [index + idx - sample_idx for idx in sample_idx_pre_list]
         else:
-            points = self.get_lidar(sequence_name, sample_idx)
+            sample_idx_list = [index]
+        data_dicts = {}
+        data_dicts['sample_idx'] = pc_info['sample_idx']
+        data_dicts['frame_id'] = info['frame_id']
+        data_dicts['points'] = []
+        data_dicts['gt_boxes'] = []
+        data_dicts['num_points_in_gt'] = []
+        data_dicts['voxels'] = []
+        data_dicts['voxel_coords'] = []
+        data_dicts['voxel_num_points'] = []
 
-        if self.dataset_cfg.get('SEQUENCE_CONFIG', None) is not None and self.dataset_cfg['SEQUENCE_CONFIG'].ENABLED:
-            if self.dataset_cfg.get('GET_LABEL', False):
-                points, num_points_all, sample_idx_pre_list, poses, pred_boxes, pred_scores, pred_labels, label = self.get_sequence_data(
-                    info, points, sequence_name, sample_idx, self.dataset_cfg['SEQUENCE_CONFIG'],
-                    load_pred_boxes=self.dataset_cfg.get('USE_PREDBOX', False), get_gt=True
-                )
+        for i, index in enumerate(sample_idx_list):
+            info = copy.deepcopy(self.infos[index])
+            pc_info = info['point_cloud']
+            sequence_name = pc_info['lidar_sequence']
+            sample_idx = pc_info['sample_idx']
+            input_dict = {
+                'sample_idx': sample_idx
+            }
+            if self.use_shared_memory and index < self.shared_memory_file_limit:
+                sa_key = f'{sequence_name}___{sample_idx}'
+                points = SharedArray.attach(f"shm://{sa_key}").copy()
             else:
-                points, num_points_all, sample_idx_pre_list, poses, pred_boxes, pred_scores, pred_labels = self.get_sequence_data(
-                    info, points, sequence_name, sample_idx, self.dataset_cfg['SEQUENCE_CONFIG'],
-                    load_pred_boxes=self.dataset_cfg.get('USE_PREDBOX', False)
-                )
+                points = self.get_lidar(sequence_name, sample_idx)
 
-            input_dict['num_points_all'] = num_points_all
-            input_dict['poses'] = poses
-            if self.dataset_cfg.get('USE_PREDBOX', False):
-                input_dict.update({
-                    'roi_boxes': pred_boxes,
-                    'roi_scores': pred_scores,
-                    'roi_labels': pred_labels,
+            if self.dataset_cfg.get('SEQUENCE_CONFIG', None) is not None and self.dataset_cfg[
+                'SEQUENCE_CONFIG'].ENABLED:
+                if self.dataset_cfg.get('GET_LABEL', False):
+                    points, num_points_all, sample_idx_pre_list, poses, pred_boxes, pred_scores, pred_labels, label = self.get_sequence_data(
+                        info, points, sequence_name, sample_idx, self.dataset_cfg['SEQUENCE_CONFIG'],
+                        load_pred_boxes=self.dataset_cfg.get('USE_PREDBOX', False), get_gt=True
+                    )
+                else:
+                    points, num_points_all, sample_idx_pre_list, poses, pred_boxes, pred_scores, pred_labels = self.get_sequence_data(
+                        info, points, sequence_name, sample_idx, self.dataset_cfg['SEQUENCE_CONFIG'],
+                        load_pred_boxes=self.dataset_cfg.get('USE_PREDBOX', False),
+                        concat=self.dataset_cfg.get('CONCAT', True)
+                    )
 
-                })
+                input_dict['num_points_all'] = num_points_all
+                input_dict['poses'] = poses
+                if self.dataset_cfg.get('USE_PREDBOX', False):
+                    input_dict.update({
+                        'roi_boxes': pred_boxes,
+                        'roi_scores': pred_scores,
+                        'roi_labels': pred_labels,
 
-        input_dict.update({
-            'points': points,
-            'frame_id': info['frame_id'],
-        })
-
-        if 'annos' in info:
-            annos = info['annos']
-            annos = common_utils.drop_info_with_name(annos, name='unknown')
-
-            if self.dataset_cfg.get('INFO_WITH_FAKELIDAR', False):
-                gt_boxes_lidar = box_utils.boxes3d_kitti_fakelidar_to_lidar(annos['gt_boxes_lidar'])
-            else:
-                gt_boxes_lidar = annos['gt_boxes_lidar']
-
-            if self.dataset_cfg.get('GT_DATA_PATH', None) is not None:
-                gt_data = torch.from_numpy(np.load(self.gt_data_path / (info['frame_id'] + '_0.npy')))
-                input_dict['gt_data'] = gt_data
-                label = torch.from_numpy(np.load(self.gt_data_path / (info['frame_id'] + '_label.npy')))
-                input_dict['label'] = label
-                assert label.shape[0] == points.shape[0]
-            if self.dataset_cfg.get('TRAIN_WITH_SPEED', False):
-                assert gt_boxes_lidar.shape[-1] == 9
-            else:
-                gt_boxes_lidar = gt_boxes_lidar[:, 0:7]
-
-            if self.training and self.dataset_cfg.get('FILTER_EMPTY_BOXES_FOR_TRAIN', False):
-                mask = (annos['num_points_in_gt'] > 0)  # filter empty boxes
-                annos['name'] = annos['name'][mask]
-                gt_boxes_lidar = gt_boxes_lidar[mask]
-                annos['num_points_in_gt'] = annos['num_points_in_gt'][mask]
+                    })
 
             input_dict.update({
-                'gt_names': annos['name'],
-                'gt_boxes': gt_boxes_lidar,
-                'num_points_in_gt': annos.get('num_points_in_gt', None)
+                'points': points,
+                'frame_id': info['frame_id'],
             })
 
-        data_dict = self.prepare_data(data_dict=input_dict)
-        data_dict['metadata'] = info.get('metasdata', info['frame_id'])
-        data_dict.pop('num_points_in_gt', None)
+            if 'annos' in info:
+                annos = info['annos']
+                annos = common_utils.drop_info_with_name(annos, name='unknown')
 
-        return data_dict
+                if self.dataset_cfg.get('INFO_WITH_FAKELIDAR', False):
+                    gt_boxes_lidar = box_utils.boxes3d_kitti_fakelidar_to_lidar(annos['gt_boxes_lidar'])
+                else:
+                    gt_boxes_lidar = annos['gt_boxes_lidar']
+
+                if self.dataset_cfg.get('GT_DATA_PATH', None) is not None:
+                    gt_data = torch.from_numpy(np.load(self.gt_data_path / (info['frame_id'] + '_0.npy')))
+                    input_dict['gt_data'] = gt_data
+                    label = torch.from_numpy(np.load(self.gt_data_path / (info['frame_id'] + '_label.npy')))
+                    input_dict['label'] = label
+                    assert label.shape[0] == points.shape[0]
+                if self.dataset_cfg.get('TRAIN_WITH_SPEED', False):
+                    assert gt_boxes_lidar.shape[-1] == 9
+                else:
+                    gt_boxes_lidar = gt_boxes_lidar[:, 0:7]
+
+                if self.training and self.dataset_cfg.get('FILTER_EMPTY_BOXES_FOR_TRAIN', False):
+                    mask = (annos['num_points_in_gt'] > 0)  # filter empty boxes
+                    annos['name'] = annos['name'][mask]
+                    gt_boxes_lidar = gt_boxes_lidar[mask]
+                    annos['num_points_in_gt'] = annos['num_points_in_gt'][mask]
+
+                input_dict.update({
+                    'gt_names': annos['name'],
+                    'gt_boxes': gt_boxes_lidar,
+                    'num_points_in_gt': annos.get('num_points_in_gt', None)
+                })
+
+            data_dict = self.prepare_data(data_dict=input_dict)
+            data_dict['metadata'] = info.get('metasdata', info['frame_id'])
+            data_dict.pop('num_points_in_gt', None)
+            if len(sample_idx_list) == 0 or self.dataset_cfg[
+                'SEQUENCE_CONFIG'].ENABLED:
+                return data_dict
+
+            data_dicts['points'].append(data_dict['points'])
+            data_dicts['gt_boxes'].append(data_dict['gt_boxes'])
+
+            data_dicts['voxels'].append(data_dict['voxels'])
+            data_dicts['voxel_coords'].append(data_dict['voxel_coords'])
+            data_dicts['voxel_num_points'].append(data_dict['voxel_num_points'])
+        F = len(sample_idx_list)
+        num_voxels = [voxel.shape[0] for voxel in data_dicts['voxels']]
+        max_num_voxels = max(num_voxels)
+        num_points = [point.shape[0] for point in data_dicts['points']]
+        max_num_points = max([point.shape[0] for point in data_dicts['points']])
+        num_gt_boxes = [gt_box.shape[0] for gt_box in data_dicts['gt_boxes']]
+        # max_num_gt_boxes = max(num_gt_boxes)
+        #
+        # points = np.zeros((F, max_num_points, data_dict['points'].shape[-1]))
+        # voxels = np.zeros((F, max([voxel.shape[0] for voxel in data_dicts['voxels']]), data_dict['voxels'].shape[-2],
+        #                    data_dict['voxels'].shape[-1]))
+        # gt_boxes = np.zeros((F, num_gt_boxes, data_dict['gt_boxes'].shape[-1]))
+        # voxel_coords = np.zeros((F, max_num_voxels, data_dict['voxel_coords'].shape[-1]))
+        # voxel_num_points = np.zeros((F, max_num_voxels))
+
+        data_dicts['points'] = np.concatenate(data_dicts['points'], axis=0)
+        data_dicts['num_points'] = num_points
+        data_dicts['voxels'] = np.concatenate(data_dicts['voxels'], axis=0)
+        data_dicts['voxel_coords'] = np.concatenate(data_dicts['voxel_coords'], axis=0)
+        data_dicts['voxel_num_points'] = np.concatenate(data_dicts['voxel_num_points'], axis=0)
+        data_dicts['num_voxels'] = num_voxels
+        data_dicts['gt_boxes'] = np.concatenate(data_dicts['gt_boxes'],axis=0)
+        data_dicts['num_gt_boxes'] = num_gt_boxes
+
+        return data_dicts
 
     def evaluation(self, det_annos, class_names, **kwargs):
         if 'annos' not in self.infos[0].keys():
@@ -569,23 +631,23 @@ class WaymoDataset(DatasetTemplate):
 
         if use_sequence_data:
             st_frame, ed_frame = self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[0], \
-            self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[1]
+                self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[1]
             self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[0] = min(-4,
                                                                     st_frame)  # at least we use 5 frames for generating gt database to support various sequence configs (<= 5 frames)
             st_frame = self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[0]
             database_save_path = save_path / ('%s_gt_database_%s_sampled_%d_multiframe_%s_to_%s' % (
-            processed_data_tag, split, sampled_interval, st_frame, ed_frame))
+                processed_data_tag, split, sampled_interval, st_frame, ed_frame))
             db_info_save_path = save_path / ('%s_waymo_dbinfos_%s_sampled_%d_multiframe_%s_to_%s.pkl' % (
-            processed_data_tag, split, sampled_interval, st_frame, ed_frame))
+                processed_data_tag, split, sampled_interval, st_frame, ed_frame))
             db_data_save_path = save_path / ('%s_gt_database_%s_sampled_%d_multiframe_%s_to_%s_global.npy' % (
-            processed_data_tag, split, sampled_interval, st_frame, ed_frame))
+                processed_data_tag, split, sampled_interval, st_frame, ed_frame))
         else:
             database_save_path = save_path / (
-                        '%s_gt_database_%s_sampled_%d' % (processed_data_tag, split, sampled_interval))
+                    '%s_gt_database_%s_sampled_%d' % (processed_data_tag, split, sampled_interval))
             db_info_save_path = save_path / (
-                        '%s_waymo_dbinfos_%s_sampled_%d.pkl' % (processed_data_tag, split, sampled_interval))
+                    '%s_waymo_dbinfos_%s_sampled_%d.pkl' % (processed_data_tag, split, sampled_interval))
             db_data_save_path = save_path / (
-                        '%s_gt_database_%s_sampled_%d_global.npy' % (processed_data_tag, split, sampled_interval))
+                    '%s_gt_database_%s_sampled_%d_global.npy' % (processed_data_tag, split, sampled_interval))
 
         database_save_path.mkdir(parents=True, exist_ok=True)
         all_db_infos = {}
@@ -773,19 +835,19 @@ class WaymoDataset(DatasetTemplate):
                                                  None) is not None and self.dataset_cfg.SEQUENCE_CONFIG.ENABLED
         if use_sequence_data:
             st_frame, ed_frame = self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[0], \
-            self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[1]
+                self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[1]
             self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[0] = min(-4,
                                                                     st_frame)  # at least we use 5 frames for generating gt database to support various sequence configs (<= 5 frames)
             st_frame = self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[0]
             database_save_path = save_path / ('%s_gt_database_%s_sampled_%d_multiframe_%s_to_%s_%sparallel' % (
-            processed_data_tag, split, sampled_interval, st_frame, ed_frame, 'tail_' if crop_gt_with_tail else ''))
+                processed_data_tag, split, sampled_interval, st_frame, ed_frame, 'tail_' if crop_gt_with_tail else ''))
             db_info_save_path = save_path / ('%s_waymo_dbinfos_%s_sampled_%d_multiframe_%s_to_%s_%sparallel.pkl' % (
-            processed_data_tag, split, sampled_interval, st_frame, ed_frame, 'tail_' if crop_gt_with_tail else ''))
+                processed_data_tag, split, sampled_interval, st_frame, ed_frame, 'tail_' if crop_gt_with_tail else ''))
         else:
             database_save_path = save_path / (
-                        '%s_gt_database_%s_sampled_%d_parallel' % (processed_data_tag, split, sampled_interval))
+                    '%s_gt_database_%s_sampled_%d_parallel' % (processed_data_tag, split, sampled_interval))
             db_info_save_path = save_path / (
-                        '%s_waymo_dbinfos_%s_sampled_%d_parallel.pkl' % (processed_data_tag, split, sampled_interval))
+                    '%s_waymo_dbinfos_%s_sampled_%d_parallel.pkl' % (processed_data_tag, split, sampled_interval))
 
         database_save_path.mkdir(parents=True, exist_ok=True)
 

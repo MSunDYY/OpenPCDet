@@ -1,13 +1,19 @@
+import torch
+
 from .detector3d_template import Detector3DTemplate
 from tools.visual_utils.open3d_vis_utils import draw_scenes
+from pcdet.models.preprocess.speed_estimate import SpeedEstimater
 
 class CenterSpeed(Detector3DTemplate):
     def __init__(self, model_cfg, num_class, dataset):
         super().__init__(model_cfg=model_cfg, num_class=num_class, dataset=dataset)
         self.module_list = self.build_networks()
-        
+        self.speed_est = SpeedEstimater()
 
     def forward(self, batch_dict):
+        bev_features = batch_dict
+
+
         for cur_module in self.module_list:
             batch_dict = cur_module(batch_dict)
 
