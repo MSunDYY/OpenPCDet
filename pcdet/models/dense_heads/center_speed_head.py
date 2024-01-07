@@ -266,7 +266,10 @@ class CenterSpeedHead(nn.Module):
             speed_pred = pred_dict['speed_pred']
             abs_speed_map = torch.norm(speed_map,dim=-1,p=2)
             pillar_coordinates = pred_dict['pillar_coords'].long()
-            speed_gt = speed_map[pillar_coordinates[:,0],pillar_coordinates[:,1],pillar_coordinates[:,2],pillar_coordinates[:,3]]
+
+
+            speed_gt = speed_map[pillar_coordinates[:,0],pillar_coordinates[:,1],pillar_coordinates[:,2]]
+
             speed_loss = self.speed_loss_func(speed_pred,speed_gt)
 
             motion_mask = abs_speed_map>self.model_cfg.LOSS_CONFIG.SPEED_THRESHOLD

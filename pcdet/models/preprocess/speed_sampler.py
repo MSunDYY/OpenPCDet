@@ -476,6 +476,9 @@ class SpeedSampler(nn.Module):
         anti_mask = pillar_coords[:,0]>=B
         pillar_coords[anti_mask,1] =F-1-pillar_coords[anti_mask][:,1]
         pillar_coords[anti_mask,0] -=  B
+        pillar_coords[:,0]=pillar_coords[:,0]*F+pillar_coords[:,1]
+        pillar_coords = pillar_coords[:,[0,2,3]]
+
         batch_dict['speed_pred'] = est_speed
         batch_dict['pillar_coords'] = pillar_coords
         batch_dict['classification'] = classification
