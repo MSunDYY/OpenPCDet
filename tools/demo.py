@@ -79,6 +79,7 @@ def parse_config():
     parser.add_argument('--ckpt', type=str,
                         default='../output/waymo_models/centerpoint_4frames/default/ckpt/latest_model.pth',
                         help='specify the pretrained model')
+    parser.add_argument('--file_names',type=str,default='0001.npy',help='names of files you want to diaplay')
     parser.add_argument('--func', type=str, default='show', help='func you want to excecute')
     parser.add_argument('--ground_z',type = float ,default=0.1,help = 'the height of ground')
     parser.add_argument('--dataset', type=str, default='waymo', help='dataset you want to visualize')
@@ -196,9 +197,9 @@ def visualize_dataset():
 
     index = args.index
     if args.dataset == 'waymo':
-        root_data = '/media/msun/Seagate/waymo'
+        root_data = '/media/msun/Seagate/waymo/openpcdet'
 
-        train_infos = pickle.load(open('/media/msun/Seagate/waymo/waymo_processed_data_v0_5_0_infos_train.pkl', 'rb'))
+        train_infos = pickle.load(open('/media/msun/Seagate/waymo/openpcdet/waymo_processed_data_v0_5_0_infos_train.pkl', 'rb'))
         points = []
         gt_boxes = []
         gt_label = []
@@ -242,9 +243,12 @@ def visualize_file():
 
 
 def visualize_files():
+
     args, cfg = parse_config()
-    files = args.data_path.split(',')
-    V.draw_scenes(points=np.concatenate([np.load(file)[:, :3] for file in files]), window_name=args.window_name)
+    files = args.file_names.split(',')
+
+
+    V.draw_scenes(points=np.concatenate([np.load(os.path.join(args.data_path,file))[:, :3] for file in files]), window_name=args.window_name)
 
 
 if __name__ == '__main__':

@@ -320,7 +320,7 @@ class WaymoDataset(DatasetTemplate):
             pred_boxes_all.append(pred_boxes)
 
         sequence_info = self.seq_name_to_infos[sequence_name]
-
+        gt_boxes_all=[]
         for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
 
             points_pre = self.get_lidar(sequence_name, sample_idx_pre)
@@ -334,6 +334,9 @@ class WaymoDataset(DatasetTemplate):
                 ).long().squeeze(dim=0).cpu().numpy()
                 points_gt_pre = points_pre[box_idxs_of_pts >= 0]
                 points_pre = np.concatenate([points_pre, points_gt_pre])
+
+
+
             pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
             expand_points_pre = np.concatenate([points_pre[:, :3], np.ones((points_pre.shape[0], 1))], axis=-1)
             points_pre_global = np.dot(expand_points_pre, pose_pre.T)[:, :3]
@@ -341,6 +344,19 @@ class WaymoDataset(DatasetTemplate):
                                                       axis=-1)
             points_pre2cur = np.dot(expand_points_pre_global, np.linalg.inv(pose_cur.T))[:, :3]
             points_pre = np.concatenate([points_pre2cur, points_pre[:, 3:]], axis=-1)
+            if not concat:
+                info_pre = sequence_info[sample_idx_pre]
+                gt_boxes_pre =  info_pre['annos']['gt_boxes_lidar']
+                box_xyz = gt_boxes_pre[:,:3]
+                expand_box_xyz = np.concatenate([box_xyz,np.ones((box_xyz.shape[0],1))],axis=-1)
+                pose_pre2cur = np.dot(np.linalg.inv(pose_cur),pose_pre)
+                gt_boxes_pre[:,:3] = np.dot(expand_box_xyz, pose_pre2cur.T)[:, :3]
+
+                del_theta = np.arccos(pose_pre2cur[0,0])
+                gt_boxes_pre[:,6]-=del_theta
+                gt_boxes_pre[:,7:9] = np.dot(gt_boxes_pre[:,7:9],pose_pre2cur[:2,:2].T)
+                gt_boxes_all.append(gt_boxes_pre)
+
             if get_gt:
                 points_pre, points_gt_pre = np.split(points_pre, [num_points_pre_temp])
                 points_gt_all.append(points_gt_pre)
@@ -993,7 +1009,7 @@ if __name__ == '__main__':
     parser.add_argument('--cfg_file', type=str,
                         default='../../../tools/cfgs/dataset_configs/waymo_dataset_multiframe.yaml',
                         help='specify the config of dataset')
-    parser.add_argument('--func', type=str, default='create_waymo_flow_infos', help='')
+    parser.add_argument('--func', type=str, default='create_waymo_infos', help='')
     parser.add_argument('--processed_data_tag', type=str, default='waymo_processed_data_v0_5_0', help='')
     parser.add_argument('--update_info_only', default=False, help='')
     parser.add_argument('--use_parallel', action='store_true', default=False, help='')
@@ -1013,9 +1029,9 @@ if __name__ == '__main__':
         create_waymo_infos(
             dataset_cfg=dataset_cfg,
             class_names=['Vehicle', 'Pedestrian', 'Cyclist'],
-            data_path=ROOT_DIR / '../data' / 'waymo',
-            save_path=ROOT_DIR / '../data' / 'waymo',
-            raw_data_tag='raw_data',
+            data_path=ROOT_DIR / '../data' / 'waymo_full',
+            save_path=ROOT_DIR / '../data' / 'waymo_full',
+            raw_data_tag='raw_data/tfrecord_training',
             processed_data_tag=args.processed_data_tag,
             update_info_only=args.update_info_only
         )

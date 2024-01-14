@@ -7,7 +7,7 @@ DATA_CONFIG:
         'train': 1,
         'test': 1
     }
-    CONCAT: FALSE
+    CONCAT: False
     REMOVE_INITIAL_FRAME: 3
     SEQUENCE_CONFIG:
         ENABLED: True
@@ -31,7 +31,7 @@ DATA_CONFIG:
           }
 
         - NAME: transform_points_to_voxels
-          VOXEL_SIZE: [ 0.2, 0.2, 0.15 ]
+          VOXEL_SIZE: [ 0.4, 0.4, 0.15 ]
           MAX_POINTS_PER_VOXEL: 5
           MAX_NUMBER_OF_VOXELS: {
               'train': 150000,

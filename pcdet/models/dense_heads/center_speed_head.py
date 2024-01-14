@@ -148,6 +148,8 @@ class CenterSpeedHead(nn.Module):
 
         boxes = gt_boxes[:, :7].contiguous()
         speed = gt_boxes[:, 7:9].contiguous()
+        speed = torch.cat([speed,torch.arange(1,boxes.shape[0]+1)[:,None]],dim=-1)
+
         speed_map = torch.zeros([size * feature_map_stride for size in feature_map_size] + [speed.shape[-1]]).to(device)
         boxes[:, :2] = (boxes[:, :2] - torch.from_numpy(self.point_cloud_range)[:2]) / torch.tensor(
             self.voxel_size[:2])[None, :]
@@ -247,6 +249,27 @@ class CenterSpeedHead(nn.Module):
             ret_dict['speed_map'].append(torch.stack(speed_map_list, dim=0))
         return ret_dict
 
+    def spatial_consistency_loss(self,speed_pred_coords,speed_pred,speed_gt):
+        sc_loss = 0
+        sc_loss_func = nn.L1Loss()
+        B = speed_pred_coords[:,0].max().item()+1
+        counter = 0
+        for b in range(B):
+            speed_pred_single_batch = speed_pred[speed_pred_coords[:,0]==b]
+            speed_gt_single_batch = speed_gt[speed_pred_coords[:,0]==b]
+            N = int(speed_gt_single_batch[:,-1].max().item())
+            for n in range(1,N+1):  # 0 denotes bg
+                speed_pred_single_box = speed_pred_single_batch[speed_gt_single_batch[:,-1]==n]
+                if speed_pred_single_box.shape[0]:  # avoid empty box causing nan
+                    speed_pred_single_box_1 = speed_pred_single_box[:,None,:].repeat(1,speed_pred_single_box.shape[0],1)
+                    speed_pred_single_box_2 = speed_pred_single_box[None,:,:].repeat(speed_pred_single_box.shape[0],1,1)
+                    sc_loss+=  sc_loss_func(speed_pred_single_box_1,speed_pred_single_box_2)
+            counter+=torch.unique(speed_gt_single_batch[:,-1]).shape[0]
+
+        return sc_loss/counter
+
+    def temporal_consistency_loss(self,speed_pred_coords,speed_pred,speed_gt):
+        return 1
     def sigmoid(self, x):
         y = torch.clamp(x.sigmoid(), min=1e-4, max=1 - 1e-4)
         return y
@@ -270,14 +293,17 @@ class CenterSpeedHead(nn.Module):
 
             speed_gt = speed_map[pillar_coordinates[:,0],pillar_coordinates[:,1],pillar_coordinates[:,2]]
 
-            speed_loss = self.speed_loss_func(speed_pred,speed_gt)
+            speed_loss = self.speed_loss_func(speed_pred,speed_gt[:,:-1])
+            spatial_consistency_loss = self.spatial_consistency_loss(pillar_coordinates,speed_pred,speed_gt)
+            temporal_consistency_loss = self.temporal_consistency_loss(pillar_coordinates,speed_pred,speed_gt)
+
+
 
             motion_mask = abs_speed_map>self.model_cfg.LOSS_CONFIG.SPEED_THRESHOLD
 
 
             target_boxes = target_dicts['target_boxes'][idx]
             pred_boxes = torch.cat([pred_dict[head_name] for head_name in self.separate_head_cfg.HEAD_ORDER], dim=1)
-
             reg_loss = self.reg_loss_func(
                 pred_boxes, target_dicts['masks'][idx], target_dicts['inds'][idx], target_boxes
             )
