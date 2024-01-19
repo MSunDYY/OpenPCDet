@@ -158,6 +158,8 @@ def draw_scenes(points, file_name=None, gt_boxes=None, gt_labels=None, ref_boxes
         gt_boxes = gt_boxes.cpu().numpy()
     if isinstance(ref_boxes, torch.Tensor):
         ref_boxes = ref_boxes.cpu().numpy()
+    if isinstance(gt_labels,torch.Tensor):
+        gt_labels=gt_labels.to('cpu').numpy()
     if file_name is not None:
         print('file_name:', file_name, 'The num of points is:', points.shape[0])
     vis = open3d.visualization.Visualizer()

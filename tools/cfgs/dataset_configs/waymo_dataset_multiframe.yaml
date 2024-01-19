@@ -1,5 +1,5 @@
 DATASET: 'WaymoDataset'
-DATA_PATH: '../../data/waymo_full'
+DATA_PATH: '../../data/waymo'
 PROCESSED_DATA_TAG: 'waymo_processed_data_v0_5_0'
 
 POINT_CLOUD_RANGE: [-76.8, -76.8, -2, 76.8, 76.8, 4]

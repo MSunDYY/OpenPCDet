@@ -181,7 +181,10 @@ class DatasetTemplate(torch_data.Dataset):
         """
         if self.training:
             assert 'gt_boxes' in data_dict, 'gt_boxes should be provided for training'
-            gt_boxes_mask = np.array([n in self.class_names for n in data_dict['gt_names']], dtype=np.bool_)
+            if isinstance(data_dict['points'],list):
+                gt_boxes_mask = [np.array([n in self.class_names for n in gt_name], dtype=np.bool_) for gt_name in data_dict['gt_names']]
+            else:
+                gt_boxes_mask = np.array([n in self.class_names for n in data_dict['gt_names']], dtype=np.bool_)
 
             if 'calib' in data_dict:
                 calib = data_dict['calib']

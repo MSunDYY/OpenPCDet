@@ -144,14 +144,30 @@ class DataProcessor(object):
             self.voxel_generator = VoxelGeneratorWrapper(
                 vsize_xyz=config.VOXEL_SIZE,
                 coors_range_xyz=self.point_cloud_range,
-                num_point_features=self.num_point_features+(1 if data_dict.get('label',False) is not False else 0),
+                num_point_features=self.num_point_features + (1 if data_dict.get('label', False) is not False else 0),
                 max_num_points_per_voxel=config.MAX_POINTS_PER_VOXEL,
                 max_num_voxels=config.MAX_NUMBER_OF_VOXELS[self.mode],
             )
         points = data_dict['points']
-
-        voxel_output = self.voxel_generator.generate(points)
-        voxels, coordinates, num_points = voxel_output
+        if not config.get('CONCAT', True):
+            voxels = []
+            coordinates = []
+            num_points = []
+            frame_num = int(data_dict['gt_boxes'][:,9].max()+1)
+            num_voxels = np.zeros((frame_num))
+            for frame in range(int(data_dict['gt_boxes'][:, 9].max()+1)):
+                voxel_output = self.voxel_generator.generate(points[points[:, -1] == 0.1 * frame,:-1])
+                voxels.append(voxel_output[0])
+                coordinates.append(voxel_output[1])
+                num_points.append(voxel_output[2])
+                num_voxels[frame] = voxel_output[0].shape[0]
+            data_dict['num_voxels'] = num_voxels
+            voxels = np.concatenate(voxels)
+            coordinates = np.concatenate(coordinates)
+            num_points = np.concatenate(num_points)
+        else:
+            voxel_output = self.voxel_generator.generate(points)
+            voxels, coordinates, num_points = voxel_output
 
         # if config.get('POINT_FEATURES', None) is not None:
         #
@@ -219,9 +235,9 @@ class DataProcessor(object):
                 voxel_coords_list.append(coordinates)
                 voxel_num_points_list.append(num_points)
 
-            data_dict['voxels'] = voxels_list
-            data_dict['voxel_coords'] = voxel_coords_list
-            data_dict['voxel_num_points'] = voxel_num_points_list
+            data_dict['voxels'] = np.concatenate(voxels_list)
+            data_dict['voxel_coords'] = np.concatenate(voxel_coords_list)
+            data_dict['voxel_num_points'] = np.concatenate(voxel_num_points_list)
 
         else:
             data_dict['voxels'] = voxels

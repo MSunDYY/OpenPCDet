@@ -34,6 +34,7 @@ class PointFeatureEncoder(object):
             point_features, use_lead_xyz = getattr(self, self.point_encoding_config.encoding_type)(
                 data_dict['points']
             )
+        point_features = np.concatenate([point_features,data_dict['points'][:,point_features.shape[-1]:-1]],axis=-1)
         data_dict['points'][:,:point_features.shape[1]] = point_features
         data_dict['use_lead_xyz'] = use_lead_xyz
        
@@ -51,7 +52,7 @@ class PointFeatureEncoder(object):
             num_output_features = len(self.used_feature_list)
             return num_output_features
 
-        assert points.shape[-1] == len(self.src_feature_list)
+
         point_feature_list = [points[:, 0:3]]
         for x in self.used_feature_list:
             if x in ['x', 'y', 'z']:
