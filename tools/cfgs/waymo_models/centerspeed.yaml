@@ -12,7 +12,7 @@ DATA_CONFIG:
     SEQUENCE_CONFIG:
         ENABLED: True
         SAMPLE_OFFSET: [ -3, 0 ]
-        FILTER_GROUND: True
+        FILTER_GROUND: 0.2
 
     POINT_FEATURE_ENCODING: {
         encoding_type: absolute_coordinates_encoding,
@@ -92,7 +92,7 @@ MODEL:
             'train': 150000,
             'test': 150000
         }
-        FILTER_GROUND: True
+        FILTER_GROUND: 0.2
 
     VFE:
         NAME: MeanVFE

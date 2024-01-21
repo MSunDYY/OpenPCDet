@@ -423,6 +423,7 @@ class WaymoDataset(DatasetTemplate):
         pc_info = info['point_cloud']
         sequence_name = pc_info['lidar_sequence']
         sample_idx = pc_info['sample_idx']
+        annos=None
         if not self.dataset_cfg.get('CONCAT', True):
             sample_idx_pre_list = np.clip(
                 sample_idx + np.arange(self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[0],
@@ -539,26 +540,20 @@ class WaymoDataset(DatasetTemplate):
                         gt_boxes_lidar[i] = gt_boxes_lidar[i][mask[i]]
                         anno['num_points_in_gt'] = anno['num_points_in_gt'][mask[i]]
 
-            input_dict.update({
-                'gt_names': np.concatenate([anno['name'] for anno in annos],axis=0),
-                'gt_boxes': np.concatenate(gt_boxes_lidar,axis=0),
-                'num_points_in_gt': np.concatenate([anno.get('num_points_in_gt', None) for anno in annos],axis=-1)
-            })
+                input_dict.update({
+                    'gt_names': np.concatenate([anno['name'] for anno in annos],axis=0),
+                    'gt_boxes': np.concatenate(gt_boxes_lidar,axis=0),
+                    'num_points_in_gt': np.concatenate([anno.get('num_points_in_gt', None) for anno in annos],axis=-1)
+                })
 
 
-            data_dict = self.prepare_data(data_dict=input_dict)
-            data_dict['metadata'] = info.get('metasdata', info['frame_id'])
-            data_dict.pop('num_points_in_gt', None)
-            if len(sample_idx_list) == 0 or self.dataset_cfg[
-                'SEQUENCE_CONFIG'].ENABLED:
-                return data_dict
+        data_dict = self.prepare_data(data_dict=input_dict)
+        data_dict['metadata'] = info.get('metasdata', info['frame_id'])
+        data_dict.pop('num_points_in_gt', None)
 
-            data_dicts['points'].append(data_dict['points'])
-            data_dicts['gt_boxes'].append(data_dict['gt_boxes'])
+        return data_dict
 
-            data_dicts['voxels'].append(data_dict['voxels'])
-            data_dicts['voxel_coords'].append(data_dict['voxel_coords'])
-            data_dicts['voxel_num_points'].append(data_dict['voxel_num_points'])
+
 
         F = len(sample_idx_list)
         num_voxels = [voxel.shape[0] for voxel in data_dicts['voxels']]
