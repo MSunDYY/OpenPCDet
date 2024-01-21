@@ -1062,8 +1062,8 @@ if __name__ == '__main__':
         create_waymo_infos(
             dataset_cfg=dataset_cfg,
             class_names=['Vehicle', 'Pedestrian', 'Cyclist'],
-            data_path=ROOT_DIR / '../data' / 'waymo_full',
-            save_path=ROOT_DIR / '../data' / 'waymo_full',
+            data_path=ROOT_DIR / '../data' / 'waymo',
+            save_path=ROOT_DIR / '../data' / 'waymo',
             raw_data_tag='raw_data/tfrecord_training',
             processed_data_tag=args.processed_data_tag,
             update_info_only=args.update_info_only
