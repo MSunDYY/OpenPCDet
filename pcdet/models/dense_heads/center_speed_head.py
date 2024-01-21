@@ -123,7 +123,7 @@ class CenterSpeedHead(nn.Module):
 
         """
         heatmap = gt_boxes.new_zeros(num_classes, feature_map_size[0], feature_map_size[1])
-        ret_boxes = gt_boxes.new_zeros((num_max_objs, gt_boxes.shape[-1] - 1 + 1-2))
+        ret_boxes = gt_boxes.new_zeros((num_max_objs, gt_boxes.shape[-1] - 1 + 1-2-1))
         inds = gt_boxes.new_zeros(num_max_objs).long()
         mask = gt_boxes.new_zeros(num_max_objs).long()
         ret_boxes_src = gt_boxes.new_zeros(num_max_objs, gt_boxes.shape[-1])
@@ -286,11 +286,13 @@ class CenterSpeedHead(nn.Module):
             hm_loss = self.hm_loss_func(pred_dict['hm'], target_dicts['heatmaps'][idx])
             hm_loss *= self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['cls_weight']
             speed_map = target_dicts['speed_map'][idx]
-            speed_pred = pred_dict['speed_pred']
+            speed_pred = pred_dict['speed_all']
             abs_speed_map = torch.norm(speed_map,dim=-1,p=2)
-            pillar_coordinates = pred_dict['pillar_coords'].long()
-
-
+            coordinate_all = pred_dict['coordinate_all'].long()
+            pillar_coordinates=torch.zeros((coordinate_all.shape[0],3)).long().to(device)
+            FRAME = coordinate_all[:,1].max()+1
+            pillar_coordinates[:,1:] = coordinate_all[:,2:]
+            pillar_coordinates[:,0] = coordinate_all[:,0]*FRAME+coordinate_all[:,1]
             speed_gt = speed_map[pillar_coordinates[:,0],pillar_coordinates[:,1],pillar_coordinates[:,2]]
 
             speed_loss = self.speed_loss_func(speed_pred,speed_gt[:,:-1])
@@ -448,9 +450,9 @@ class CenterSpeedHead(nn.Module):
         pred_dicts = []
         for head in self.heads_list:
             pred_dict = head(x)
-            pred_dict['classification'] = data_dict['classification']
-            pred_dict['pillar_coords'] = data_dict['pillar_coords']
-            pred_dict['speed_pred'] =data_dict['speed_pred']
+            pred_dict['is_moving'] = data_dict['is_moving']
+            pred_dict['coordinate_all'] = data_dict['coordinate_all']
+            pred_dict['speed_all'] =data_dict['speed_all']
             pred_dicts.append(pred_dict)
 
         if self.training:

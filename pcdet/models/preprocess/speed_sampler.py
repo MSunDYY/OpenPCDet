@@ -361,26 +361,44 @@ class SpeedSampler(nn.Module):
         self.offset_y = self.voxel_y / 2 + point_cloud_range[1]
         self.offset_z = self.voxel_z / 2 + point_cloud_range[2]
         self.embedding1 = nn.Sequential(
-            nn.Conv1d(in_channels=9,out_channels=16,kernel_size=1),
+            nn.Conv1d(in_channels=9, out_channels=16, kernel_size=1),
             nn.BatchNorm1d(num_features=16),
             nn.ReLU(),
-            nn.Conv1d(in_channels=16,out_channels=32,kernel_size=1),
+            nn.Conv1d(in_channels=16, out_channels=32, kernel_size=1),
             nn.BatchNorm1d(32),
             nn.ReLU(),
         )
+        self.diff_embedding1 = nn.Sequential(
+            nn.Conv1d(in_channels=9, out_channels=16, kernel_size=1),
+            nn.BatchNorm1d(num_features=16),
+            nn.ReLU(),
+            nn.Conv1d(in_channels=16, out_channels=32, kernel_size=1),
+            nn.BatchNorm1d(32),
+            nn.ReLU(),
+        )
+
         self.embedding2 = nn.Sequential(
-            nn.Conv1d(in_channels=9, out_channels=16,kernel_size=1),
+            nn.Conv1d(in_channels=9, out_channels=16, kernel_size=1),
             nn.BatchNorm1d(num_features=16),
             nn.ReLU(),
-            nn.Conv1d(in_channels=16, out_channels=32,kernel_size=1),
+            nn.Conv1d(in_channels=16, out_channels=32, kernel_size=1),
             nn.BatchNorm1d(32),
             nn.ReLU(),
         )
-        self.diff_speed_pred = nn.Sequential(
-            nn.Conv1d(in_channels=32*2,out_channels=16,kernel_size=1),
+        self.diff_embedding2 = nn.Sequential(
+            nn.Conv1d(in_channels=9, out_channels=16, kernel_size=1),
             nn.BatchNorm1d(num_features=16),
             nn.ReLU(),
-            nn.Conv1d(in_channels=16,out_channels=2,kernel_size=1)
+            nn.Conv1d(in_channels=16, out_channels=32, kernel_size=1),
+            nn.BatchNorm1d(32),
+            nn.ReLU(),
+        )
+
+        self.diff_speed_pred = nn.Sequential(
+            nn.Conv1d(in_channels=32 * 2, out_channels=16, kernel_size=1),
+            nn.BatchNorm1d(num_features=16),
+            nn.ReLU(),
+            nn.Conv1d(in_channels=16, out_channels=2, kernel_size=1)
         )
 
     def get_output_feature_dim(self):
@@ -534,69 +552,140 @@ class SpeedSampler(nn.Module):
         classification = self.sigmoid(self.classfier(aggregated_features))
         speed = self.regression(aggregated_features).permute(0, 2, 3, 1)
         is_moving = (classification > 0.5).permute(0, 2, 3, 1)
-        coordinate_1st_mask = coordinates[:, 1] > 0
-        coordinate_2st_mask = coordinates[:, 1] < F - 1
+        is_moving = is_moving[coordinates[:, 0], coordinates[:, 2], coordinates[:, 3]].squeeze()
 
+
+
+
+        if not self.training:
+            coordinate_1st_mask = (coordinates[:, 1] > 0) * is_moving
+            coordinate_2st_mask = (coordinates[:, 1] < F - 1) * is_moving
+            coordinate_all = coordinates[is_moving]
+        else:
+            coordinate_all = coordinates
+            coordinate_1st_mask = coordinates[:,1]>0
+            coordinate_2st_mask = coordinates[:,1]<F-1
         coordinate_1st = coordinates[coordinate_1st_mask]
         coordinate_2st = coordinates[coordinate_2st_mask]
-
         num_voxel_1st = [torch.unique(coordinate_1st[coordinate_1st[:, 0] == b][:, 1], return_counts=True)[1] for b in
                          range(B)]
         num_voxel_2st = [torch.unique(coordinate_2st[coordinate_2st[:, 0] == b][:, 1], return_counts=True)[1] for b in
                          range(B)]
 
-        is_moving = is_moving[coordinate_1st[:, 0], coordinate_1st[:, 2], coordinate_1st[:, 3]]
-
         speed_1st = speed[coordinate_1st[:, 0], coordinate_1st[:, 2], coordinate_1st[:, 3]]
+        speed_2st = speed[coordinate_2st[:, 0], coordinate_2st[:, 2], coordinate_2st[:, 3]]
         voxels_1st = voxels[coordinate_1st_mask]
         voxels_2st = voxels[coordinate_2st_mask]
         n_point_1st = voxel_num_points[coordinate_1st_mask]
         n_point_2st = voxel_num_points[coordinate_2st_mask]
-        proxy_points = torch.zeros(voxels_1st.shape[0], 3).to(device)
-        proxy_points[:, :2] = coordinate_1st[:, 2:] * torch.tensor(self.voxel_size[:2])[None, :].to(
+
+        proxy_points_1st = torch.zeros(voxels_1st.shape[0], 3).to(device)
+        proxy_points_2st = torch.zeros(voxels_2st.shape[0], 3).to(device)
+
+        proxy_points_1st[:, :2] = coordinate_1st[:, 2:] * torch.tensor(self.voxel_size[:2])[None, :].to(
             device) + torch.tensor(
             self.point_cloud_range[:2])[None, :].to(device) + (torch.tensor(self.voxel_size[:2]) / 2)[None, :].to(
             device)
-        proxy_points[:, 2] = voxels_1st[:, :, 2].sum(dim=-1) / n_point_1st
-        xyz = points_all[points_all[:, -1] > 0][:, 1:]
+        proxy_points_2st[:, :2] = coordinate_2st[:, 2:] * torch.tensor(self.voxel_size[:2])[None, :].to(
+            device) + torch.tensor(
+            self.point_cloud_range[:2])[None, :].to(device) + (torch.tensor(self.voxel_size[:2]) / 2)[None, :].to(
+            device)
 
-        idx, empty_ball_mask = ball_query(0.5, 8, xyz[:,:3].contiguous(),
+        proxy_points_1st[:, 2] = voxels_1st[:, :, 2].sum(dim=-1) / n_point_1st
+        proxy_points_2st[:, 2] = voxels_2st[:, :, 2].sum(dim=-1) / n_point_2st
+        xyz = points_all[points_all[:, -1] > 0][:, 1:]
+        idx, empty_ball_mask = ball_query(0.5, 8, xyz[:, :3].contiguous(),
                                           num_points_all[:, 1:].reshape(-1).int().contiguous(),
-                                          proxy_points.contiguous(),
+                                          proxy_points_1st.contiguous(),
                                           torch.concat(num_voxel_1st).int().contiguous())
 
         grouped_feature_1st = grouping_operation(xyz.contiguous(), num_points_all[:, 1:].reshape(-1).int().contiguous(),
                                                  idx.contiguous(), torch.concat(num_voxel_1st).int().contiguous())
+        grouped_feature_1st = torch.concat(
+            [grouped_feature_1st, grouped_feature_1st[:, :3, :] - proxy_points_1st[:, :, None]], dim=1)
 
-        refer_points = torch.zeros(voxels_1st.shape[0], 3).to(device)
-        refer_points[:, :2] = coordinate_1st[:, 2:] * torch.tensor(self.voxel_size[:2])[None, :].to(
+        xyz = points_all[points_all[:, -1] < (F - 1) * 0.1][:, 1:]
+        idx, empty_ball_mask = ball_query(0.5, 8, xyz[:, :3].contiguous(),
+                                          num_points_all[:, :-1].reshape(-1).int().contiguous(),
+                                          proxy_points_2st.contiguous(),
+                                          torch.concat(num_voxel_2st).int().contiguous())
+        grouped_feature_2st = grouping_operation(xyz.contiguous(),
+                                                 num_points_all[:, :-1].reshape(-1).int().contiguous(),
+                                                 idx.contiguous(), torch.concat(num_voxel_2st).int().contiguous())
+        grouped_feature_2st = torch.concat(
+            [grouped_feature_2st, grouped_feature_2st[:, :3, :] - proxy_points_2st[:, :, None]], dim=1)
+        refer_points_1st = torch.zeros(voxels_1st.shape[0], 3).to(device)
+        refer_points_2st = torch.zeros(voxels_2st.shape[0], 3).to(device)
+        refer_points_1st[:, :2] = coordinate_1st[:, 2:] * torch.tensor(self.voxel_size[:2])[None, :].to(
             device) + torch.tensor(
             self.point_cloud_range[:2])[None, :].to(device) + (torch.tensor(self.voxel_size[:2]) / 2)[None, :].to(
-            device)+speed_1st
-        refer_points[:,2]=voxels_1st[:,:,2].sum(dim=-1)/n_point_1st
-        xyz = points_all[points_all[:, -1] < (F - 1) * 0.1][:,1:]
-        idx, empty_ball_mask = ball_query(1, 8, xyz[:,:3].contiguous(),
-                                          num_points_all[:, :-1].reshape(-1).int().contiguous(),
-                                          refer_points.contiguous(),
-                                          torch.concat(num_voxel_1st).int().contiguous())
-        grouped_feature_2st = grouping_operation(xyz.contiguous(),num_points_all[:,:-1].reshape(-1).int().contiguous(),
-                                                 idx,torch.concat(num_voxel_1st).int().contiguous())
+            device) + speed_1st
+        refer_points_2st[:, :2] = coordinate_2st[:, 2:] * torch.tensor(self.voxel_size[:2])[None, :].to(
+            device) + torch.tensor(
+            self.point_cloud_range[:2])[None, :].to(device) + (torch.tensor(self.voxel_size[:2]) / 2)[None, :].to(
+            device) + speed_2st
 
-        grouped_feature_1st = torch.concat([grouped_feature_1st,grouped_feature_1st[:,:3]-proxy_points[:,:,None]],dim=1)
-        grouped_feature_2st = torch.concat([grouped_feature_2st,grouped_feature_2st[:,:3]-proxy_points[:,:,None]],dim=1)
+        refer_points_1st[:, 2] = voxels_1st[:, :, 2].sum(dim=-1) / n_point_1st
+        refer_points_2st[:, 2] = voxels_2st[:, :, 2].sum(dim=-1) / n_point_2st
+        xyz = points_all[points_all[:, -1] < (F - 1) * 0.1][:, 1:]
+        idx, empty_ball_mask = ball_query(1, 8, xyz[:, :3].contiguous(),
+                                          num_points_all[:, :-1].reshape(-1).int().contiguous(),
+                                          refer_points_1st.contiguous(),
+                                          torch.concat(num_voxel_1st).int().contiguous())
+        diff_grouped_feature_1st = grouping_operation(xyz.contiguous(),
+                                                      num_points_all[:, :-1].reshape(-1).int().contiguous(),
+                                                      idx, torch.concat(num_voxel_1st).int().contiguous())
+
+        diff_grouped_feature_1st = torch.concat(
+            [diff_grouped_feature_1st, diff_grouped_feature_1st[:, :3] - refer_points_1st[:, :, None]],
+            dim=1)
+        xyz = points_all[points_all[:, -1] > 0][:, 1:]
+        idx, empty_ball_mask = ball_query(1, 8, xyz[:, :3].contiguous(),
+                                          num_points_all[:, :-1].reshape(-1).int().contiguous(),
+                                          refer_points_2st.contiguous(),
+                                          torch.concat(num_voxel_2st).int().contiguous())
+        diff_grouped_feature_2st = grouping_operation(xyz.contiguous(),
+                                                      num_points_all[:, 1:].reshape(-1).int().contiguous(),
+                                                      idx, torch.concat(num_voxel_2st).int().contiguous())
+        diff_grouped_feature_2st = torch.concat(
+            [diff_grouped_feature_2st, diff_grouped_feature_2st[:, :3] - refer_points_2st[:, :, None]],
+            dim=1)
 
         grouped_feature_1st = self.embedding1(grouped_feature_1st)
+        diff_grouped_feature_1st = self.diff_embedding1(diff_grouped_feature_1st)
+
         grouped_feature_2st = self.embedding2(grouped_feature_2st)
-
-        grouped_feature_1st = Functional.avg_pool1d(grouped_feature_1st,kernel_size=[grouped_feature_1st.shape[-1]]).squeeze()
-        grouped_feature_2st = Functional.avg_pool1d(grouped_feature_2st,kernel_size=[grouped_feature_2st.shape[-1]]).squeeze()
+        diff_grouped_feature_2st = self.diff_embedding2(diff_grouped_feature_2st
+                                                        )
+        grouped_feature_1st = Functional.avg_pool1d(grouped_feature_1st,
+                                                    kernel_size=[grouped_feature_1st.shape[-1]]).squeeze()
+        grouped_feature_2st = Functional.avg_pool1d(grouped_feature_2st,
+                                                    kernel_size=[diff_grouped_feature_2st.shape[-1]]).squeeze()
         # grouped_feature = grouped_xyz.permute(0,2,1)
-        grouped_feature = torch.concat([grouped_feature_1st-grouped_feature_2st,grouped_feature_1st],dim=-1)
-        diff_speed = self.diff_speed_pred(grouped_feature)
-        speed_1st = speed_1st+diff_speed
+        diff_grouped_feature_1st = Functional.avg_pool1d(diff_grouped_feature_1st,
+                                                         kernel_size=[diff_grouped_feature_1st.shape[-1]]).squeeze()
+        diff_grouped_feature_2st = Functional.avg_pool1d(diff_grouped_feature_2st,
+                                                         kernel_size=[diff_grouped_feature_2st.shape[-1]]).squeeze()
 
+        grouped_feature_1st = torch.concat([grouped_feature_1st - diff_grouped_feature_1st, grouped_feature_1st],
+                                           dim=-1)
+        grouped_feature_2st = torch.concat([grouped_feature_2st - diff_grouped_feature_2st, grouped_feature_2st],
+                                           dim=-1)
 
-
+        diff_speed_1st = self.diff_speed_pred(grouped_feature_1st.unsqueeze(-1))
+        diff_speed_2st = self.diff_speed_pred(grouped_feature_2st.unsqueeze(-1))
+        speed_1st = speed_1st + diff_speed_1st.squeeze()
+        speed_2st = speed_2st + diff_speed_2st.squeeze()
+        speed_all = torch.zeros((coordinate_all.shape[0], 2)).to(device)
+        speed_all[coordinate_all[:, 1] == F - 1] = speed_1st[coordinate_1st[:, 1] == F - 1]
+        speed_all[coordinate_all[:, 1] == 0] = speed_2st[coordinate_2st[:, 1] == 0]
+        speed_all[(coordinate_all[:, 1] > 0) & (coordinate_all[:, 1] < F - 1)] = \
+        (speed_1st[(coordinate_1st[:, 1] > 0) & (coordinate_1st[:, 1] < F - 1)]+
+        speed_2st[(coordinate_2st[:, 1] > 0) & (coordinate_2st[:, 1] < F - 1)])/2
+        batch_dict['coordinate_all'] = coordinate_all
+        batch_dict['speed_all'] = speed_all
+        batch_dict['is_moving'] = is_moving
+        return batch_dict
         grouped_feature[:, :3] -= proxy_points[:, None, :]
 
         pillar_coords = motion_features.indices[cur_motion_mask]
@@ -619,10 +708,10 @@ class SpeedSampler(nn.Module):
                                 batch_dict['gt_boxes'].shape[-1])).to(device)
         for i in range(len(num_points)):
             batch_dict['points'][:, 0][(num_points[i - 1] if i > 0 else 0):num_points[i]] = i
-            batch_dict['voxel_coords'][:, 0][(num_voxels[i - 1] if i > 0 else 0):num_points[i]] = i
-            gt_boxes[i][:num_gt_boxes[i]] = batch_dict['gt_boxes'][i // F][
-                                            (sum_gt_boxes[i // F][i % F - 1] if i % F else 0):sum_gt_boxes[i // F][
-                                                i % F]]
+        batch_dict['voxel_coords'][:, 0][(num_voxels[i - 1] if i > 0 else 0):num_points[i]] = i
+        gt_boxes[i][:num_gt_boxes[i]] = batch_dict['gt_boxes'][i // F][
+                                        (sum_gt_boxes[i // F][i % F - 1] if i % F else 0): sum_gt_boxes[i // F][
+                                            i % F]]
         batch_dict['gt_boxes'] = gt_boxes
         batch_dict['batch_size'] = num_points.size()[0]
         return batch_dict
