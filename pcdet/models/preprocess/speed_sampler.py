@@ -551,6 +551,7 @@ class SpeedSampler(nn.Module):
             aggregated_features = motion_features
         classification = self.sigmoid(self.classfier(aggregated_features))
         speed = self.regression(aggregated_features).permute(0, 2, 3, 1)
+        batch_dict['speed_map_pred'] = speed
         is_moving = (classification > 0.5).permute(0, 2, 3, 1)
         is_moving = is_moving[coordinates[:, 0], coordinates[:, 2], coordinates[:, 3]].squeeze()
 
@@ -685,6 +686,9 @@ class SpeedSampler(nn.Module):
         batch_dict['coordinate_all'] = coordinate_all
         batch_dict['speed_all'] = speed_all
         batch_dict['is_moving'] = is_moving
+
+        batch_dict['points'][:,0] = batch_dict['points'][:,0]*F+batch_dict['points'][:,-1]*10
+        batch_dict['batch_size']*=F
         return batch_dict
         grouped_feature[:, :3] -= proxy_points[:, None, :]
 

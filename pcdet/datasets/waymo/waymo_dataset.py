@@ -327,7 +327,8 @@ class WaymoDataset(DatasetTemplate):
         annos_all=[info['annos']]
 
         gt_boxes_cur = info['annos']['gt_boxes_lidar']
-        gt_boxes_cur = np.concatenate([gt_boxes_cur, np.zeros((gt_boxes_cur.shape[0], 1))], axis=-1)
+        if not concat:
+            gt_boxes_cur = np.concatenate([gt_boxes_cur, np.zeros((gt_boxes_cur.shape[0], 1))], axis=-1)
         gt_boxes = [gt_boxes_cur]
 
         for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
@@ -529,7 +530,7 @@ class WaymoDataset(DatasetTemplate):
                     input_dict['label'] = label
                     assert label.shape[0] == points.shape[0]
                 if self.dataset_cfg.get('TRAIN_WITH_SPEED', False):
-                    assert gt_boxes_lidar[0].shape[-1] == 10
+                    assert gt_boxes_lidar[0].shape[-1] == 9
                 else:
                     gt_boxes_lidar = gt_boxes_lidar[:, 0:7]
 
@@ -715,7 +716,7 @@ class WaymoDataset(DatasetTemplate):
             points = self.get_lidar(sequence_name, sample_idx)
 
             if use_sequence_data:
-                points, num_points_all, sample_idx_pre_list, _, _, _, _ = self.get_sequence_data(
+                points, num_points_all, sample_idx_pre_list, _, _, _, _,_,_ = self.get_sequence_data(
                     info, points, sequence_name, sample_idx, self.dataset_cfg.SEQUENCE_CONFIG
                 )
 
@@ -956,25 +957,25 @@ def create_waymo_infos(dataset_cfg, class_names, data_path, save_path,
     os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
     print('---------------Start to generate data infos---------------')
 
-    dataset.set_split(train_split)
-    waymo_infos_train = dataset.get_infos(
-        raw_data_path=data_path / raw_data_tag,
-        save_path=save_path / processed_data_tag, num_workers=workers, has_label=True,
-        sampled_interval=1, update_info_only=update_info_only
-    )
-    with open(train_filename, 'wb') as f:
-        pickle.dump(waymo_infos_train, f)
-    print('----------------Waymo info train file is saved to %s----------------' % train_filename)
-
-    dataset.set_split(val_split)
-    waymo_infos_val = dataset.get_infos(
-        raw_data_path=data_path / raw_data_tag.replace('training','validating'),
-        save_path=save_path / processed_data_tag, num_workers=workers, has_label=True,
-        sampled_interval=1, update_info_only=update_info_only
-    )
-    with open(val_filename, 'wb') as f:
-        pickle.dump(waymo_infos_val, f)
-    print('----------------Waymo info val file is saved to %s----------------' % val_filename)
+    # dataset.set_split(train_split)
+    # waymo_infos_train = dataset.get_infos(
+    #     raw_data_path=data_path / raw_data_tag,
+    #     save_path=save_path / processed_data_tag, num_workers=workers, has_label=True,
+    #     sampled_interval=1, update_info_only=update_info_only
+    # )
+    # with open(train_filename, 'wb') as f:
+    #     pickle.dump(waymo_infos_train, f)
+    # print('----------------Waymo info train file is saved to %s----------------' % train_filename)
+    #
+    # dataset.set_split(val_split)
+    # waymo_infos_val = dataset.get_infos(
+    #     raw_data_path=data_path / raw_data_tag.replace('training','validating'),
+    #     save_path=save_path / processed_data_tag, num_workers=workers, has_label=True,
+    #     sampled_interval=1, update_info_only=update_info_only
+    # )
+    # with open(val_filename, 'wb') as f:
+    #     pickle.dump(waymo_infos_val, f)
+    # print('----------------Waymo info val file is saved to %s----------------' % val_filename)
 
     if update_info_only:
         return

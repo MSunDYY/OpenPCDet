@@ -201,6 +201,8 @@ def process_single_sequence(sequence_file, save_path, sampled_interval, has_labe
     if not sequence_file.exists():
         print('NotFoundError: %s' % sequence_file)
         return []
+    if sequence_name.startswith('segment-147523419'):
+        print('here')
 
     dataset = tf.data.TFRecordDataset(str(sequence_file), compression_type='')
     dataset = dataset.apply(tf.data.experimental.ignore_errors())

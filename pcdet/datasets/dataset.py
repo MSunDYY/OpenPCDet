@@ -248,13 +248,9 @@ class DatasetTemplate(torch_data.Dataset):
                         if key=='voxel_coords':
                             num_voxels = data_dict['num_voxels']
                             for i,item in enumerate(val):
-                                val[i] = np.split(item,np.cumsum(num_voxels[i])[:-1])
+                                val[i] = np.split(item,np.cumsum(num_voxels[i][:-1]))
                             val = [item for val0 in val for item in val0]
-                        elif key=='points':
-                            num_points = data_dict['num_voxels_all']
-                            for i,item in enumerate(val):
-                                val[i] = item[item[:,-1]==i*0.1]
-                            val = [item for val0 in val for item in val0]
+
                     coors=[]
                     for i, coor in enumerate(val):
                         coor_pad = np.pad(coor, ((0, 0), (1, 0)), mode='constant', constant_values=i)

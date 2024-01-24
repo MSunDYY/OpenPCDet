@@ -154,7 +154,7 @@ class DataProcessor(object):
             coordinates = []
             num_points = []
             frame_num = int(data_dict['gt_boxes'][:,9].max()+1)
-            num_voxels = np.zeros((frame_num))
+            num_voxels = np.zeros((frame_num)).astype(np.int64)
             for frame in range(int(data_dict['gt_boxes'][:, 9].max()+1)):
                 voxel_output = self.voxel_generator.generate(points[points[:, -1] == 0.1 * frame,:-1])
                 voxels.append(voxel_output[0])
