@@ -126,7 +126,7 @@ class CenterSpeedHead(nn.Module):
 
         """
         heatmap = gt_boxes.new_zeros(num_classes, feature_map_size[0], feature_map_size[1])
-        ret_boxes = gt_boxes.new_zeros((num_max_objs, gt_boxes.shape[-1] + 1 - 2))
+        ret_boxes = gt_boxes.new_zeros((num_max_objs, gt_boxes.shape[-1] + 1 - (0 if self.train_box else 2)))
         inds = gt_boxes.new_zeros(num_max_objs).long()
         mask = gt_boxes.new_zeros(num_max_objs).long()
         ret_boxes_src = gt_boxes.new_zeros(num_max_objs, gt_boxes.shape[-1])
@@ -229,15 +229,18 @@ class CenterSpeedHead(nn.Module):
                 else:
                     gt_boxes_single_head = torch.cat(gt_boxes_single_head, dim=0)
 
+
                 heatmap, ret_boxes, inds, mask, ret_boxes_src, speed_map = self.assign_target_of_single_head(
-                    num_classes=len(cur_class_names), gt_boxes=gt_boxes_single_head.cpu(),
+                    num_classes=len(cur_class_names), gt_boxes=gt_boxes_single_head.to('cpu'),
                     feature_map_size=feature_map_size, feature_map_stride=target_assigner_cfg.FEATURE_MAP_STRIDE,
                     num_max_objs=target_assigner_cfg.NUM_MAX_OBJS,
                     gaussian_overlap=target_assigner_cfg.GAUSSIAN_OVERLAP,
                     min_radius=target_assigner_cfg.MIN_RADIUS,
 
                 )
+
                 heatmap_list.append(heatmap.to(gt_boxes_single_head.device))
+
                 target_boxes_list.append(ret_boxes.to(gt_boxes_single_head.device))
                 inds_list.append(inds.to(gt_boxes_single_head.device))
                 masks_list.append(mask.to(gt_boxes_single_head.device))
