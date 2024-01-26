@@ -150,16 +150,19 @@ class CenterSpeedHead(nn.Module):
         radius = torch.clamp_min(radius.int(), min=min_radius)
 
         boxes = gt_boxes[:, :7].contiguous()
-        speed = gt_boxes[:, 7:9].contiguous()
-        speed = torch.cat([speed, torch.arange(1, boxes.shape[0] + 1)[:, None]], dim=-1)
 
-        speed_map = torch.zeros([size * feature_map_stride for size in feature_map_size] + [speed.shape[-1]]).to(device)
         boxes[:, :2] = (boxes[:, :2] - torch.from_numpy(self.point_cloud_range)[:2]) / torch.tensor(
             self.voxel_size[:2])[None, :]
         boxes[:, 3:5] = (boxes[:, 3:5]) / torch.tensor(self.voxel_size[:2])[None, :]
         boxes[:, 6][boxes[:, 6] < 0] += torch.pi
-        box2map.box2map_gpu(boxes.to(device), speed_map, speed.to(device))
+        if not self.train_box:
+            speed = gt_boxes[:, 7:9].contiguous()
+            speed = torch.cat([speed, torch.arange(1, boxes.shape[0] + 1)[:, None]], dim=-1)
 
+            speed_map = torch.zeros([size * feature_map_stride for size in feature_map_size] + [speed.shape[-1]]).to(device)
+            box2map.box2map_gpu(boxes.to(device), speed_map, speed.to(device))
+        else:
+            speed_map = None
         for k in range(min(num_max_objs, gt_boxes.shape[0])):
             if dx[k] <= 0 or dy[k] <= 0:
                 continue
@@ -238,20 +241,20 @@ class CenterSpeedHead(nn.Module):
                     min_radius=target_assigner_cfg.MIN_RADIUS,
 
                 )
-
-                heatmap_list.append(heatmap.to(gt_boxes_single_head.device))
-
-                target_boxes_list.append(ret_boxes.to(gt_boxes_single_head.device))
-                inds_list.append(inds.to(gt_boxes_single_head.device))
+                if not self.train_box:
+                    speed_map_list.append(speed_map.to(gt_boxes_single_head.device))
                 masks_list.append(mask.to(gt_boxes_single_head.device))
                 target_boxes_src_list.append(ret_boxes_src.to(gt_boxes_single_head.device))
-                speed_map_list.append(speed_map.to(gt_boxes_single_head.device))
+                target_boxes_list.append(ret_boxes.to(gt_boxes_single_head.device))
+                heatmap_list.append(heatmap.to(gt_boxes_single_head.device))
+                inds_list.append(inds.to(gt_boxes_single_head.device))
             ret_dict['heatmaps'].append(torch.stack(heatmap_list, dim=0).to(device))
             ret_dict['target_boxes'].append(torch.stack(target_boxes_list, dim=0).to(device))
             ret_dict['inds'].append(torch.stack(inds_list, dim=0).to(device))
             ret_dict['masks'].append(torch.stack(masks_list, dim=0).to(device))
             ret_dict['target_boxes_src'].append(torch.stack(target_boxes_src_list, dim=0).to(device))
-            ret_dict['speed_map'].append(torch.stack(speed_map_list, dim=0).to(device))
+            if not self.train_box:
+                ret_dict['speed_map'].append(torch.stack(speed_map_list, dim=0).to(device))
         return ret_dict
 
     def spatial_consistency_loss(self, speed_pred_coords, speed_pred, speed_gt):
