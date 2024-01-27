@@ -69,7 +69,7 @@ class WaymoDataset(DatasetTemplate):
 
         num_skipped_infos = 0
         leaved_files=[]
-        for k in range(len(self.sample_sequence_list)):
+        for k in tqdm(range(len(self.sample_sequence_list))):
 
             file_name = self.root_path/'raw_data/tfrecord_validating'/self.sample_sequence_list[k]
             if not file_name.exists():
