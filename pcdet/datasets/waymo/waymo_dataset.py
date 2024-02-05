@@ -144,7 +144,7 @@ class WaymoDataset(DatasetTemplate):
             points = self.get_lidar(sequence_name, sample_idx)
             common_utils.sa_create(f"shm://{sa_key}", points)
 
-        dist.barrier()
+        # dist.barrier()
         self.logger.info('Training data has been saved to shared memory')
 
     def clean_shared_memory(self):

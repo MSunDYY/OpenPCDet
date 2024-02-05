@@ -503,16 +503,16 @@ class DataBaseSampler(object):
                                                axis=0)
                 total_valid_sampled_dict.extend(valid_sampled_dict)
 
-            sampled_gt_boxes = existed_boxes[gt_boxes.shape[0]:, :]
+        sampled_gt_boxes = existed_boxes[gt_boxes.shape[0]:, :]
 
-            if total_valid_sampled_dict.__len__() > 0:
-                sampled_gt_boxes2d = np.concatenate(sampled_gt_boxes2d, axis=0) if len(sampled_gt_boxes2d) > 0 else None
-                sampled_mv_height = np.concatenate(sampled_mv_height, axis=0) if len(sampled_mv_height) > 0 else None
+        if total_valid_sampled_dict.__len__() > 0:
+            sampled_gt_boxes2d = np.concatenate(sampled_gt_boxes2d, axis=0) if len(sampled_gt_boxes2d) > 0 else None
+            sampled_mv_height = np.concatenate(sampled_mv_height, axis=0) if len(sampled_mv_height) > 0 else None
 
-                data_dict = self.add_sampled_boxes_to_scene(
-                    data_dict, sampled_gt_boxes, total_valid_sampled_dict, sampled_mv_height, sampled_gt_boxes2d
-                )
+            data_dict = self.add_sampled_boxes_to_scene(
+                data_dict, sampled_gt_boxes, total_valid_sampled_dict, sampled_mv_height, sampled_gt_boxes2d
+            )
 
-            data_dict.pop('gt_boxes_mask')
-            return data_dict
+        data_dict.pop('gt_boxes_mask')
+        return data_dict
 
