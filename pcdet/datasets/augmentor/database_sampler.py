@@ -92,12 +92,11 @@ class DataBaseSampler(object):
         db_data_path = self.root_path.resolve() / self.sampler_cfg['DB_DATA_PATH'][0]
         sa_key = self.sampler_cfg['DB_DATA_PATH'][0]
 
-        if cur_rank % num_gpus == 0 and not os.path.exists(f"/dev/shm/{sa_key}"):
-            gt_database_data = np.load(db_data_path)
-           # common_utils.sa_create(f"shm://{sa_key}", gt_database_data)
-        else:
-            gt_database_data = np.load(db_data_path)
-            self.gt_database_data = gt_database_data
+        #if cur_rank % num_gpus == 0 and not os.path.exists(f"/dev/shm/{sa_key}"):
+        #    gt_database_data = np.load(db_data_path)
+        #    common_utils.sa_create(f"shm://{sa_key}", gt_database_data)
+        self.gt_database_data = np.load(db_data_path)
+
         if num_gpus > 1:
             dist.barrier()
         self.logger.info('GT database has been saved to shared memory')
