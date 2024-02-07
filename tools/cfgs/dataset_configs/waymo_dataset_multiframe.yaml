@@ -87,4 +87,4 @@ DATA_PROCESSOR:
         'train': 180000,
         'test': 400000
       }
-      GPU: False
+      GPU: True
