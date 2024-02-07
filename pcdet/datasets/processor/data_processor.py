@@ -25,6 +25,7 @@ class VoxelGeneratorWrapper():
                 self.spconv_ver = 1
             except:
                 from spconv.utils import Point2VoxelCPU3d as VoxelGenerator
+                # from spconv.utils import Point2VoxelGPU3d as VoxelGenerator
                 self.spconv_ver = 2
 
         if self.spconv_ver == 1:
@@ -360,6 +361,8 @@ class DataProcessor(object):
         """
 
         for cur_processor in self.data_processor_queue:
+            if cur_processor.keywords['config'].NAME=='transform_points_to_voxels' and cur_processor.keywords['config'].get('GPU',False):
+                continue
             data_dict = cur_processor(data_dict=data_dict)
 
         return data_dict
