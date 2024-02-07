@@ -38,8 +38,8 @@ class CenterPoint(Detector3DTemplate):
                 batch_dict['voxel_coords'] = torch.concat(coordinates_list,dim=0)
                 batch_dict['voxel_num_points'] = torch.concat(num_voxel_points_list,dim=0)
 
-                if not batch_dict['use_lead_xyz']:
-                    voxels = voxels[...,3:]
+                # if not batch_dict['use_lead_xyz']:
+                #     voxels = voxels[...,3:]
 
         for cur_module in self.module_list:
             batch_dict = cur_module(batch_dict)
