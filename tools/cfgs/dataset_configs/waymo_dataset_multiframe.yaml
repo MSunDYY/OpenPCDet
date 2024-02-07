@@ -52,11 +52,11 @@ DATA_AUGMENTOR:
 #          FILTER_OBJ_POINTS_BY_TIMESTAMP: True
 #          TIME_RANGE: [0.3, 0.0]  # 0.3s-0.0s indicates 4 frames
 
-#        - NAME: random_world_flip
-#          ALONG_AXIS_LIST: ['x', 'y']
-#
-#        - NAME: random_world_rotation
-#          WORLD_ROT_ANGLE: [-0.78539816, 0.78539816]
+        - NAME: random_world_flip
+          ALONG_AXIS_LIST: ['x', 'y']
+
+        - NAME: random_world_rotation
+          WORLD_ROT_ANGLE: [-0.78539816, 0.78539816]
 #
         - NAME: random_world_scaling
           WORLD_SCALE_RANGE: [0.95, 1.05]
