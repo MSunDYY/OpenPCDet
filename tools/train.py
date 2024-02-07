@@ -345,6 +345,7 @@ def train_my_model(args, cfg):
 
 if __name__ == '__main__':
     args, cfg = parse_config()
+
     if args.model_name == 'detection':
         main(args, cfg)
     else:
