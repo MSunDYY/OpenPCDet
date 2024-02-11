@@ -30,11 +30,15 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
         batch_time = common_utils.AverageMeter()
         forward_time = common_utils.AverageMeter()
         losses_m = common_utils.AverageMeter()
-
     end = time.time()
+
     for cur_it in range(start_it, total_it_each_epoch):
         try:
+
+            t1 = time.time()
             batch = next(dataloader_iter)
+            t2 = time.time()
+            print('cpu_time:',t2-t1)
         except StopIteration:
             dataloader_iter = iter(train_loader)
             batch = next(dataloader_iter)
@@ -55,16 +59,21 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
 
         model.train()
         optimizer.zero_grad()
+        st = time.time()
 
         with torch.cuda.amp.autocast(enabled=use_amp):
             loss, tb_dict, disp_dict = model_func(model, batch)
-
+        t3 = time.time()
+        print('train_time:',t3-t2)
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
         clip_grad_norm_(model.parameters(), optim_cfg.GRAD_NORM_CLIP)
         scaler.step(optimizer)
         scaler.update()
+        t4 = time.time()
 
+        print('bf:',t4-t3)
+        print('-------------------')
         accumulated_iter += 1
  
         cur_forward_time = time.time() - data_timer
