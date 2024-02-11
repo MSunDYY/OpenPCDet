@@ -43,7 +43,8 @@ class CenterPoint(Detector3DTemplate):
 
         for cur_module in self.module_list:
             batch_dict = cur_module(batch_dict)
-
+        import time
+        time.sleep(2)
         if self.training:
             loss, tb_dict, disp_dict = self.get_training_loss()
 
