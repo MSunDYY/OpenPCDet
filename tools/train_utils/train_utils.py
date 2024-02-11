@@ -70,10 +70,7 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
         clip_grad_norm_(model.parameters(), optim_cfg.GRAD_NORM_CLIP)
         scaler.step(optimizer)
         scaler.update()
-        t4 = time.time()
 
-        print('bf:',t4-t3)
-        print('-------------------')
         accumulated_iter += 1
  
         cur_forward_time = time.time() - data_timer
@@ -85,6 +82,10 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
         avg_forward_time = commu_utils.average_reduce_value(cur_forward_time)
         avg_batch_time = commu_utils.average_reduce_value(cur_batch_time)
 
+        t4 = time.time()
+
+        print('bf:', t4 - t3)
+        print('-------------------')
         # log to console and tensorboard
         if rank == 0:
             batch_size = batch.get('batch_size', None)
