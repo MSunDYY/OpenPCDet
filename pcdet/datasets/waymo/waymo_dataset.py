@@ -418,6 +418,8 @@ class WaymoDataset(DatasetTemplate):
         return len(self.infos)
 
     def __getitem__(self, index):
+        import time
+        t1 = time.time()
         if self._merge_all_iters_to_one_epoch:
             index = index % len(self.infos)
         info = copy.deepcopy(self.infos[index])
@@ -442,7 +444,7 @@ class WaymoDataset(DatasetTemplate):
         data_dicts['voxels'] = []
         data_dicts['voxel_coords'] = []
         data_dicts['voxel_num_points'] = []
-
+        t2 = time.time()
         info = copy.deepcopy(self.infos[index])
         pc_info = info['point_cloud']
         sequence_name = pc_info['lidar_sequence']
@@ -483,7 +485,7 @@ class WaymoDataset(DatasetTemplate):
             'points': points,
             'frame_id': info['frame_id'],
         })
-
+        t3 = time.time()
         if 'annos' in info:
             if annos==None:
                 annos = info['annos']
@@ -547,11 +549,12 @@ class WaymoDataset(DatasetTemplate):
                     'num_points_in_gt': np.concatenate([anno.get('num_points_in_gt', None) for anno in annos],axis=-1)
                 })
 
-
+        t4 = time.time()
         data_dict = self.prepare_data(data_dict=input_dict)
         data_dict['metadata'] = info.get('metasdata', info['frame_id'])
         data_dict.pop('num_points_in_gt', None)
-
+        t5 = time.time()
+        print('{:.3f} {:.3f} {:.3f} {:.3f}'.format(t2-t1,t3-t2,t4-t3,t5-t4))
         return data_dict
 
 
