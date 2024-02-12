@@ -4,7 +4,7 @@ DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/waymo_dataset_multiframe.yaml
 
     SAMPLED_INTERVAL: {
-        'train': 5,
+        'train': 500,
         'test': 1
     }
 

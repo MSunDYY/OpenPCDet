@@ -56,6 +56,8 @@ class WaymoDataset(DatasetTemplate):
         self.n2_1 = 0
         self.n2_2 = 0
         self.n2_3 = 0
+        self.nn = 0
+        self.tt = 0
 
     def set_split(self, split):
         super().__init__(
@@ -218,7 +220,8 @@ class WaymoDataset(DatasetTemplate):
     def get_lidar(self, sequence_name, sample_idx):
         lidar_file = self.data_path / sequence_name / ('%04d.npy' % sample_idx)
         try:
-            point_features = np.load(lidar_file)  # (N, 7): [x, y, z, intensity, elongation, NLZ_flag]
+            point_features = np.load(lidar_file)
+
         except:
             print(lidar_file)
             exit(0)
@@ -339,7 +342,11 @@ class WaymoDataset(DatasetTemplate):
 
         for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
 
-            points_pre = self.get_lidar(sequence_name, sample_idx_pre)
+            if self.use_shared_memory and os.path.exists('/dev/shm/' + sequence_name + '___' + str(sample_idx)):
+                sa_key = f'{sequence_name}___{sample_idx}'
+                points_pre = SharedArray.attach(f"shm://{sa_key}").copy()
+            else:
+                points_pre = self.get_lidar(sequence_name, sample_idx_pre)
             if get_gt:
                 num_points_pre_temp = points_pre.shape[0]
                 info_pre = sequence_info[sample_idx_pre]
@@ -464,7 +471,16 @@ class WaymoDataset(DatasetTemplate):
             points = SharedArray.attach(f"shm://{sa_key}").copy()
         else:
             points = self.get_lidar(sequence_name, sample_idx)
+        t2_20 = time.time()
+        point2 = self.get_lidar(sequence_name, min(sample_idx + 1, 197))
+
         t2_2 = time.time()
+        point3 = self.get_lidar(sequence_name, min(sample_idx + 2, 197))
+        t3_3 = time.time()
+        points4 = self.get_lidar(sequence_name, min(sample_idx + 3, 197))
+        t3_4 = time.time()
+        print('{:.5f}  {:.5f} {:.5f} {:.5f}'.format(t2_20 - t2_1, t2_2 - t2_20, t3_3 - t2_2,t3_4-t3_3 ))
+
         if self.dataset_cfg.get('SEQUENCE_CONFIG', None) is not None and self.dataset_cfg[
             'SEQUENCE_CONFIG'].ENABLED:
             if self.dataset_cfg.get('GET_LABEL', False):
@@ -561,14 +577,12 @@ class WaymoDataset(DatasetTemplate):
         data_dict['metadata'] = info.get('metasdata', info['frame_id'])
         data_dict.pop('num_points_in_gt', None)
         t5 = time.time()
-        self.n2_1+=1
+        self.n2_1 += 1
         self.t2_1 += t2_1 - t2
         self.t2_2 += t2_2 - t2_1
         self.t2_3 += t3 - t2_2
 
-
-
-        print('{:.3f} :{:.3f} {:.3f} {:.3f}'.format(self.n2_1,self.t2_1,self.t2_2, self.t2_3))
+        # print('{:.3f} :{:.3f} {:.3f} {:.3f}'.format(self.n2_1, self.t2_1, self.t2_2, self.t2_3))
         return data_dict
 
         F = len(sample_idx_list)

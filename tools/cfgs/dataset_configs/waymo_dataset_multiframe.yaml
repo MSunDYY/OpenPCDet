@@ -18,7 +18,7 @@ FILTER_EMPTY_BOXES_FOR_TRAIN: True
 DISABLE_NLZ_FLAG_ON_POINTS: True
 
 USE_SHARED_MEMORY: False  # it will load the data to shared memory to speed up (DO NOT USE IT IF YOU DO NOT FULLY UNDERSTAND WHAT WILL HAPPEN)
-SHARED_MEMORY_FILE_LIMIT: 3500  # set it based on the size of your shared memory
+SHARED_MEMORY_FILE_LIMIT: 5000  # set it based on the size of your shared memory
 
 SEQUENCE_CONFIG:
     ENABLED: True
