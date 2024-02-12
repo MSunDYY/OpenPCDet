@@ -346,7 +346,10 @@ class WaymoDataset(DatasetTemplate):
                 sa_key = f'{sequence_name}___{sample_idx}'
                 points_pre = SharedArray.attach(f"shm://{sa_key}").copy()
             else:
+                import time
+                st = time.time()																																																																																																																																					
                 points_pre = self.get_lidar(sequence_name, sample_idx_pre)
+                print(' {:.3f}'.format(time.time()-st),end='')
             if get_gt:
                 num_points_pre_temp = points_pre.shape[0]
                 info_pre = sequence_info[sample_idx_pre]
@@ -472,14 +475,15 @@ class WaymoDataset(DatasetTemplate):
         else:
             points = self.get_lidar(sequence_name, sample_idx)
         t2_20 = time.time()
-        point2 = self.get_lidar(sequence_name, min(sample_idx + 1, 197))
+        #point2 = self.get_lidar(sequence_name, min(sample_idx + 1, 197))
 
-        t2_2 = time.time()
-        point3 = self.get_lidar(sequence_name, min(sample_idx + 2, 197))
-        t3_3 = time.time()
-        points4 = self.get_lidar(sequence_name, min(sample_idx + 3, 197))
-        t3_4 = time.time()
-        print('{:.5f}  {:.5f} {:.5f} {:.5f}'.format(t2_20 - t2_1, t2_2 - t2_20, t3_3 - t2_2,t3_4-t3_3 ))
+        #t2_2 = time.time()
+        #point3 = self.get_lidar(sequence_name, min(sample_idx + 2, 197))
+        #t3_3 = time.time()
+        #points4 = self.get_lidar(sequence_name, min(sample_idx + 3, 197))
+        #t3_4 = time.time()
+        print('----------------')
+        print('{:.5f}'.format(t2_20 - t2_1),end=' ')
 
         if self.dataset_cfg.get('SEQUENCE_CONFIG', None) is not None and self.dataset_cfg[
             'SEQUENCE_CONFIG'].ENABLED:
@@ -576,11 +580,11 @@ class WaymoDataset(DatasetTemplate):
         data_dict = self.prepare_data(data_dict=input_dict)
         data_dict['metadata'] = info.get('metasdata', info['frame_id'])
         data_dict.pop('num_points_in_gt', None)
-        t5 = time.time()
-        self.n2_1 += 1
-        self.t2_1 += t2_1 - t2
-        self.t2_2 += t2_2 - t2_1
-        self.t2_3 += t3 - t2_2
+        #t5 = time.time()
+        #self.n2_1 += 1
+        #self.t2_1 += t2_1 - t2
+        #self.t2_2 += t2_2 - t2_1
+        #self.t2_3 += t3 - t2_2
 
         # print('{:.3f} :{:.3f} {:.3f} {:.3f}'.format(self.n2_1, self.t2_1, self.t2_2, self.t2_3))
         return data_dict
@@ -986,12 +990,12 @@ def create_waymo_infos(dataset_cfg, class_names, data_path, save_path,
     os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
     print('---------------Start to generate data infos---------------')
 
-    # dataset.set_split(train_split)
-    # waymo_infos_train = dataset.get_infos(
-    #     raw_data_path=data_path / raw_data_tag,
-    #     save_path=save_path / processed_data_tag, num_workers=workers, has_label=True,
-    #     sampled_interval=1, update_info_only=update_info_only
-    # )
+    dataset.set_split(train_split)
+    waymo_infos_train = dataset.get_infos(
+        raw_data_path=data_path / raw_data_tag,
+        save_path=save_path / processed_data_tag, num_workers=workers, has_label=True,
+        sampled_interval=1, update_info_only=update_info_only
+    )
     # with open(train_filename, 'wb') as f:
     #     pickle.dump(waymo_infos_train, f)
     # print('----------------Waymo info train file is saved to %s----------------' % train_filename)
