@@ -50,14 +50,13 @@ class WaymoDataset(DatasetTemplate):
             )
         else:
             self.pred_boxes_dict = {}
-        self.t2_1 = 0
-        self.t2_2 = 0
-        self.t2_3 = 0
-        self.n2_1 = 0
-        self.n2_2 = 0
-        self.n2_3 = 0
-        self.nn = 0
-        self.tt = 0
+        data_path = self.root_path/'points.npy'
+        # points_num = []
+        # for info in self.infos:
+        #     points = self.get_lidar(info['point_cloud']['lidar_sequence'],info['point_cloud']['sample_idx'])
+        #     points_num.append(points.shape[0])
+        data = np.memmap(data_path,dtype='float32',mode='r').reshape(-1,5)
+        pass
 
     def set_split(self, split):
         super().__init__(
@@ -469,6 +468,9 @@ class WaymoDataset(DatasetTemplate):
             'sample_idx': sample_idx
         }
         t2_1 = time.time()
+
+
+
         if self.use_shared_memory and index < self.shared_memory_file_limit:
             sa_key = f'{sequence_name}___{sample_idx}'
             points = SharedArray.attach(f"shm://{sa_key}").copy()
