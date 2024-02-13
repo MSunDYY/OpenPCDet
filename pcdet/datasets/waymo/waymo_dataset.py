@@ -50,12 +50,12 @@ class WaymoDataset(DatasetTemplate):
             )
         else:
             self.pred_boxes_dict = {}
-        data_path = self.root_path/'points.npy'
+        #data_path = self.root_path/'points.npy'
         # points_num = []
         # for info in self.infos:
         #     points = self.get_lidar(info['point_cloud']['lidar_sequence'],info['point_cloud']['sample_idx'])
         #     points_num.append(points.shape[0])
-        data = np.memmap(data_path,dtype='float32',mode='r').reshape(-1,5)
+        #data = np.memmap(data_path,dtype='float32',mode='r').reshape(-1,5)
         pass
 
     def set_split(self, split):
