@@ -188,12 +188,12 @@ class DatasetTemplate(torch_data.Dataset):
 
             if 'calib' in data_dict:
                 calib = data_dict['calib']
-            data_dict = self.data_augmentor.forward(
-                data_dict={
-                    **data_dict,
-                    'gt_boxes_mask': gt_boxes_mask
-                }
-            )
+            # data_dict = self.data_augmentor.forward(
+            #     data_dict={
+            #         **data_dict,
+            #         'gt_boxes_mask': gt_boxes_mask
+            #     }
+            # )
             if 'calib' in data_dict:
                 data_dict['calib'] = calib
         data_dict = self.set_lidar_aug_matrix(data_dict)
@@ -215,9 +215,9 @@ class DatasetTemplate(torch_data.Dataset):
         if self.dataset_cfg.get('GET_LABEL', False):
             data_dict['points'] = np.concatenate((data_dict['points'], data_dict['label'].reshape(-1, 1)), axis=1)
 
-        data_dict = self.data_processor.forward(
-            data_dict=data_dict
-        )
+        # data_dict = self.data_processor.forward(
+        #     data_dict=data_dict
+        # )
 
         if self.training and len(data_dict['gt_boxes']) == 0:
             new_index = np.random.randint(self.__len__())

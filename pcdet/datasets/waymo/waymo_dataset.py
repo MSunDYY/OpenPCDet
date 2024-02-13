@@ -578,6 +578,7 @@ class WaymoDataset(DatasetTemplate):
 
         t4 = time.time()
         data_dict = self.prepare_data(data_dict=input_dict)
+
         data_dict['metadata'] = info.get('metasdata', info['frame_id'])
         data_dict.pop('num_points_in_gt', None)
         #t5 = time.time()
@@ -587,6 +588,7 @@ class WaymoDataset(DatasetTemplate):
         #self.t2_3 += t3 - t2_2
 
         # print('{:.3f} :{:.3f} {:.3f} {:.3f}'.format(self.n2_1, self.t2_1, self.t2_2, self.t2_3))
+
         return data_dict
 
         F = len(sample_idx_list)
