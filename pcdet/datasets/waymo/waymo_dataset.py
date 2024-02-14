@@ -17,8 +17,10 @@ from functools import partial
 import sys
 import os
 
+ROOT_DIR = (Path(__file__).resolve().parent / '../../../').resolve()
+sys.path.append(str(ROOT_DIR))
 sys.path.append('/home/msun/pan1/pointcloud/OpenPCDet/pcdet/datasets')
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.getcwd()))))
+
 from pcdet.ops.roiaware_pool3d import roiaware_pool3d_utils
 from pcdet.utils import box_utils, common_utils
 from pcdet.datasets.dataset import DatasetTemplate
@@ -1083,7 +1085,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     ROOT_DIR = (Path(__file__).resolve().parent / '../../../').resolve()
-    sys.path.append(ROOT_DIR)
+
     if args.func == 'create_waymo_infos':
         try:
             yaml_config = yaml.safe_load(open(args.cfg_file), Loader=yaml.FullLoader)
