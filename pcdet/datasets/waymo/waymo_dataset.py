@@ -994,9 +994,9 @@ def create_waymo_infos(dataset_cfg, class_names, data_path, save_path,
         save_path=save_path / processed_data_tag, num_workers=workers, has_label=True,
         sampled_interval=1, update_info_only=update_info_only
     )
-    # with open(train_filename, 'wb') as f:
-    #     pickle.dump(waymo_infos_train, f)
-    # print('----------------Waymo info train file is saved to %s----------------' % train_filename)
+    with open(train_filename, 'wb') as f:
+        pickle.dump(waymo_infos_train, f)
+    print('----------------Waymo info train file is saved to %s----------------' % train_filename)
 
     # dataset.set_split(val_split)
     # waymo_infos_val = dataset.get_infos(
