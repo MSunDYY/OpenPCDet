@@ -1083,7 +1083,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     ROOT_DIR = (Path(__file__).resolve().parent / '../../../').resolve()
-
+    sys.path.append(ROOT_DIR)
     if args.func == 'create_waymo_infos':
         try:
             yaml_config = yaml.safe_load(open(args.cfg_file), Loader=yaml.FullLoader)
