@@ -997,7 +997,7 @@ def create_waymo_infos(dataset_cfg, class_names, data_path, save_path,
     # with open(train_filename, 'wb') as f:
     #     pickle.dump(waymo_infos_train, f)
     # print('----------------Waymo info train file is saved to %s----------------' % train_filename)
-    #
+
     # dataset.set_split(val_split)
     # waymo_infos_val = dataset.get_infos(
     #     raw_data_path=data_path / raw_data_tag.replace('training','validating'),
