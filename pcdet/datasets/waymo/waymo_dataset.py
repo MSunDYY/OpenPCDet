@@ -18,7 +18,7 @@ import sys
 import os
 
 sys.path.append('/home/msun/pan1/pointcloud/OpenPCDet/pcdet/datasets')
-sys.path.append(os.getcwd())
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.getcwd()))))
 from pcdet.ops.roiaware_pool3d import roiaware_pool3d_utils
 from pcdet.utils import box_utils, common_utils
 from pcdet.datasets.dataset import DatasetTemplate
