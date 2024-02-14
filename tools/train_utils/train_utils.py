@@ -57,22 +57,22 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
         if tb_log is not None:
             tb_log.add_scalar('meta_data/learning_rate', cur_lr, accumulated_iter)
 
-        # model.train()
-        # optimizer.zero_grad()
-        # st = time.time()
+        model.train()
+        optimizer.zero_grad()
+        st = time.time()
 
-        # with torch.cuda.amp.autocast(enabled=use_amp):
-        #     loss, tb_dict, disp_dict = model_func(model, batch)
-        # t3 = time.time()
-        # print('train_time:',t3-t2)
-        # # scaler.scale(loss).backward()
-        # scaler.unscale_(optimizer)
-        # clip_grad_norm_(model.parameters(), optim_cfg.GRAD_NORM_CLIP)
-        # scaler.step(optimizer)
-        # scaler.update()
-        #
-        # accumulated_iter += 1
-        #
+        with torch.cuda.amp.autocast(enabled=use_amp):
+            loss, tb_dict, disp_dict = model_func(model, batch)
+        t3 = time.time()
+        print('train_time:',t3-t2)
+        # scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
+        clip_grad_norm_(model.parameters(), optim_cfg.GRAD_NORM_CLIP)
+        scaler.step(optimizer)
+        scaler.update()
+
+        accumulated_iter += 1
+
         cur_forward_time = time.time() - data_timer
         cur_batch_time = time.time() - end
         end = time.time()
@@ -90,16 +90,16 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
         if rank == 0:
             batch_size = batch.get('batch_size', None)
         #
-        #     data_time.update(avg_data_time)
-        #     forward_time.update(avg_forward_time)
-        #     batch_time.update(avg_batch_time)
-        #     losses_m.update(loss.item() , batch_size)
-        #
-        #     disp_dict.update({
-        #         'loss': loss.item(), 'lr': cur_lr, 'd_time': f'{data_time.val:.2f}({data_time.avg:.2f})',
-        #         'f_time': f'{forward_time.val:.2f}({forward_time.avg:.2f})', 'b_time': f'{batch_time.val:.2f}({batch_time.avg:.2f})'
-        #     })
-        #
+            data_time.update(avg_data_time)
+            forward_time.update(avg_forward_time)
+            batch_time.update(avg_batch_time)
+            losses_m.update(loss.item() , batch_size)
+
+            disp_dict.update({
+                'loss': loss.item(), 'lr': cur_lr, 'd_time': f'{data_time.val:.2f}({data_time.avg:.2f})',
+                'f_time': f'{forward_time.val:.2f}({forward_time.avg:.2f})', 'b_time': f'{batch_time.val:.2f}({batch_time.avg:.2f})'
+            })
+
             if use_logger_to_record:
                 if accumulated_iter % logger_iter_interval == 0 or cur_it == start_it or cur_it + 1 == total_it_each_epoch:
                     trained_time_past_all = tbar.format_dict['elapsed']
@@ -130,31 +130,31 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
                             )
                     )
         #
-        #             if show_gpu_stat and accumulated_iter % (3 * logger_iter_interval) == 0:
-        #                 # To show the GPU utilization, please install gpustat through "pip install gpustat"
-        #                 gpu_info = os.popen('gpustat').read()
-        #                 logger.info(gpu_info)
-        #     else:
-        #         pbar.update()
-        #         pbar.set_postfix(dict(total_it=accumulated_iter))
-        #         tbar.set_postfix(disp_dict)
-        #         # tbar.refresh()
-        #
-        #     if tb_log is not None:
-        #         tb_log.add_scalar('train/loss', loss, accumulated_iter)
-        #         tb_log.add_scalar('meta_data/learning_rate', cur_lr, accumulated_iter)
-        #         for key, val in tb_dict.items():
-        #             tb_log.add_scalar('train/' + key, val, accumulated_iter)
-        #
-        #     # save intermediate ckpt every {ckpt_save_time_interval} seconds
-        #     time_past_this_epoch = pbar.format_dict['elapsed']
-        #     if time_past_this_epoch // ckpt_save_time_interval >= ckpt_save_cnt:
-        #         ckpt_name = ckpt_save_dir / 'latest_model'
-        #         save_checkpoint(
-        #             checkpoint_state(model, optimizer, cur_epoch, accumulated_iter), filename=ckpt_name,
-        #         )
-        #         logger.info(f'Save latest model to {ckpt_name}')
-        #         ckpt_save_cnt += 1
+                    if show_gpu_stat and accumulated_iter % (3 * logger_iter_interval) == 0:
+                        # To show the GPU utilization, please install gpustat through "pip install gpustat"
+                        gpu_info = os.popen('gpustat').read()
+                        logger.info(gpu_info)
+            else:
+                pbar.update()
+                pbar.set_postfix(dict(total_it=accumulated_iter))
+                tbar.set_postfix(disp_dict)
+                # tbar.refresh()
+
+            if tb_log is not None:
+                tb_log.add_scalar('train/loss', loss, accumulated_iter)
+                tb_log.add_scalar('meta_data/learning_rate', cur_lr, accumulated_iter)
+                for key, val in tb_dict.items():
+                    tb_log.add_scalar('train/' + key, val, accumulated_iter)
+
+            # save intermediate ckpt every {ckpt_save_time_interval} seconds
+            time_past_this_epoch = pbar.format_dict['elapsed']
+            if time_past_this_epoch // ckpt_save_time_interval >= ckpt_save_cnt:
+                ckpt_name = ckpt_save_dir / 'latest_model'
+                save_checkpoint(
+                    checkpoint_state(model, optimizer, cur_epoch, accumulated_iter), filename=ckpt_name,
+                )
+                logger.info(f'Save latest model to {ckpt_name}')
+                ckpt_save_cnt += 1
                 
     if rank == 0:
         pbar.close()

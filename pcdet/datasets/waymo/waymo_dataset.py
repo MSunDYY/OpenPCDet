@@ -50,13 +50,7 @@ class WaymoDataset(DatasetTemplate):
             )
         else:
             self.pred_boxes_dict = {}
-        #data_path = self.root_path/'points.npy'
-        # points_num = []
-        # for info in self.infos:
-        #     points = self.get_lidar(info['point_cloud']['lidar_sequence'],info['point_cloud']['sample_idx'])
-        #     points_num.append(points.shape[0])
-        #data = np.memmap(data_path,dtype='float32',mode='r').reshape(-1,5)
-        pass
+
 
     def set_split(self, split):
         super().__init__(
@@ -348,7 +342,7 @@ class WaymoDataset(DatasetTemplate):
                 import time
                 st = time.time()																																																																																																																																					
                 points_pre = self.get_lidar(sequence_name, sample_idx_pre)
-                print(' {:.3f}'.format(time.time()-st),end='')
+                # print(' {:.3f}'.format(time.time()-st),end='')
             if get_gt:
                 num_points_pre_temp = points_pre.shape[0]
                 info_pre = sequence_info[sample_idx_pre]
@@ -484,8 +478,8 @@ class WaymoDataset(DatasetTemplate):
         #t3_3 = time.time()
         #points4 = self.get_lidar(sequence_name, min(sample_idx + 3, 197))
         #t3_4 = time.time()
-        print('----------------')
-        print('{:.5f}'.format(t2_20 - t2_1),end=' ')
+        # print('----------------')
+        # print('{:.5f}'.format(t2_20 - t2_1),end=' ')
 
         if self.dataset_cfg.get('SEQUENCE_CONFIG', None) is not None and self.dataset_cfg[
             'SEQUENCE_CONFIG'].ENABLED:
