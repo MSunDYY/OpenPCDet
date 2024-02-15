@@ -480,8 +480,8 @@ class WaymoDataset(DatasetTemplate):
         # t3_3 = time.time()
         # points4 = self.get_lidar(sequence_name, min(sample_idx + 3, 197))
         # t3_4 = time.time()
-        print('----------------')
-        print('{:.5f}'.format(t2_20 - t2_1),end=' ')
+        # print('----------------')
+        # print('{:.5f}'.format(t2_20 - t2_1),end=' ')
 
         if self.dataset_cfg.get('SEQUENCE_CONFIG', None) is not None and self.dataset_cfg[
             'SEQUENCE_CONFIG'].ENABLED:
