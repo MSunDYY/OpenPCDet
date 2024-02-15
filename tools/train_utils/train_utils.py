@@ -47,7 +47,7 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
         data_timer = time.time()
         cur_data_time = data_timer - end
 
-        # lr_scheduler.step(accumulated_iter, cur_epoch)
+        lr_scheduler.step(accumulated_iter, cur_epoch)
 
         try:
             cur_lr = float(optimizer.lr)
@@ -65,7 +65,7 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
             loss, tb_dict, disp_dict = model_func(model, batch)
         t3 = time.time()
         print('train_time:',t3-t2)
-        # scaler.scale(loss).backward()
+        scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
         clip_grad_norm_(model.parameters(), optim_cfg.GRAD_NORM_CLIP)
         scaler.step(optimizer)
@@ -82,7 +82,7 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
         avg_forward_time = commu_utils.average_reduce_value(cur_forward_time)
         avg_batch_time = commu_utils.average_reduce_value(cur_batch_time)
 
-        # t4 = time.time()
+        t4 = time.time()
         #
         # print('bf:', t4 - t3)
         # print('-------------------')
@@ -138,7 +138,7 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
                 pbar.update()
                 pbar.set_postfix(dict(total_it=accumulated_iter))
                 tbar.set_postfix(disp_dict)
-                # tbar.refresh()
+                tbar.refresh()
 
             if tb_log is not None:
                 tb_log.add_scalar('train/loss', loss, accumulated_iter)
