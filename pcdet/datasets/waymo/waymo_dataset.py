@@ -341,10 +341,10 @@ class WaymoDataset(DatasetTemplate):
                 sa_key = f'{sequence_name}___{sample_idx}'
                 points_pre = SharedArray.attach(f"shm://{sa_key}").copy()
             else:
-                import time
-                st = time.time()																																																																																																																																					
+                # import time
+                # s = time.time()
                 points_pre = self.get_lidar(sequence_name, sample_idx_pre)
-                print(' {:.3f}'.format(time.time()-st),end='')
+                # print(' {:.3f}'.format(time.time()-st),end='')
             if get_gt:
                 num_points_pre_temp = points_pre.shape[0]
                 info_pre = sequence_info[sample_idx_pre]
