@@ -344,7 +344,7 @@ class WaymoDataset(DatasetTemplate):
                 import time
                 st = time.time()																																																																																																																																					
                 points_pre = self.get_lidar(sequence_name, sample_idx_pre)
-                # print(' {:.3f}'.format(time.time()-st),end='')
+                print(' {:.3f}'.format(time.time()-st),end='')
             if get_gt:
                 num_points_pre_temp = points_pre.shape[0]
                 info_pre = sequence_info[sample_idx_pre]
@@ -473,13 +473,13 @@ class WaymoDataset(DatasetTemplate):
         else:
             points = self.get_lidar(sequence_name, sample_idx)
         t2_20 = time.time()
-        point2 = self.get_lidar(sequence_name, min(sample_idx + 1, 197))
-
-        t2_2 = time.time()
-        point3 = self.get_lidar(sequence_name, min(sample_idx + 2, 197))
-        t3_3 = time.time()
-        points4 = self.get_lidar(sequence_name, min(sample_idx + 3, 197))
-        t3_4 = time.time()
+        # point2 = self.get_lidar(sequence_name, min(sample_idx + 1, 197))
+        #
+        # t2_2 = time.time()
+        # point3 = self.get_lidar(sequence_name, min(sample_idx + 2, 197))
+        # t3_3 = time.time()
+        # points4 = self.get_lidar(sequence_name, min(sample_idx + 3, 197))
+        # t3_4 = time.time()
         print('----------------')
         print('{:.5f}'.format(t2_20 - t2_1),end=' ')
 
