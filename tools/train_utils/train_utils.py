@@ -84,8 +84,8 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
 
         t4 = time.time()
         #
-        # print('bf:', t4 - t3)
-        # print('-------------------')
+        print('bf:', t4 - t3)
+        print('-------------------')
         # log to console and tensorboard
         if rank == 0:
             batch_size = batch.get('batch_size', None)
