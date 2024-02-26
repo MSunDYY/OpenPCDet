@@ -779,7 +779,7 @@ class WaymoDataset(DatasetTemplate):
                                'num_points_in_gt': gt_points.shape[0], 'difficulty': difficulty[i]}
 
                     # it will be used if you choose to use shared memory for gt sampling
-                    # stacked_gt_points.append(gt_points)
+                    stacked_gt_points.append(gt_points)
                     db_info['global_data_offset'] = [point_offset_cnt, point_offset_cnt + gt_points.shape[0]]
                     point_offset_cnt += gt_points.shape[0]
 
@@ -794,8 +794,8 @@ class WaymoDataset(DatasetTemplate):
             pickle.dump(all_db_infos, f)
 
         # it will be used if you choose to use shared memory for gt sampling
-        # stacked_gt_points = np.concatenate(stacked_gt_points, axis=0)
-        # np.save(db_data_save_path, stacked_gt_points)
+        stacked_gt_points = np.concatenate(stacked_gt_points, axis=0)
+        np.save(db_data_save_path, stacked_gt_points)
 
     def create_gt_database_of_single_scene(self, info_with_idx, database_save_path=None, use_sequence_data=False,
                                            used_classes=None,
@@ -982,15 +982,15 @@ def create_waymo_infos(dataset_cfg, class_names, data_path, save_path,
         pickle.dump(waymo_infos_train, f)
     print('----------------Waymo info train file is saved to %s----------------' % train_filename)
 
-    # dataset.set_split(val_split)
-    # waymo_infos_val = dataset.get_infos(
-    #     raw_data_path=data_path / raw_data_tag.replace('training','validating'),
-    #     save_path=save_path / processed_data_tag, num_workers=workers, has_label=True,
-    #     sampled_interval=1, update_info_only=update_info_only
-    # )
-    # with open(val_filename, 'wb') as f:
-    #     pickle.dump(waymo_infos_val, f)
-    # print('----------------Waymo info val file is saved to %s----------------' % val_filename)
+    dataset.set_split(val_split)
+    waymo_infos_val = dataset.get_infos(
+        raw_data_path=data_path / raw_data_tag.replace('training','validating'),
+        save_path=save_path / processed_data_tag, num_workers=workers, has_label=True,
+        sampled_interval=1, update_info_only=update_info_only
+    )
+    with open(val_filename, 'wb') as f:
+        pickle.dump(waymo_infos_val, f)
+    print('----------------Waymo info val file is saved to %s----------------' % val_filename)
 
     if update_info_only:
         return
