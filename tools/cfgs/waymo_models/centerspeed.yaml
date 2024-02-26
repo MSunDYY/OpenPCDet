@@ -75,6 +75,18 @@ DATA_CONFIG:
           CONCAT: False
           GET_FLOW_VOXELS: 0.2
 
+        - NAME: transform_points_to_pillars
+          PILLAR_SIZE: [ 0.2, 0.2, 6 ]
+          MAX_POINTS_PER_PILLAR: 10
+          MAX_NUMBER_OF_PILLARS: {
+              'train': 150000,
+              'test': 150000
+          }
+          WITH_TIME_STAMP: True
+          CONCAT: False
+          GET_FLOW_VOXELS: 0.2
+
+
 MODEL:
     NAME: CenterSpeed
 

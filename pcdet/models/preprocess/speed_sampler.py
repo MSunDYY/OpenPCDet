@@ -10,7 +10,8 @@ from tools.visual_utils.open3d_vis_utils import draw_scenes
 from pcdet.ops.deformDETR.modules.ms_deform_attn import MSDeformAttn
 from pcdet.ops.deformDETR.functions import MSDeformAttnFunction
 from pcdet.ops.pointnet2.pointnet2_stack.pointnet2_utils import ball_query, grouping_operation
-
+from spconv.pytorch.functional import sparse_add
+from spconv.pytorch.core import SparseConvTensor
 
 class DeformableTransformerCrossAttention(nn.Module):
     def __init__(self, d_model, d_head, dropout=0.2, n_heads=1, n_points=2, n_levels=1, out_sample_loc=False):
@@ -135,7 +136,7 @@ class TemperalUpConv(spconv.SparseModule):
             nn.ReLU())
         self.conv2 = spconv.SparseSequential(
             spconv.SparseConvTranspose3d(inplaces, planes, kernel_size=(3, 3, 3), stride=(1, stride[0], stride[0]),
-                                         padding=1, bias=False,
+                                         padding=(1,1,1), bias=False,
                                          ),
             norm_fn(planes),
             nn.ReLU()
@@ -147,7 +148,7 @@ class TemperalUpConv(spconv.SparseModule):
             norm_fn(planes),
             nn.ReLU(),
             spconv.SparseConvTranspose3d(planes, planes, kernel_size=(3, 3, 3), stride=(1, stride[0], stride[0]),
-                                         padding=(1, 0, 0), bias=False),
+                                         padding=(1, 1, 1), bias=False),
             norm_fn(planes),
             nn.ReLU()
         )
@@ -156,17 +157,7 @@ class TemperalUpConv(spconv.SparseModule):
         deconv1 = self.conv1(x[0])
         deconv2 = self.conv2(x[1])
         deconv3 = self.conv3(x[2])
-
-        deconv1 = deconv1.dense()
-
-        deconv2 = deconv2.dense()
-        deconv2 = torch.nn.functional.pad(deconv2, (0, 1, 0, 1, 0, 0, 0, 0, 0, 0), mode='constant', value=0)
-
-        deconv3 = deconv3.dense()
-        deconv3 = torch.nn.functional.pad(deconv3, (0, 1, 0, 1, 0, 0, 0, 0, 0, 0), mode='constant', value=0)
-
-        features = torch.concat([deconv1, deconv2, deconv3], dim=2)
-        features = features.view((features.shape[0], -1, features.shape[-2], features.shape[-1]))
+        features = sparse_concat(deconv1,deconv2,deconv3,dim=-1)
 
         return features
 
@@ -180,11 +171,11 @@ class TemperalDownConv(spconv.SparseModule):
 
         self.conv1 = spconv.SparseSequential(
             spconv.SparseConv3d(inplaces, planes, kernel_size=(3, 3, 3,), padding=(0, 1, 1), bias=False,
-                                stride=(1, 1, 1), indice_key='spconv'),
+                                stride=(1, 1, 1), indice_key='spconv1'),
             norm_fn(planes),
             nn.ReLU(),
             spconv.SubMConv3d(planes, planes, kernel_size=(3, 3, 3), padding=(1, 1, 1), bias=False,
-                              stride=(1, 1, 1), indice_key='sumb1'),
+                              stride=(1, 1, 1), indice_key='subm1'),
             norm_fn(planes),
             nn.ReLU()
         )
@@ -262,6 +253,36 @@ class PFNLayer(nn.Module):
             return x_concatenated
 
 
+def sparse_concat(*tens: SparseConvTensor,dim):
+    n_features = [ten.features.shape[-1] for ten in tens]
+    n_features_all = sum(n_features)
+    temp_index = 0
+    results = []
+    if dim==-1:
+        for i in range(len(n_features)):
+            temp_features = tens[i].features.new_zeros((tens[i].features.shape[0],n_features_all))
+            temp_features[:,temp_index:(temp_index+n_features[i])] = tens[i].features
+            results.append(tens[i].replace_feature(temp_features))
+            temp_index+=n_features[i]
+        return sparse_add(*results)
+
+def sparse_compress(ten:SparseConvTensor,dim):
+    assert dim<len(ten.spatial_shape)
+    coord = ten.indices
+    features = ten.features
+    sp_tensor = []
+    if dim==0:
+        for i in range(coord[:,1].max().item()+1):
+            indice = coord[:,1]==i
+            sp_tensor.append(SparseConvTensor(
+                features=features[indice],
+                indices=torch.concat([coord[indice][:,0:1],coord[indice][:,2:]],dim=1),
+                batch_size=ten.batch_size,
+                spatial_shape=ten.spatial_shape[1:]
+            ))
+        return sparse_concat(*sp_tensor,dim=-1)
+
+
 class SpeedSampler(nn.Module):
     def __init__(self, model_cfg, num_point_features, voxel_size, grid_size, point_cloud_range, **kwargs):
         super().__init__()
@@ -291,7 +312,7 @@ class SpeedSampler(nn.Module):
         self.sp_conv = TemperalDownConv(self.num_out_voxel_features + self.num_features_layers[-1], 64, stride=[2, 2],
                                         norm_fn=norm_fn,
                                         )
-        self.sp_up_conv = TemperalUpConv(64, 32, stride=[2, 2], norm_fn=norm_fn)
+        self.sp_up_conv = TemperalUpConv(64, 16, stride=[2, 2], norm_fn=norm_fn)
         pfn = []
         for i in range(len(self.num_features_layers) - 1):
             in_channels = self.num_features_layers[i]
@@ -309,48 +330,47 @@ class SpeedSampler(nn.Module):
             nn.ReLU()
         )
 
-        self.conv = nn.ModuleList([
-            nn.ModuleList([nn.Sequential(
-                nn.ZeroPad2d(padding=(i + 1, i + 1, i + 1, i + 1)),
-                nn.Conv2d(in_channels=cur_num_features * 2, out_channels=out_num_features[0],
-                          kernel_size=2 * i + 3, stride=1),
-                nn.BatchNorm2d(out_num_features[0], eps=1e-3, momentum=0.01),
-                nn.ReLU()
-            ) for i in range(3)]),
-            nn.ModuleList([nn.Sequential(
-                nn.ZeroPad2d(padding=(i + 1, i + 1, i + 1, i + 1)),
-                nn.Conv2d(in_channels=out_num_features[0] * 3 * 2, out_channels=out_num_features[1],
-                          kernel_size=2 * i + 3, stride=1),
-                nn.BatchNorm2d(out_num_features[1], eps=1e-3, momentum=0.01),
-                nn.ReLU()
-            ) for i in range(3)]),
-            nn.ModuleList([nn.Sequential(
-                nn.ZeroPad2d(padding=(i + 1, i + 1, i + 1, i + 1)),
-                nn.Conv2d(in_channels=out_num_features[1] * 3 * 2, out_channels=out_num_features[2],
-                          kernel_size=2 * i + 3, stride=1),
-                nn.BatchNorm2d(out_num_features[2], eps=1e-3, momentum=0.01),
-                nn.ReLU()
-            ) for i in range(3)])
-        ])
+        # self.conv = nn.ModuleList([
+        #     nn.ModuleList([nn.Sequential(
+        #         nn.ZeroPad2d(padding=(i + 1, i + 1, i + 1, i + 1)),
+        #         nn.Conv2d(in_channels=cur_num_features * 2, out_channels=out_num_features[0],
+        #                   kernel_size=2 * i + 3, stride=1),
+        #         nn.BatchNorm2d(out_num_features[0], eps=1e-3, momentum=0.01),
+        #         nn.ReLU()
+        #     ) for i in range(3)]),
+        #     nn.ModuleList([nn.Sequential(
+        #         nn.ZeroPad2d(padding=(i + 1, i + 1, i + 1, i + 1)),
+        #         nn.Conv2d(in_channels=out_num_features[0] * 3 * 2, out_channels=out_num_features[1],
+        #                   kernel_size=2 * i + 3, stride=1),
+        #         nn.BatchNorm2d(out_num_features[1], eps=1e-3, momentum=0.01),
+        #         nn.ReLU()
+        #     ) for i in range(3)]),
+        #     nn.ModuleList([nn.Sequential(
+        #         nn.ZeroPad2d(padding=(i + 1, i + 1, i + 1, i + 1)),
+        #         nn.Conv2d(in_channels=out_num_features[1] * 3 * 2, out_channels=out_num_features[2],
+        #                   kernel_size=2 * i + 3, stride=1),
+        #         nn.BatchNorm2d(out_num_features[2], eps=1e-3, momentum=0.01),
+        #         nn.ReLU()
+        #     ) for i in range(3)])
+        # ])
 
-        self.attention_aggre = AttentionAggregation()
-        self.classfier = nn.Sequential(
-            nn.Conv2d(in_channels=32 * 6, out_channels=96, kernel_size=3, padding=1),
-            nn.BatchNorm2d(96),
+        self.classfier = spconv.SparseSequential(
+            spconv.SubMConv2d(in_channels=16 * 3*2, out_channels=48, kernel_size=(3,3), padding=(1,1)),
+            norm_fn(48),
             nn.ReLU(),
-            nn.Conv2d(in_channels=96, out_channels=16, kernel_size=1),
-            nn.BatchNorm2d(16),
+            spconv.SubMConv2d(in_channels=48, out_channels=16, kernel_size=1),
+            norm_fn(16),
             nn.ReLU(),
-            nn.Conv2d(in_channels=16, out_channels=1, kernel_size=1)
+            spconv.SubMConv2d(in_channels=16, out_channels=1, kernel_size=1)
         )
-        self.regression = nn.Sequential(
-            nn.Conv2d(in_channels=32 * 6, out_channels=96, kernel_size=3, padding=1),
-            nn.BatchNorm2d(96),
+        self.regression = spconv.SparseSequential(
+            spconv.SubMConv2d(in_channels=16 * 3 * 2, out_channels=48, kernel_size=3, padding=1),
+            norm_fn(48),
             nn.ReLU(),
-            nn.Conv2d(in_channels=96, out_channels=16, kernel_size=1),
-            nn.BatchNorm2d(16),
+            spconv.SubMConv2d(in_channels=48, out_channels=16, kernel_size=1),
+            norm_fn(16),
             nn.ReLU(),
-            nn.Conv2d(in_channels=16, out_channels=2, kernel_size=1)
+            spconv.SubMConv2d(in_channels=16, out_channels=2, kernel_size=1)
         )
         self.sigmoid = nn.Sigmoid()
 
@@ -420,42 +440,46 @@ class SpeedSampler(nn.Module):
         if self.model_cfg.get('FILTER_GROUND', False) is not False:
             points_all = points_all[points_all[:, 3] > self.model_cfg.get('FILTER_GROUND'), :]
 
-        voxel_generator = VoxelGeneratorWrapper(
-            vsize_xyz=self.voxel_size,
-            coors_range_xyz=self.point_cloud_range,
-            num_point_features=points_all.shape[1] - 1,
-            max_num_points_per_voxel=self.model_cfg.MAX_POINTS_PER_VOXEL,
-            max_num_voxels=self.model_cfg.MAX_NUMBER_OF_VOXELS['train' if self.training else 'test'],
-        )
-        voxels = []
-        coordinates = []
-        nums_points_voxels = []
-
+        # voxel_generator = VoxelGeneratorWrapper(
+        #     vsize_xyz=self.voxel_size,
+        #     coors_range_xyz=self.point_cloud_range,
+        #     num_point_features=points_all.shape[1] - 1,
+        #     max_num_points_per_voxel=self.model_cfg.MAX_POINTS_PER_VOXEL,
+        #     max_num_voxels=self.model_cfg.MAX_NUMBER_OF_VOXELS['train' if self.training else 'test'],
+        # )
+        # voxels = []
+        # coordinates = []
+        # nums_points_voxels = []
+        #
         B = batch_dict['batch_size']
-
+        #
         num_points_all = torch.zeros((B, frame_num)).to(device)
-        for batch in range(B):
-            points = points_all[:, 1:][points_all[:, 0] == batch]
-            for frame in range(frame_num):
-                points_single_frame = points[points[:, -1] == frame / 10].to('cpu').numpy()
-                voxel_output = voxel_generator.generate(points_single_frame)
-                voxel, coordinate, num_points = voxel_output
-                coordinate = np.concatenate(
-                    [batch * np.ones((coordinate.shape[0], 1)), frame * np.ones((coordinate.shape[0], 1)), coordinate],
-                    axis=1)
-                voxels.append(torch.from_numpy(voxel).to(device))
-                nums_points_voxels.append(torch.from_numpy(num_points).to(device))
-                coordinates.append(torch.from_numpy(coordinate).to(device))
-                num_points_all[batch, frame] = points_single_frame.shape[0]
-        # nums_points=torch.tensor(nums_points_voxels).view((B,frame_num))
-        voxels = torch.concat(voxels)
-        coordinates = torch.concat(coordinates)
-        voxel_num_points = torch.concat(nums_points_voxels)
+        # for batch in range(B):
+        #     points = points_all[:, 1:][points_all[:, 0] == batch]
+        #     for frame in range(frame_num):
+        #         points_single_frame = points[points[:, -1] == frame / 10].to('cpu').numpy()
+        #         voxel_output = voxel_generator.generate(points_single_frame)
+        #         voxel, coordinate, num_points = voxel_output
+        #         coordinate = np.concatenate(
+        #             [batch * np.ones((coordinate.shape[0], 1)), frame * np.ones((coordinate.shape[0], 1)), coordinate],
+        #             axis=1)
+        #         voxels.append(torch.from_numpy(voxel).to(device))
+        #         nums_points_voxels.append(torch.from_numpy(num_points).to(device))
+        #         coordinates.append(torch.from_numpy(coordinate).to(device))
+        #         num_points_all[batch, frame] = points_single_frame.shape[0]
+        # # nums_points=torch.tensor(nums_points_voxels).view((B,frame_num))
+        # voxels = torch.concat(voxels)
+        # coordinates = torch.concat(coordinates)
+        # voxel_num_points = torch.concat(nums_points_voxels)
+
+        voxels = batch_dict['pillars']
+        coordinates = batch_dict['pillar_coords']
+        voxel_num_points = batch_dict['pillar_num_points']
 
         coordinates = torch.concat([coordinates[:, 0:1], coordinates[:, 1:2], coordinates[:, 4:5], coordinates[:, 3:4]],
                                    dim=-1)
 
-        points_mean = voxels[:, :, :-1].sum(dim=-2) / (voxel_num_points.reshape(-1, 1).repeat(1, 5))
+        points_mean = voxels[:, :, :].sum(dim=-2) / (voxel_num_points.reshape(-1, 1).repeat(1, voxels.shape[-1]))
         f_cluster = voxels[:, :, :3] - points_mean[:, None, :3]
         h_cluster = voxels[:, :, 2:3] - voxels[:, :, 2:3].min(dim=-2)[0].unsqueeze(-2)
 
@@ -493,49 +517,16 @@ class SpeedSampler(nn.Module):
         input_sp_tensor = spconv.SparseConvTensor(
             features=features,
             indices=coordinates.to(dtype=torch.int32),
-            spatial_shape=[F, H, W],
+            spatial_shape=[F, H+1, W+1], # easy to implement deconv
             batch_size=B
         )
 
         sp_features_list = self.sp_conv(input_sp_tensor)
         motion_features_list = []
+
         signal = False
-        if signal:
-            for sp_features in sp_features_list:
-                cur_mask = sp_features.indices[:, 1] < F - 1
-                pre_mask = sp_features.indices[:, 1] > 0
-                cur_sp_tensor = torch.sparse.FloatTensor(sp_features.indices[cur_mask].t().long(),
-                                                         sp_features.features[cur_mask],
-                                                         [B] + [F - 1] + sp_features.spatial_shape[1:] + [
-                                                             sp_features.features.shape[-1]])
-                pre_sp_tensor = torch.sparse.FloatTensor(
-                    sp_features.indices[pre_mask].t().long() - torch.LongTensor([[0], [1], [0], [0]]).to(device),
-                    sp_features.features[pre_mask],
-                    [B] + [F - 1] + sp_features.spatial_shape[1:] + [
-                        sp_features.features.shape[-1]])
-                motion_sp_tensor = cur_sp_tensor.sub(pre_sp_tensor).coalesce()
-                motion_sp_tensor_add = (cur_sp_tensor.add(pre_sp_tensor).coalesce()) / 2
-                motion_sp_tensor_anti = pre_sp_tensor.sub(cur_sp_tensor).coalesce()
-                motion_sp_tensor_add_anti = (pre_sp_tensor.add(cur_sp_tensor).coalesce()) / 2
-
-                motion_anti_indices = motion_sp_tensor_anti._indices().t().int()
-                motion_anti_indices[:, 1] = F - 2 - motion_anti_indices[:, 1]
-                motion_anti_indices[:, 0] = motion_anti_indices[:, 0] + B
-                motion_indices = torch.concat([motion_sp_tensor._indices().t().int(), motion_anti_indices], dim=0)
-
-                motion_features = torch.concat([motion_sp_tensor._values(), motion_sp_tensor_add._values()], dim=-1)
-                motion_features_anti = torch.concat(
-                    [motion_sp_tensor_anti._values(), motion_sp_tensor_add_anti._values()],
-                    dim=-1)
-                motion_features = torch.concat([motion_features, motion_features_anti], dim=0)
-
-                motion_features = spconv.SparseConvTensor(features=motion_features,
-                                                          indices=motion_indices,
-                                                          spatial_shape=motion_sp_tensor.shape[1:-1],
-                                                          batch_size=B * 2)
-                motion_features_list.append(self.motion_conv(motion_features))
-        else:
-            motion_features = self.sp_up_conv(sp_features_list)
+        motion_features = self.sp_up_conv(sp_features_list)
+        motion_features = sparse_compress(motion_features,dim=0)
         if signal:
             motion_features = motion_features_list[0]
             cur_motion_mask = motion_features.indices[:, 1] < 2
@@ -549,14 +540,17 @@ class SpeedSampler(nn.Module):
                                                                        motion_features.spatial_shape[-1]]).to(device))
         else:
             aggregated_features = motion_features
-        classification = self.sigmoid(self.classfier(aggregated_features))
-        speed = self.regression(aggregated_features).permute(0, 2, 3, 1)
+
+
+
+        classification_sp_tensor = self.classfier(aggregated_features)
+        classification = self.sigmoid(classification_sp_tensor.dense())
+
+        speed_sp_tensor = self.regression(aggregated_features)
+        speed = speed_sp_tensor.dense().permute(0,2,3,1)
         batch_dict['speed_map_pred'] = speed
-        is_moving = (classification > 0.5).permute(0, 2, 3, 1)
+        is_moving = (classification > 0.5)
         is_moving = is_moving[coordinates[:, 0], coordinates[:, 2], coordinates[:, 3]].squeeze()
-
-
-
 
         if not self.training:
             coordinate_1st_mask = (coordinates[:, 1] > 0) * is_moving

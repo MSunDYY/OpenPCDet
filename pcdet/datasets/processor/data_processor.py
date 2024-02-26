@@ -73,7 +73,7 @@ class DataProcessor(object):
         self.data_processor_queue = []
 
         self.voxel_generator = None
-
+        self.pillar_generator = None
         for cur_cfg in processor_configs:
             cur_processor = getattr(self, cur_cfg.NAME)(config=cur_cfg)
             self.data_processor_queue.append(cur_processor)
@@ -159,7 +159,8 @@ class DataProcessor(object):
             for frame in range(int(data_dict['gt_boxes'][:, 9].max()+1)):
                 voxel_output = self.voxel_generator.generate(points[points[:, -1] == 0.1 * frame,:-1])
                 voxels.append(voxel_output[0])
-                coordinates.append(voxel_output[1])
+                coordinate = np.concatenate([np.ones([voxel_output[1].shape[0],1],dtype=np.int32)*frame,voxel_output[1]],axis=1)
+                coordinates.append(coordinate)
                 num_points.append(voxel_output[2])
                 num_voxels[frame] = voxel_output[0].shape[0]
             data_dict['num_voxels'] = num_voxels
@@ -169,7 +170,7 @@ class DataProcessor(object):
         else:
             voxel_output = self.voxel_generator.generate(points)
             voxels, coordinates, num_points = voxel_output
-
+            voxels = voxels[:,:,:-1] if config.get('REMOVE_TIME_STAMP',False) else voxels[:,:,:]
         # if config.get('POINT_FEATURES', None) is not None:
         #
         #
@@ -247,6 +248,80 @@ class DataProcessor(object):
 
         return data_dict
 
+
+
+    def transform_points_to_pillars(self, data_dict=None, config=None):
+        if data_dict is None:
+            grid_size = (self.point_cloud_range[3:6] - self.point_cloud_range[0:3]) / np.array(config.PILLAR_SIZE)
+            self.grid_size = np.round(grid_size).astype(np.int64)
+            self.pillar_size = config.PILLAR_SIZE
+            # just bind the config, we will create the VoxelGeneratorWrapper later,
+            # to avoid pickling issues in multiprocess spawn
+            return partial(self.transform_points_to_pillars, config=config)
+
+        if self.pillar_generator is None:
+            self.pillar_generator = VoxelGeneratorWrapper(
+                vsize_xyz=config.PILLAR_SIZE,
+                coors_range_xyz=self.point_cloud_range,
+                num_point_features=self.num_point_features + (1 if data_dict.get('label', False) is not False else 0)+(1 if config.get('WITH_TIME_STAMP',False) else 0),
+                max_num_points_per_voxel=config.MAX_POINTS_PER_PILLAR,
+                max_num_voxels=config.MAX_NUMBER_OF_PILLARS[self.mode],
+            )
+        points = data_dict['points']
+        if not config.get('CONCAT', True):
+            pillars = []
+            coordinates = []
+            num_points = []
+            frame_num = int(data_dict['gt_boxes'][:,9].max()+1)
+            num_pillars = np.zeros((frame_num)).astype(np.int64)
+            if config.get('FILTER_GROUND', False) is not False:
+                points = points[points[:,2]>=config.get('GILTER_GROUND')]
+            for frame in range(int(data_dict['gt_boxes'][:, 9].max()+1)):
+                pillar_output = self.pillar_generator.generate(points[points[:, -1] == 0.1 * frame,:])
+                if not config.get('WITH_TIME_STAMP',False):
+                    pillars.append(pillar_output[0][:,:,:-1])
+                else:
+                    pillars.append(pillar_output[0])
+                coordinate = np.concatenate([np.ones([pillar_output[1].shape[0],1],dtype=np.int32) * frame,pillar_output[1]],axis=-1)
+                coordinates.append(coordinate)
+                num_points.append(pillar_output[2])
+                num_pillars[frame] = pillar_output[0].shape[0]
+            data_dict['num_pillars'] = num_pillars
+            pillars = np.concatenate(pillars)
+            coordinates = np.concatenate(coordinates)
+            num_points = np.concatenate(num_points)
+        else:
+            pillar_output = self.pillar_generator.generate(points)
+            pillars, coordinates, num_points = pillar_output
+
+        if not data_dict['use_lead_xyz']:
+            pillars = pillars[..., 3:]  # remove xyz in voxels(N, 3)
+
+        if config.get('DOUBLE_FLIP', False):
+            pillars_list, pillar_coords_list, pillar_num_points_list = [pillars], [coordinates], [num_points]
+            points_yflip, points_xflip, points_xyflip = self.double_flip(points)
+            points_list = [points_yflip, points_xflip, points_xyflip]
+            keys = ['yflip', 'xflip', 'xyflip']
+            for i, key in enumerate(keys):
+                pillar_output = self.pillar_generator.generate(points_list[i])
+                pillars, coordinates, num_points = pillar_output
+
+                if not data_dict['use_lead_xyz']:
+                    pillars = pillars[..., 3:]
+                pillars_list.append(pillars)
+                pillar_coords_list.append(coordinates)
+                pillar_num_points_list.append(num_points)
+
+            data_dict['pillars'] = np.concatenate(pillars_list)
+            data_dict['pillar_coords'] = np.concatenate(pillar_coords_list)
+            data_dict['pillar_num_points'] = np.concatenate(pillar_num_points_list)
+
+        else:
+            data_dict['pillars'] = pillars
+            data_dict['pillar_coords'] = coordinates
+            data_dict['pillar_num_points'] = num_points
+
+        return data_dict
     def sample_points(self, data_dict=None, config=None):
         if data_dict is None:
             return partial(self.sample_points, config=config)

@@ -547,7 +547,7 @@ class WaymoDataset(DatasetTemplate):
                     input_dict['label'] = label
                     assert label.shape[0] == points.shape[0]
                 if self.dataset_cfg.get('TRAIN_WITH_SPEED', False):
-                    assert gt_boxes_lidar[0].shape[-1] == 9
+                    assert gt_boxes_lidar[0].shape[-1] == 9 + (0 if self.dataset_cfg.get('CONCAT',True) else 1)
                 else:
                     gt_boxes_lidar = gt_boxes_lidar[:, 0:7]
 

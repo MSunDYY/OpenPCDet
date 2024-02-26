@@ -32,7 +32,7 @@ def load_data_to_gpu(batch_dict):
         elif key in ['image_shape']:
             batch_dict[key] = torch.from_numpy(val).int().to(device)
         else:
-            batch_dict[key] = torch.from_numpy(val).float().to(device)
+            batch_dict[key] = torch.from_numpy(val).to(device)
 
 
 def model_fn_decorator():

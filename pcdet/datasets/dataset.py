@@ -239,17 +239,19 @@ class DatasetTemplate(torch_data.Dataset):
 
         for key, val in data_dict.items():
             try:
-                if key in ['voxels', 'voxel_num_points','flow_voxels','flow_num_points']:
+                if key in ['voxels', 'voxel_num_points','flow_voxels','flow_num_points','pillars','pillar_num_points']:
 
                     ret[key] = np.concatenate(val, axis=0)
-                elif key in ['points', 'voxel_coords','flow_coords']:
+                elif key in ['points', 'voxel_coords','flow_coords','pillar_coords']:
 
-                    if 'num_voxels' in data_dict:
-                        if key=='voxel_coords':
-                            num_voxels = data_dict['num_voxels']
-                            for i,item in enumerate(val):
-                                val[i] = np.split(item,np.cumsum(num_voxels[i][:-1]))
-                            val = [item for val0 in val for item in val0]
+                    # if 'num_voxels' in data_dict:
+                    #     if key=='voxel_coords':
+                    #         num_voxels = data_dict['num_voxels']
+                    #         for i,item in enumerate(val):
+                    #             val[i] = np.split(item,np.cumsum(num_voxels[i][:-1]))
+                    #         val = [item for val0 in val for item in val0]
+                    #     if key=='pillar_coords':
+                    #         num_pillars = data_dict['num_pillars']
 
                     coors=[]
                     for i, coor in enumerate(val):
