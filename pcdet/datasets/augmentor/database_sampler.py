@@ -95,10 +95,9 @@ class DataBaseSampler(object):
         db_data_path = self.root_path.resolve() / self.sampler_cfg['DB_DATA_PATH'][0]
         sa_key = self.sampler_cfg['DB_DATA_PATH'][0]
 
-        #if cur_rank % num_gpus == 0 and not os.path.exists(f"/dev/shm/{sa_key}"):
-        #    gt_database_data = np.load(db_data_path)
-        #    common_utils.sa_create(f"shm://{sa_key}", gt_database_data)
-        self.gt_database_data = np.load(db_data_path)
+        if cur_rank % num_gpus == 0 and not os.path.exists(f"/dev/shm/{sa_key}"):
+           gt_database_data = np.load(db_data_path)
+           common_utils.sa_create(f"shm://{sa_key}", gt_database_data)
 
         if num_gpus > 1:
             dist.barrier()
@@ -393,9 +392,9 @@ class DataBaseSampler(object):
         img_aug_gt_dict = self.initilize_image_aug_dict(data_dict, gt_boxes_mask)
 
         if self.use_shared_memory:
-            #gt_database_data = SharedArray.attach(f"shm://{self.gt_database_data_key}")
-            #gt_database_data.setflags(write=0)
-            gt_database_data = self.gt_database_data
+            gt_database_data = SharedArray.attach(f"shm://{self.gt_database_data_key}")
+            gt_database_data.setflags(write=0)
+
         else:
             gt_database_data = None
 

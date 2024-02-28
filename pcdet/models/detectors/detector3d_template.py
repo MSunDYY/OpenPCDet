@@ -362,11 +362,10 @@ class Detector3DTemplate(nn.Module):
                     recall_dict['rcnn_%s' % str(cur_thresh)] += 0
                 else:
                     rcnn_recalled = (iou3d_rcnn.max(dim=0)[0] > cur_thresh).sum().item()
-                    recall_boxes['roi_%s' % (str(cur_thresh))] = box_preds[iou3d_rcnn.max(dim=1)[0] > cur_thresh]
-                    recall_labels['roi_%s' % (str(cur_thresh))] = data_dict['final_box_dicts'][0]['pred_labels'][
-                        iou3d_rcnn.max(dim=1)[0] > cur_thresh]
-                    recall_scores['roi_%s' % (str(cur_thresh))] = data_dict['final_box_dicts'][0]['pred_scores'][
-                        iou3d_rcnn.max(dim=1)[0] > cur_thresh]
+                    # recall_boxes['roi_%s' % (str(cur_thresh))] = box_preds[iou3d_rcnn.max(dim=1)[0] > cur_thresh]
+                    #
+                    # recall_scores['roi_%s' % (str(cur_thresh))] = data_dict['final_box_dicts'][0]['pred_scores'][
+                    #     iou3d_rcnn.max(dim=1)[0] > cur_thresh]
 
                     recall_dict['rcnn_%s' % str(cur_thresh)] += rcnn_recalled
                 if rois is not None:
