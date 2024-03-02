@@ -7,7 +7,7 @@ DATA_CONFIG:
         'train': 5,
         'test': 1
     }
-    CONCAT: True
+    CONCAT: False
     REMOVE_INITIAL_FRAME: 3
     SEQUENCE_CONFIG:
         ENABLED: True
@@ -94,7 +94,7 @@ MODEL:
     PREPROCESS:
 
         NAME: SpeedSampler
-        STRIDE: [1,1,40]
+        STRIDE: [2,2,40]
         WITH_DISTANCE: False
         USE_ABSOLUTE_XYZ: False
         USE_NORM: True

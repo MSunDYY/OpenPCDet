@@ -252,7 +252,8 @@ class DataProcessor(object):
 
     def transform_points_to_pillars(self, data_dict=None, config=None):
         if data_dict is None:
-
+            grid_size = (self.point_cloud_range[3:6] - self.point_cloud_range[0:3]) / np.array(config.PILLAR_SIZE)
+            self.speed_grid_size = np.round(grid_size).astype(np.int64)
             self.pillar_size = config.PILLAR_SIZE
             # just bind the config, we will create the VoxelGeneratorWrapper later,
             # to avoid pickling issues in multiprocess spawn

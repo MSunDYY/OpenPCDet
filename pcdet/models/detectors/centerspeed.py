@@ -10,13 +10,18 @@ class CenterSpeed(Detector3DTemplate):
         self.module_list = self.build_networks()
         self.speed_est = SpeedEstimater()
         self.train_box = model_cfg.DENSE_HEAD.TRAIN_BOX
+
+
         if not model_cfg.DENSE_HEAD.TRAIN_BOX:
-            dataset.data_augmentor.data_augmentor_queue.pop(0)
+            if dataset.training:
+                dataset.data_augmentor.data_augmentor_queue.pop(0)
         else:
             dataset.dataset_cfg['SEQUENCE_CONFIG'].ENABLED = False
-            dataset.dataset_cfg.DATA_AUGMENTOR.AUG_CONFIG_LIST[0].NUM_POINT_FEATURES-=1
+            if dataset.training:
+                dataset.dataset_cfg.DATA_AUGMENTOR.AUG_CONFIG_LIST[0].NUM_POINT_FEATURES-=1
             dataset.CONCAT = True
             dataset.dataset_cfg.DATA_PROCESSOR[2].CONCAT=True
+            dataset.dataset_cfg.DATA_PROCESSOR[3].CONCAT=True
             dataset.data_processor.data_processor_queue.pop(-1)
     def forward(self, batch_dict):
 

@@ -293,6 +293,7 @@ class SpeedSampler(nn.Module):
         self.num_point_features = num_point_features
         self.voxel_size = [voxel_size[i] * self.stride[i] for i in range(3)]
         self.grid_size = [int(grid_size[i] / self.stride[i]) for i in range(3)]
+
         self.use_norm = model_cfg.USE_NORM
         self.use_absoluto_xyz = self.model_cfg.get('USE_ABSOLUTE_XYZ', False)
         self.num_point_features = 9
