@@ -17,6 +17,7 @@ class CenterSpeed(Detector3DTemplate):
             dataset.dataset_cfg.DATA_AUGMENTOR.AUG_CONFIG_LIST[0].NUM_POINT_FEATURES-=1
             dataset.CONCAT = True
             dataset.dataset_cfg.DATA_PROCESSOR[2].CONCAT=True
+            dataset.data_processor.data_processor_queue.pop(-1)
     def forward(self, batch_dict):
 
 

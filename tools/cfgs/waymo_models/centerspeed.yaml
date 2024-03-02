@@ -4,10 +4,10 @@ DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/waymo_dataset_multiframe.yaml
     GET_FLOW_VOXELS: True
     SAMPLED_INTERVAL: {
-        'train': 1,
+        'train': 5,
         'test': 1
     }
-    CONCAT: False
+    CONCAT: True
     REMOVE_INITIAL_FRAME: 3
     SEQUENCE_CONFIG:
         ENABLED: True

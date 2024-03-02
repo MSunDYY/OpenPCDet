@@ -462,8 +462,6 @@ class WaymoDataset(DatasetTemplate):
             'sample_idx': sample_idx
         }
 
-
-
         import time
         st = time.time()
         if self.use_shared_memory and index < self.shared_memory_file_limit:
@@ -472,7 +470,7 @@ class WaymoDataset(DatasetTemplate):
         else:
             points = self.get_lidar(sequence_name, sample_idx)
         et = time.time()
-        print('loading time is',et-st)
+        # print('loading time is',et-st)
 
 
         if self.dataset_cfg.get('SEQUENCE_CONFIG', None) is not None and self.dataset_cfg[
