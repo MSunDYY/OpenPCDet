@@ -258,16 +258,16 @@ class DataProcessor(object):
             # just bind the config, we will create the VoxelGeneratorWrapper later,
             # to avoid pickling issues in multiprocess spawn
             return partial(self.transform_points_to_pillars, config=config)
-
+        num_point_features = self.num_point_features + (1 if data_dict.get('label', False) is not False else 0)+(1 if config.get('WITH_TIME_STAMP',False) else 0)
         if self.pillar_generator is None:
             self.pillar_generator = VoxelGeneratorWrapper(
                 vsize_xyz=config.PILLAR_SIZE,
                 coors_range_xyz=self.point_cloud_range,
-                num_point_features=self.num_point_features + (1 if data_dict.get('label', False) is not False else 0)+(1 if config.get('WITH_TIME_STAMP',False) else 0),
+                num_point_features=num_point_features,
                 max_num_points_per_voxel=config.MAX_POINTS_PER_PILLAR,
                 max_num_voxels=config.MAX_NUMBER_OF_PILLARS[self.mode],
             )
-        points = data_dict['points']
+        points = data_dict['points'][:,:num_point_features]
         if not config.get('CONCAT', True):
             pillars = []
             coordinates = []

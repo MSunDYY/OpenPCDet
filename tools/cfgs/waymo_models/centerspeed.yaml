@@ -66,7 +66,7 @@ DATA_CONFIG:
           }
 
         - NAME: transform_points_to_voxels
-          VOXEL_SIZE: [ 0.1, 0.1, 0.15 ]
+          VOXEL_SIZE: [ 0.1, 0.2, 0.15 ]
           MAX_POINTS_PER_VOXEL: 5
           MAX_NUMBER_OF_VOXELS: {
               'train': 150000,
@@ -82,7 +82,7 @@ DATA_CONFIG:
               'train': 150000,
               'test': 150000
           }
-          WITH_TIME_STAMP: True
+          WITH_TIME_STAMP: False
           CONCAT: False
           GET_FLOW_VOXELS: 0.2
 
@@ -179,7 +179,7 @@ MODEL:
 
 OPTIMIZATION:
     BATCH_SIZE_PER_GPU: 4
-    NUM_EPOCHS: 36
+    NUM_EPOCHS: 4
 
     OPTIMIZER: adam_onecycle
     LR: 0.003
