@@ -267,7 +267,7 @@ class DataProcessor(object):
                 max_num_points_per_voxel=config.MAX_POINTS_PER_PILLAR,
                 max_num_voxels=config.MAX_NUMBER_OF_PILLARS[self.mode],
             )
-        points = data_dict['points'][:,:num_point_features]
+        points = data_dict['points']
         if not config.get('CONCAT', True):
             pillars = []
             coordinates = []
@@ -277,9 +277,9 @@ class DataProcessor(object):
             if config.get('FILTER_GROUND', False) is not False:
                 points = points[points[:,2]>=config.get('GILTER_GROUND')]
             for frame in range(int(data_dict['gt_boxes'][:, 9].max()+1)):
-                pillar_output = self.pillar_generator.generate(points[points[:, -1] == 0.1 * frame,:])
-                if not config.get('WITH_TIME_STAMP',False):
-                    pillars.append(pillar_output[0][:,:,:-1])
+                pillar_output = self.pillar_generator.generate(points[points[:, -1] == 0.1 * frame,:-1])
+                if config.get('WITH_TIME_STAMP',False):
+                    pillars.append(np.concatenate([pillar_output[0],np.ones([pillar_output[0].shape[0],pillar_output[0].shape[1],1])*0.1*frame],axis=-1))
                 else:
                     pillars.append(pillar_output[0])
                 coordinate = np.concatenate([np.ones([pillar_output[1].shape[0],1],dtype=np.int32) * frame,pillar_output[1]],axis=-1)

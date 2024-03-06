@@ -296,7 +296,7 @@ class SpeedSampler(nn.Module):
 
         self.use_norm = model_cfg.USE_NORM
         self.use_absoluto_xyz = self.model_cfg.get('USE_ABSOLUTE_XYZ', False)
-        self.num_point_features = 9
+        self.num_point_features = 8
         self.num_voxel_features = 5
         self.num_out_voxel_features = 16
         self.num_features_layers = [self.num_point_features] + list(model_cfg.NUM_FILTERS)
@@ -320,7 +320,7 @@ class SpeedSampler(nn.Module):
             out_channels = self.num_features_layers[i + 1]
             pfn.append(PFNLayer(in_channels, out_channels, use_norm=self.use_norm,
                                 last_layer=True if i == len(self.num_features_layers) - 2 else False))
-            self.pfn = nn.ModuleList(pfn)
+        self.pfn = nn.ModuleList(pfn)
 
         cur_num_features = self.num_features_layers[-1]
         out_num_features = [int(cur_num_features / 2), int(cur_num_features / 4), int(cur_num_features / 4)]
@@ -511,7 +511,7 @@ class SpeedSampler(nn.Module):
         features = torch.concat([features, voxel_features], dim=-1)
 
         B = int(coordinates[:, 0].max().item()) + 1
-        voxels[:, :, 5] *= 10
+        # voxels[:, :, 5] *= 10
         F = int(coordinates[:, 1].max().item()) + 1
         H, W = self.grid_size[:2]
 
