@@ -540,8 +540,9 @@ class CenterSpeedHead(nn.Module):
     def forward(self, data_dict):
 
         pred_dicts = []
-        self.B = data_dict['pillar_coords'][:,0].max().item()+1
-        self.F = data_dict['pillar_coords'][:,1].max().item()+1
+        if 'pillar_coords' in data_dict:
+            self.B = data_dict['pillar_coords'][:,0].max().item()+1
+            self.F = data_dict['pillar_coords'][:,1].max().item()+1
         spatial_features_2d = data_dict['spatial_features_2d']
         x = self.shared_conv(spatial_features_2d)
         for head in self.heads_list:
