@@ -69,7 +69,7 @@ DATA_CONFIG:
           VOXEL_SIZE: [ 0.1, 0.1, 0.15 ]
           MAX_POINTS_PER_VOXEL: 5
           MAX_NUMBER_OF_VOXELS: {
-              'train': 50000,
+              'train': 150000,
               'test': 150000
           }
           CONCAT: False
@@ -79,13 +79,13 @@ DATA_CONFIG:
           PILLAR_SIZE: [ 0.1, 0.1, 6 ]
           MAX_POINTS_PER_PILLAR: 8
           MAX_NUMBER_OF_PILLARS: {
-              'train': 100,
+              'train': 100000,
               'test': 150000
           }
           WITH_TIME_STAMP: False
           CONCAT: False
           GET_FLOW_VOXELS: 0.2
-
+          FILTER_GROUND: 0.2
 
 MODEL:
     NAME: CenterSpeed
@@ -102,7 +102,7 @@ MODEL:
         TRAIN: True
         MAX_POINTS_PER_VOXEL: 2
         MAX_NUMBER_OF_VOXELS: {
-            'train': 150000,
+            'train': 50000,
             'test': 150000
         }
         FILTER_GROUND: 0.2

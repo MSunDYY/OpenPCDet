@@ -154,7 +154,10 @@ class DataProcessor(object):
             voxels = []
             coordinates = []
             num_points = []
-            frame_num = int(data_dict['gt_boxes'][:,9].max()+1)
+            try:
+                frame_num = int(data_dict['gt_boxes'][:,9].max()+1)
+            except:
+                return data_dict
             num_voxels = np.zeros((frame_num)).astype(np.int64)
             for frame in range(int(data_dict['gt_boxes'][:, 9].max()+1)):
                 voxel_output = self.voxel_generator.generate(points[points[:, -1] == 0.1 * frame,:-1])
@@ -272,20 +275,22 @@ class DataProcessor(object):
             pillars = []
             coordinates = []
             num_points = []
-            frame_num = int(data_dict['gt_boxes'][:,9].max()+1)
+            frame_num = data_dict['num_points_all'].shape[0]
             num_pillars = np.zeros((frame_num)).astype(np.int64)
             if config.get('FILTER_GROUND', False) is not False:
-                points = points[points[:,2]>=config.get('GILTER_GROUND')]
+                points = points[points[:,2]>=config.get('FILTER_GROUND')]
             for frame in range(int(data_dict['gt_boxes'][:, 9].max()+1)):
                 pillar_output = self.pillar_generator.generate(points[points[:, -1] == 0.1 * frame,:-1])
                 if config.get('WITH_TIME_STAMP',False):
                     pillars.append(np.concatenate([pillar_output[0],np.ones([pillar_output[0].shape[0],pillar_output[0].shape[1],1])*0.1*frame],axis=-1))
                 else:
                     pillars.append(pillar_output[0])
+
                 coordinate = np.concatenate([np.ones([pillar_output[1].shape[0],1],dtype=np.int32) * frame,pillar_output[1]],axis=-1)
                 coordinates.append(coordinate)
                 num_points.append(pillar_output[2])
                 num_pillars[frame] = pillar_output[0].shape[0]
+
             data_dict['num_pillars'] = num_pillars
             pillars = np.concatenate(pillars)
             coordinates = np.concatenate(coordinates)
