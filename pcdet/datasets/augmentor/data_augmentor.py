@@ -5,7 +5,7 @@ from PIL import Image
 
 from ...utils import common_utils
 from . import augmentor_utils, database_sampler
-
+from pcdet.ops.roiaware_pool3d import roiaware_pool3d_utils
 
 class DataAugmentor(object):
     def __init__(self, root_path, augmentor_configs, class_names, logger=None):
@@ -202,6 +202,35 @@ class DataAugmentor(object):
 
         data_dict['gt_boxes'] = gt_boxes
         data_dict['points'] = points
+        return data_dict
+
+    def remove_bk_points(self,data_dict=None,config=None):
+        if data_dict is None:
+            return partial(self.remove_bk_points,config=config)
+
+        points = data_dict['points']
+        gt_boxes = data_dict['gt_boxes']
+        if gt_boxes.shape[1]==9:
+            box_idxs_of_pts = roiaware_pool3d_utils.points_in_boxes_cpu(points[:,:3],gt_boxes[:,:7])
+            points_bk = np.sum(box_idxs_of_pts,axis=0)==0
+            remove_mask = np.zeros((points.shape[0],),dtype=np.bool_)
+            selected = np.random.choice(points.shape[0],int(config['ratio']*points.shape[0]))
+            remove_mask[selected] = True
+            data_dict['points'] = points[~(remove_mask*points_bk)]
+        elif gt_boxes.shape[1]==10:
+            points_all = []
+            for i in range(len(data_dict['num_points_all'])):
+                points_single = points[points[:,-1]==0.1*i]
+                gt_boxes_single = gt_boxes[gt_boxes[:,-1]==i]
+                box_idxs_of_pts = roiaware_pool3d_utils.points_in_boxes_cpu(points_single[:, :3], gt_boxes_single[:, :7])
+                points_bk = np.sum(box_idxs_of_pts, axis=0) == 0
+                remove_mask = np.zeros((points_single.shape[0],), dtype=np.bool_)
+                selected = np.random.choice(points_single.shape[0], int(config['ratio'] * points_single.shape[0]))
+                remove_mask[selected] = True
+                points_all.append(points_single[~(remove_mask * points_bk)])
+                data_dict['num_points_all'][i] = remove_mask.shape[0]-remove_mask.sum()
+            data_dict['points'] = np.concatenate(points_all,axis=0)
+
         return data_dict
 
     def random_world_frustum_dropout(self, data_dict=None, config=None):

@@ -46,6 +46,9 @@ DATA_CONFIG:
               TIME_RANGE: [ 0.3, 0.0 ]  # 0.3s-0.0s indicates 4 frames
               CONCAT: False
 
+            - NAME: remove_bk_points
+              ratio: 0.3
+
             - NAME: random_world_flip
               ALONG_AXIS_LIST: [ 'x', 'y' ]
 

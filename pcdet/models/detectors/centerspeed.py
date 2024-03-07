@@ -16,6 +16,8 @@ class CenterSpeed(Detector3DTemplate):
             if dataset.training:
                 dataset.data_augmentor.data_augmentor_queue.pop(0)
         else:
+            if dataset.training:
+                dataset.data_augmentor.data_augmentor_queue.pop(1)
             dataset.dataset_cfg['SEQUENCE_CONFIG'].ENABLED = False
             if dataset.training:
                 dataset.dataset_cfg.DATA_AUGMENTOR.AUG_CONFIG_LIST[0].NUM_POINT_FEATURES-=1
