@@ -38,13 +38,14 @@ class CenterSpeed(Detector3DTemplate):
 
             for pred_dict in self.dense_head.forward_ret_dict['pred_dicts']:
                 pred_dict['is_moving'] = batch_dict['is_moving']
-                pred_dict['coordinate_all'] = batch_dict['coordinate_all']
-                pred_dict['speed_all'] = batch_dict['speed_all']
+                pred_dict['coordinate_all'] = batch_dict['pillar_coords']
+                pred_dict['speed_1st'] = batch_dict['speed_1st']
                 pred_dict['speed_compressed'] = batch_dict['speed_map_pred']
 
-            useless_para = ['multi_scale_3d_features','multi_scale_3d_strides','spatial_features','spatial_features_stride']
+            useless_para = ['multi_scale_3d_features','multi_scale_3d_strides','spatial_features','spatial_features_stride','voxel_features']
             for para in useless_para:
-                batch_dict.pop(para)
+                del batch_dict[para]
+        torch.cuda.empty_cache()
 
 
         if self.training:

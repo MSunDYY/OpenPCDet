@@ -12,7 +12,7 @@ from pcdet import device
 from pcdet.ops.iou3d_nms import iou3d_nms_cuda
 from pcdet.ops.bev_pool import bev_pool_ext
 from pcdet.ops.box2map import box2map
-
+import spconv.pytorch as spconv
 
 class SeparateHead(nn.Module):
     def __init__(self, input_channels, sep_head_dict, init_bias=-2.19, use_bias=False, norm_func=None):
@@ -262,7 +262,7 @@ class CenterSpeedHead(nn.Module):
         sc_loss_func = nn.L1Loss()
         B = speed_pred_coords[:, 0].max().item() + 1
         counter = 0
-        for b in range(B):
+        for b in range(1,B):
             speed_pred_single_batch = speed_pred[speed_pred_coords[:, 0] == b]
             speed_gt_single_batch = speed_gt[speed_pred_coords[:, 0] == b]
             N = int(speed_gt_single_batch[:, -1].max().item())
@@ -280,7 +280,26 @@ class CenterSpeedHead(nn.Module):
         return sc_loss / counter
 
     def temporal_consistency_loss(self, speed_pred_coords, speed_pred, speed_gt):
-        return 1
+        sp_pred_tensor = spconv.SparseConvTensor(
+            features=speed_pred,
+            indices=speed_pred_coords.to(dtype=torch.int32),
+            spatial_shape=[self.F,self.grid_size[1],self.grid_size[0]],  # easy to implement deconv
+            batch_size=self.B
+        )
+        sp_pred = sp_pred_tensor.dense()
+        sp_pred_mask = torch.zeros((sp_pred.shape[0],sp_pred.shape[2],sp_pred.shape[3],sp_pred.shape[4]),dtype=torch.bool).to(device)
+        sp_pred_mask[speed_pred_coords[:,0],speed_pred_coords[:,1],speed_pred_coords[:,2],speed_pred_coords[:,3]] = True
+        sp_pred = sp_pred.permute(0,3,4,2,1)
+        sp_pred_mask = sp_pred_mask.permute(0,2,3,1)
+        loss = 0
+        mask1 = torch.logical_and(sp_pred_mask[...,1],sp_pred_mask[...,2])
+        mask2 = torch.logical_and(sp_pred_mask[...,1],sp_pred_mask[...,3])
+        mask3 = torch.logical_and(sp_pred_mask[...,2],sp_pred_mask[...,3])
+        loss+=self.speed_loss_func(sp_pred[:,:,:,1,:][mask1],sp_pred[:,:,:,2,:][mask1])
+        loss+=self.speed_loss_func(sp_pred[:,:,:,1,:][mask2],sp_pred[:,:,:,3,:][mask2])
+        loss+=self.speed_loss_func(sp_pred[:,:,:,2,:][mask3],sp_pred[:,:,:,3,:][mask3])
+
+        return loss
 
     def sigmoid(self, x):
         y = torch.clamp(x.sigmoid(), min=1e-4, max=1 - 1e-4)
@@ -353,8 +372,8 @@ class CenterSpeedHead(nn.Module):
             for idx, pred_dict in enumerate(pred_dicts):
 
                 speed_map = target_dicts['speed_map'][idx]
-                speed_pred = pred_dict['speed_all']
-                abs_speed_map = torch.norm(speed_map, dim=-1, p=2)
+                speed_pred = pred_dict['speed_1st']
+                abs_speed_map = torch.norm(speed_map[:,:,:,:2], dim=-1, p=2)
                 coordinate_all = pred_dict['coordinate_all'].long()
                 pillar_coordinates = torch.zeros((coordinate_all.shape[0], 3)).long().to(device)
 
@@ -383,7 +402,7 @@ class CenterSpeedHead(nn.Module):
                 speed_cls_loss = self.speed_cls_loss_func(is_moving_pred[gt_mask], is_moving_label[gt_mask])
 
                 spatial_consistency_loss = self.spatial_consistency_loss(pillar_coordinates, speed_pred, speed_gt)
-                temporal_consistency_loss = self.temporal_consistency_loss(pillar_coordinates, speed_pred, speed_gt)
+                temporal_consistency_loss = self.temporal_consistency_loss(coordinate_all, speed_pred, speed_gt)
 
                 motion_mask = abs_speed_map > self.model_cfg.LOSS_CONFIG.SPEED_THRESHOLD
 
@@ -391,7 +410,7 @@ class CenterSpeedHead(nn.Module):
                 pred_boxes = torch.cat([pred_dict[head_name] for head_name in self.separate_head_cfg.HEAD_ORDER], dim=1)
 
 
-                loss += speed_loss+speed_cls_loss
+                loss += speed_loss+speed_cls_loss+spatial_consistency_loss
 
                 if 'iou' in pred_dict:
                     batch_box_preds_for_iou = batch_box_preds.permute(0, 3, 1, 2)  # (B, 7 or 9, H, W)
@@ -515,7 +534,8 @@ class CenterSpeedHead(nn.Module):
     def forward(self, data_dict):
 
         pred_dicts = []
-
+        self.B = data_dict['pillar_coords'][:,0].max().item()+1
+        self.F = data_dict['pillar_coords'][:,1].max().item()+1
         spatial_features_2d = data_dict['spatial_features_2d']
         x = self.shared_conv(spatial_features_2d)
         for head in self.heads_list:
