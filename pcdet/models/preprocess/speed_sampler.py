@@ -552,7 +552,7 @@ class SpeedSampler(nn.Module):
         batch_dict['speed_map_pred'] = speed[:,:-1,:-1,:]
         speed_new = speed.detach()
 
-        is_moving = (classification > 0.5)
+        is_moving = classification
         is_moving = is_moving[coordinates[:, 0], coordinates[:, 2], coordinates[:, 3]].squeeze()
 
         if not self.training:

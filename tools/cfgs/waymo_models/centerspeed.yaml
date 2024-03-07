@@ -69,7 +69,7 @@ DATA_CONFIG:
           VOXEL_SIZE: [ 0.1, 0.1, 0.15 ]
           MAX_POINTS_PER_VOXEL: 5
           MAX_NUMBER_OF_VOXELS: {
-              'train': 500,
+              'train': 50000,
               'test': 150000
           }
           CONCAT: False
