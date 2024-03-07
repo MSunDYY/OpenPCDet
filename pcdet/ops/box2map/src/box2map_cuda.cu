@@ -274,9 +274,11 @@ __global__ void box2map_kernel(const int N ,const int C,const int H,const int W,
         float A4 = x_left - x_bottom;
         float B4 = y_bottom-y_left;
         float C4 = y_left*x_bottom-y_bottom*x_left;
-        for (int i=ceil(x_bottom);i<=ceil(x_top);i++)
+
+
+        for (int i=ceil(max(x_bottom,0.));i<=ceil(min(x_top,float(H)));i++)
         {
-            for(int j=ceil(y_left);j<=ceil(y_right);j++)
+            for(int j=ceil(max(y_left,0.));j<=ceil(min(y_right,float(W)));j++)
             {
 
                 float y_mid = j+0.5;

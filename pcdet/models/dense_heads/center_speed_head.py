@@ -161,6 +161,11 @@ class CenterSpeedHead(nn.Module):
 
             speed_map = torch.zeros([size * feature_map_stride for size in feature_map_size] + [speed.shape[-1]]).to(device)
             box2map.box2map_gpu(boxes.to(device), speed_map, speed.to(device))
+            try:
+                assert boxes[:,0].min()>0 and boxes[:,0].max()<1504 and boxes[:,1].min()>0 and boxes[:,1].max()<1504
+                print(speed_map.max())
+            except:
+                pass
         else:
             speed_map = None
         for k in range(min(num_max_objs, gt_boxes.shape[0])):
@@ -242,7 +247,10 @@ class CenterSpeedHead(nn.Module):
 
                 )
                 if not self.train_box:
-                    speed_map_list.append(speed_map.to(gt_boxes_single_head.device))
+                    try:
+                        speed_map_list.append(speed_map.to(gt_boxes_single_head.device))
+                    except:
+                        pass
                 masks_list.append(mask.to(gt_boxes_single_head.device))
                 target_boxes_src_list.append(ret_boxes_src.to(gt_boxes_single_head.device))
                 target_boxes_list.append(ret_boxes.to(gt_boxes_single_head.device))
