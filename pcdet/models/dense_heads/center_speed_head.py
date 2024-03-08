@@ -162,9 +162,10 @@ class CenterSpeedHead(nn.Module):
             speed_map = torch.zeros([size * feature_map_stride for size in feature_map_size] + [speed.shape[-1]]).to(device)
             box2map.box2map_gpu(boxes.to(device), speed_map, speed.to(device))
             try:
-                assert boxes[:,0].min()>0 and boxes[:,0].max()<1504 and boxes[:,1].min()>0 and boxes[:,1].max()<1504
+                speed_map = speed_map.to('cpu').to(device)
             except:
-                pass
+
+                raise ValueError('Error!')
         else:
             speed_map = None
         for k in range(min(num_max_objs, gt_boxes.shape[0])):
@@ -255,9 +256,13 @@ class CenterSpeedHead(nn.Module):
                 target_boxes_list.append(ret_boxes.to(gt_boxes_single_head.device))
                 heatmap_list.append(heatmap.to(gt_boxes_single_head.device))
                 inds_list.append(inds.to(gt_boxes_single_head.device))
-            ret_dict['heatmaps'].append(torch.stack(heatmap_list, dim=0).to(device))
-            ret_dict['target_boxes'].append(torch.stack(target_boxes_list, dim=0).to(device))
+            try:
+
+                ret_dict['target_boxes'].append(torch.stack(target_boxes_list, dim=0).to(device))
+            except:
+                pass
             ret_dict['inds'].append(torch.stack(inds_list, dim=0).to(device))
+            ret_dict['heatmaps'].append(torch.stack(heatmap_list, dim=0).to(device))
             ret_dict['masks'].append(torch.stack(masks_list, dim=0).to(device))
             ret_dict['target_boxes_src'].append(torch.stack(target_boxes_src_list, dim=0).to(device))
             if not self.train_box:
@@ -574,12 +579,6 @@ class CenterSpeedHead(nn.Module):
         self.forward_ret_dict['pred_dicts'] = pred_dicts
 
         if not self.training or self.predict_boxes_when_training:
-            target_dict = self.assign_targets(
-                data_dict['gt_boxes'], feature_map_size=spatial_features_2d.size()[2:],
-                feature_map_stride=data_dict.get('spatial_features_2d_strides', None)
-            )
-
-            inds = target_dict['inds'][0]
 
             pred_dicts = self.generate_predicted_boxes(
                 data_dict['batch_size'], pred_dicts

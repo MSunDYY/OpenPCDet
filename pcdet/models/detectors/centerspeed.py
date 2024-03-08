@@ -82,9 +82,7 @@ class CenterSpeed(Detector3DTemplate):
         batch_size = batch_dict['batch_size']
         final_pred_dict = batch_dict['final_box_dicts']
         recall_dict = {}
-        is_moving_mask = batch_dict['is_moving'] > 0.5
-        speed_pred = batch_dict['speed_1st']
-        pillar_coords = batch_dict['pillar_coords']
+
 
         if self.train_box:
             for index in range(batch_size):
@@ -99,7 +97,9 @@ class CenterSpeed(Detector3DTemplate):
         else:
             B = self.dense_head.B
             F = self.dense_head.F
-
+            is_moving_mask = batch_dict['is_moving'] > 0.5
+            speed_pred = batch_dict['speed_1st']
+            pillar_coords = batch_dict['pillar_coords']
             gt_boxes = batch_dict['gt_boxes']
             gt_boxes = [gt_box[gt_box[:, -2] == 0] for gt_box in gt_boxes]
             gt_boxes_num = [gt_box.shape[0] for gt_box in gt_boxes]
