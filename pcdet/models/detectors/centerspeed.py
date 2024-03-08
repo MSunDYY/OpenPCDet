@@ -143,4 +143,5 @@ class CenterSpeed(Detector3DTemplate):
                     thresh_list=post_process_cfg.RECALL_THRESH_LIST,
                     visualization=False
                 )
+            final_pred_dict = cor_final_pred_dict
         return final_pred_dict, recall_dict
