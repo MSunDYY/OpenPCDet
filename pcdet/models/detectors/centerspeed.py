@@ -1,3 +1,4 @@
+import spconv.pytorch
 import torch
 
 from .detector3d_template import Detector3DTemplate
@@ -78,16 +79,37 @@ class CenterSpeed(Detector3DTemplate):
         batch_size = batch_dict['batch_size']
         final_pred_dict = batch_dict['final_box_dicts']
         recall_dict = {}
-        for index in range(batch_size):
-            pred_boxes = final_pred_dict[index]['pred_boxes']
+        is_moving_mask = batch_dict['is_moving']>0.5
+        speed_pred = batch_dict['speed_1st']
+        pillar_coords = batch_dict['pillar_coords']
+        if not self.train_box:
+            for index in range(batch_size):
+                pred_boxes = final_pred_dict[index]['pred_boxes']
 
-            recall_dict = self.generate_recall_record(
-                box_preds=pred_boxes,
-                recall_dict=recall_dict, batch_index=index, data_dict=batch_dict,
-                thresh_list=post_process_cfg.RECALL_THRESH_LIST,
-                visualization=False
+                recall_dict = self.generate_recall_record(
+                    box_preds=pred_boxes,
+                    recall_dict=recall_dict, batch_index=index, data_dict=batch_dict,
+                    thresh_list=post_process_cfg.RECALL_THRESH_LIST,
+                    visualization=False
+                )
+        else:
+            speed_sp_tensor = spconv.pytorch.SparseConvTensor(
+                features=speed_pred,
+                indices= pillar_coords,
+                spatial_shape=[4,1504,1504],
+                batch_size=self.dense_head.B
+
             )
 
+            speed_dense_tensor = speed_sp_tensor.dense()
+
+            for index in range(self.dense_head.B):
+                pred_boxes = final_pred_dict[index*self.F]['pred_boxes']
+                for f in range(1,self.dense_head.F):
+                    pred_boxes_pre = final_pred_dict[index*self.dense_head.F+f]
+                    coord_mask = (pillar_coords[:,0]==index) * (pillar_coords[:,1]==f)
+                    pred_boxes_pre_coor = (pred_boxes_pre[:,:2]-self.preprocess.point_cloud_range[:2])//torch.tensor(self.preprocess.voxel_size[:2]).to(device)
+                    pred_boxes_pre[:,:2]+= speed_dense_tensor[index,F,pred_boxes_pre_coor[:,1],pred_boxes_pre_coor[:,0]]
 
 
         return final_pred_dict, recall_dict
