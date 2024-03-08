@@ -556,9 +556,10 @@ class SpeedSampler(nn.Module):
         is_moving = is_moving[coordinates[:, 0], coordinates[:, 2], coordinates[:, 3]].squeeze()
 
         if not self.training:
-            coordinate_1st_mask = (coordinates[:, 1] > 0) * is_moving
-            # coordinate_2st_mask = (coordinates[:, 1] < F - 1) * is_moving
-            coordinate_all = coordinates[is_moving]
+            is_moving_mask = is_moving>0.5
+            coordinate_1st_mask = (coordinates[:, 1] > 0) * is_moving_mask
+            # coordinate_2st_mask = (coordinates[:, 1] < F - 1)
+            coordinate_all = coordinates[is_moving_mask]
         else:
             coordinate_all = coordinates
             coordinate_1st_mask = coordinates[:,1]>0
