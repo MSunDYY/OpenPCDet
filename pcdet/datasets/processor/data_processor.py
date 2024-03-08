@@ -6,7 +6,7 @@ import torch
 import torchvision
 from ...utils import box_utils, common_utils
 from pcdet import device
-
+from pcdet.ops.roiaware_pool3d import roiaware_pool3d_utils
 tv = None
 try:
     import cumm.tensorview as tv
@@ -275,10 +275,25 @@ class DataProcessor(object):
             num_points = []
             frame_num = data_dict['num_points_all'].shape[0]
             num_pillars = np.zeros((frame_num)).astype(np.int64)
+            gt_boxes = data_dict['gt_boxes']
             if config.get('FILTER_GROUND', False) is not False:
                 points = points[points[:,2]>=config.get('FILTER_GROUND')]
             for frame in range(frame_num):
-                pillar_output = self.pillar_generator.generate(points[points[:, -1] == 0.1 * frame,:-1])
+                points_single_frame = points[points[:, -1] == 0.1 * frame, :-1]
+                ratio = config.get('RM_BK_RATIO',None)
+                if ratio is not None:
+
+                    gt_box_single_frame = gt_boxes[gt_boxes[:,-2]==frame][:,:7]
+
+                    points1,points2= np.split(points_single_frame,np.array([points_single_frame.shape[0]*ratio],dtype=np.int))
+                    box_point_mask = roiaware_pool3d_utils.points_in_boxes_cpu(
+                        torch.from_numpy(points1[:, 0:3]).float(),
+                        torch.from_numpy(gt_box_single_frame[:, 0:7]).float()
+                    ).long().numpy()
+
+                    box_point_mask = np.sum(box_point_mask,axis=0)>0
+                    points_single_frame = np.concatenate([points1[box_point_mask],points2],axis=0)
+                pillar_output = self.pillar_generator.generate(points_single_frame)
                 if config.get('WITH_TIME_STAMP',False):
                     pillars.append(np.concatenate([pillar_output[0],np.ones([pillar_output[0].shape[0],pillar_output[0].shape[1],1])*0.1*frame],axis=-1))
                 else:

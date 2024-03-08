@@ -89,7 +89,7 @@ DATA_CONFIG:
           CONCAT: False
           GET_FLOW_VOXELS: 0.2
           FILTER_GROUND: 0.2
-
+          RM_BF_RATIO: 0.3
 MODEL:
     NAME: CenterSpeed
 
