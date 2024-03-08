@@ -277,7 +277,7 @@ class DataProcessor(object):
             num_pillars = np.zeros((frame_num)).astype(np.int64)
             if config.get('FILTER_GROUND', False) is not False:
                 points = points[points[:,2]>=config.get('FILTER_GROUND')]
-            for frame in range(int(data_dict['gt_boxes'][:, 9].max()+1)):
+            for frame in range(frame_num):
                 pillar_output = self.pillar_generator.generate(points[points[:, -1] == 0.1 * frame,:-1])
                 if config.get('WITH_TIME_STAMP',False):
                     pillars.append(np.concatenate([pillar_output[0],np.ones([pillar_output[0].shape[0],pillar_output[0].shape[1],1])*0.1*frame],axis=-1))

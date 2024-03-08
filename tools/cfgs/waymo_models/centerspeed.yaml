@@ -28,7 +28,7 @@ DATA_CONFIG:
               DB_INFO_PATH:
                   - waymo_processed_data_v0_5_0_waymo_dbinfos_train_sampled_1.pkl
 
-              USE_SHARED_MEMORY: False  # set it to True to speed up (it costs about 50GB? shared memory)
+              USE_SHARED_MEMORY: True  # set it to True to speed up (it costs about 50GB? shared memory)
               DB_DATA_PATH:
                   - waymo_processed_data_v0_5_0_gt_database_train_sampled_1_global.npy
 
@@ -47,7 +47,7 @@ DATA_CONFIG:
               CONCAT: False
 
             - NAME: remove_bk_points
-              ratio: 0.3
+              ratio: 0.5
 
             - NAME: random_world_flip
               ALONG_AXIS_LIST: [ 'x', 'y' ]
@@ -82,7 +82,7 @@ DATA_CONFIG:
           PILLAR_SIZE: [ 0.1, 0.1, 6 ]
           MAX_POINTS_PER_PILLAR: 8
           MAX_NUMBER_OF_PILLARS: {
-              'train': 100000,
+              'train': 40000,
               'test': 150000
           }
           WITH_TIME_STAMP: False

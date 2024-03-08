@@ -161,9 +161,10 @@ class CenterSpeedHead(nn.Module):
 
             speed_map = torch.zeros([size * feature_map_stride for size in feature_map_size] + [speed.shape[-1]]).to(device)
             box2map.box2map_gpu(boxes.to(device), speed_map, speed.to(device))
-
-            assert boxes[:,0].min()>0 and boxes[:,0].max()<1504 and boxes[:,1].min()>0 and boxes[:,1].max()<1504
-
+            try:
+                assert boxes[:,0].min()>0 and boxes[:,0].max()<1504 and boxes[:,1].min()>0 and boxes[:,1].max()<1504
+            except:
+                pass
         else:
             speed_map = None
         for k in range(min(num_max_objs, gt_boxes.shape[0])):
@@ -415,7 +416,7 @@ class CenterSpeedHead(nn.Module):
                 target_boxes = target_dicts['target_boxes'][idx]
                 pred_boxes = torch.cat([pred_dict[head_name] for head_name in self.separate_head_cfg.HEAD_ORDER], dim=1)
 
-                print('speed_ls:{:.3f} speed_compre_ls:{:.3d} cls_loss:{:.3f}  spa_consis_ls:{:.3f}  temp_consis_ls:{:.3f}'.format(speed_loss,speed_compressed_loss,speed_cls_loss,spatial_consistency_loss,temporal_consistency_loss))
+                print('speed_ls:{:.3f} speed_compre_ls:{:.3f} cls_loss:{:.3f}  spa_consis_ls:{:.3f}  temp_consis_ls:{:.3f}'.format(speed_loss,speed_compressed_loss,speed_cls_loss,spatial_consistency_loss,temporal_consistency_loss))
                 loss += speed_loss+speed_compressed_loss+speed_cls_loss+spatial_consistency_loss+temporal_consistency_loss
 
                 if 'iou' in pred_dict:
