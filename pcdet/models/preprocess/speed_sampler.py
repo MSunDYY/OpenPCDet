@@ -559,7 +559,7 @@ class SpeedSampler(nn.Module):
             # is_moving_mask = is_moving>0.5
             coordinate_1st_mask = coordinates[:, 1] > 0
             # coordinate_2st_mask = (coordinates[:, 1] < F - 1)
-            coordinate_all = coordinates[is_moving_mask]
+            coordinate_all = coordinates
         else:
             coordinate_all = coordinates
             coordinate_1st_mask = coordinates[:,1]>0

@@ -79,11 +79,11 @@ DATA_CONFIG:
           GET_FLOW_VOXELS: 0.2
 
         - NAME: transform_points_to_pillars
-          PILLAR_SIZE: [ 0.1, 0.1, 6 ]
+          PILLAR_SIZE: [ 0.1, 0.2, 6 ]
           MAX_POINTS_PER_PILLAR: 8
           MAX_NUMBER_OF_PILLARS: {
               'train': 40000,
-              'test': 150000
+              'test': 150
           }
           WITH_TIME_STAMP: False
           CONCAT: False
