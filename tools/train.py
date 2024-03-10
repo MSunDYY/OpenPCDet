@@ -67,7 +67,10 @@ def parse_config():
     cfg.EXP_GROUP_PATH = '/'.join(args.cfg_file.split('/')[1:-1])  # remove 'cfgs' and 'xxxx.yaml'
 
     args.use_amp = args.use_amp or cfg.OPTIMIZATION.get('USE_AMP', False)
-
+    if args.ckpt=='None':
+        args.ckpt=None
+    if args.pretrained_model=='None':
+        args.pretrained_model = None
     if args.set_cfgs is not None:
         cfg_from_list(args.set_cfgs, cfg)
 
