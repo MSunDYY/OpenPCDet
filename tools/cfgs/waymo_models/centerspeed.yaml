@@ -82,8 +82,8 @@ DATA_CONFIG:
           PILLAR_SIZE: [ 0.1, 0.1, 6 ]
           MAX_POINTS_PER_PILLAR: 8
           MAX_NUMBER_OF_PILLARS: {
-              'train': 40000,
-              'test': 150000
+              'train': 40,
+              'test': 150
           }
           WITH_TIME_STAMP: False
           CONCAT: False
