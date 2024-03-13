@@ -14,6 +14,7 @@ from pcdet.ops.bev_pool import bev_pool_ext
 from pcdet.ops.box2map import box2map
 import spconv.pytorch as spconv
 
+
 class SeparateHead(nn.Module):
     def __init__(self, input_channels, sep_head_dict, init_bias=-2.19, use_bias=False, norm_func=None):
         super().__init__()
@@ -159,7 +160,8 @@ class CenterSpeedHead(nn.Module):
             speed = gt_boxes[:, 7:9].contiguous()
             speed = torch.cat([speed, torch.arange(1, boxes.shape[0] + 1)[:, None]], dim=-1)
 
-            speed_map = torch.zeros([size * feature_map_stride for size in feature_map_size] + [speed.shape[-1]]).to(device)
+            speed_map = torch.zeros([size * feature_map_stride for size in feature_map_size] + [speed.shape[-1]]).to(
+                device)
             box2map.box2map_gpu(boxes.to(device), speed_map, speed.to(device))
             try:
                 speed_map = speed_map.to('cpu').to(device)
@@ -237,7 +239,6 @@ class CenterSpeedHead(nn.Module):
                 else:
                     gt_boxes_single_head = torch.cat(gt_boxes_single_head, dim=0)
 
-
                 heatmap, ret_boxes, inds, mask, ret_boxes_src, speed_map = self.assign_target_of_single_head(
                     num_classes=len(cur_class_names), gt_boxes=gt_boxes_single_head.to('cpu'),
                     feature_map_size=feature_map_size, feature_map_stride=target_assigner_cfg.FEATURE_MAP_STRIDE,
@@ -274,7 +275,7 @@ class CenterSpeedHead(nn.Module):
         sc_loss_func = nn.L1Loss()
         B = speed_pred_coords[:, 0].max().item() + 1
         counter = 0
-        for b in range(1,B):
+        for b in range(1, B):
             speed_pred_single_batch = speed_pred[speed_pred_coords[:, 0] == b]
             speed_gt_single_batch = speed_gt[speed_pred_coords[:, 0] == b]
             N = int(speed_gt_single_batch[:, -1].max().item())
@@ -295,21 +296,23 @@ class CenterSpeedHead(nn.Module):
         sp_pred_tensor = spconv.SparseConvTensor(
             features=speed_pred,
             indices=speed_pred_coords.to(dtype=torch.int32),
-            spatial_shape=[self.F,self.grid_size[1],self.grid_size[0]],  # easy to implement deconv
+            spatial_shape=[self.F, self.grid_size[1], self.grid_size[0]],  # easy to implement deconv
             batch_size=self.B
         )
         sp_pred = sp_pred_tensor.dense()
-        sp_pred_mask = torch.zeros((sp_pred.shape[0],sp_pred.shape[2],sp_pred.shape[3],sp_pred.shape[4]),dtype=torch.bool).to(device)
-        sp_pred_mask[speed_pred_coords[:,0],speed_pred_coords[:,1],speed_pred_coords[:,2],speed_pred_coords[:,3]] = True
-        sp_pred = sp_pred.permute(0,3,4,2,1)
-        sp_pred_mask = sp_pred_mask.permute(0,2,3,1)
+        sp_pred_mask = torch.zeros((sp_pred.shape[0], sp_pred.shape[2], sp_pred.shape[3], sp_pred.shape[4]),
+                                   dtype=torch.bool).to(device)
+        sp_pred_mask[
+            speed_pred_coords[:, 0], speed_pred_coords[:, 1], speed_pred_coords[:, 2], speed_pred_coords[:, 3]] = True
+        sp_pred = sp_pred.permute(0, 3, 4, 2, 1)
+        sp_pred_mask = sp_pred_mask.permute(0, 2, 3, 1)
         loss = 0
-        mask1 = torch.logical_and(sp_pred_mask[...,1],sp_pred_mask[...,2])
-        mask2 = torch.logical_and(sp_pred_mask[...,1],sp_pred_mask[...,3])
-        mask3 = torch.logical_and(sp_pred_mask[...,2],sp_pred_mask[...,3])
-        loss+=self.speed_loss_func(sp_pred[:,:,:,1,:][mask1],sp_pred[:,:,:,2,:][mask1])
-        loss+=self.speed_loss_func(sp_pred[:,:,:,1,:][mask2],sp_pred[:,:,:,3,:][mask2])
-        loss+=self.speed_loss_func(sp_pred[:,:,:,2,:][mask3],sp_pred[:,:,:,3,:][mask3])
+        mask1 = torch.logical_and(sp_pred_mask[..., 1], sp_pred_mask[..., 2])
+        mask2 = torch.logical_and(sp_pred_mask[..., 1], sp_pred_mask[..., 3])
+        mask3 = torch.logical_and(sp_pred_mask[..., 2], sp_pred_mask[..., 3])
+        loss += self.speed_loss_func(sp_pred[:, :, :, 1, :][mask1], sp_pred[:, :, :, 2, :][mask1])
+        loss += self.speed_loss_func(sp_pred[:, :, :, 1, :][mask2], sp_pred[:, :, :, 3, :][mask2])
+        loss += self.speed_loss_func(sp_pred[:, :, :, 2, :][mask3], sp_pred[:, :, :, 3, :][mask3])
 
         return loss
 
@@ -334,7 +337,7 @@ class CenterSpeedHead(nn.Module):
                 pred_boxes = torch.cat([pred_dict[head_name] for head_name in self.separate_head_cfg.HEAD_ORDER], dim=1)
 
                 reg_loss = self.reg_loss_func(
-                    pred_boxes, target_dicts['masks'][idx], target_dicts['inds'][idx], target_boxes[:,:,:8]
+                    pred_boxes, target_dicts['masks'][idx], target_dicts['inds'][idx], target_boxes[:, :, :8]
                 )
                 loc_loss = (reg_loss * reg_loss.new_tensor(
                     self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['code_weights'])).sum()
@@ -382,74 +385,88 @@ class CenterSpeedHead(nn.Module):
             B = pred_dicts[0]['coordinate_all'][:, 0].max() + 1
             FRAME = pred_dicts[0]['coordinate_all'][:, 1].max() + 1
             for idx, pred_dict in enumerate(pred_dicts):
+                if pred_dict['speed_1st'] is not None:
+                    speed_map = target_dicts['speed_map'][idx]
+                    speed_pred = pred_dict['speed_1st']
+                    abs_speed_map = torch.norm(speed_map[:, :, :, :2], dim=-1, p=2)
+                    coordinate_all = pred_dict['coordinate_all'].long()
+                    pillar_coordinates = torch.zeros((coordinate_all.shape[0], 3)).long().to(device)
 
-                speed_map = target_dicts['speed_map'][idx]
-                speed_pred = pred_dict['speed_1st']
-                abs_speed_map = torch.norm(speed_map[:,:,:,:2], dim=-1, p=2)
-                coordinate_all = pred_dict['coordinate_all'].long()
-                pillar_coordinates = torch.zeros((coordinate_all.shape[0], 3)).long().to(device)
+                    pillar_coordinates[:, 1:] = coordinate_all[:, 2:]
+                    pillar_coordinates[:, 0] = coordinate_all[:, 0] * FRAME + coordinate_all[:, 1]
+                    speed_gt = speed_map[pillar_coordinates[:, 0], pillar_coordinates[:, 1], pillar_coordinates[:, 2]]
+                    gt_mask = speed_gt[:, -1] > 0
+                    is_moving_pred = pred_dict['is_moving'].float()
+                    abs_gt = torch.norm(speed_gt[:, :2], dim=-1, p=2)
+                    is_moving_label = torch.zeros(abs_gt.shape[0]).to(device)
+                    moving_mask = abs_gt > 0.3
+                    static_mask = (abs_gt < 0.1) * gt_mask
+                    is_moving_label[moving_mask] = 1
 
-                pillar_coordinates[:, 1:] = coordinate_all[:, 2:]
-                pillar_coordinates[:, 0] = coordinate_all[:, 0] * FRAME + coordinate_all[:, 1]
-                speed_gt = speed_map[pillar_coordinates[:, 0], pillar_coordinates[:, 1], pillar_coordinates[:, 2]]
-                gt_mask = speed_gt[:, -1] > 0
-                is_moving_pred = pred_dict['is_moving'].float()
-                abs_gt = torch.norm(speed_gt[:, :2], dim=-1, p=2)
-                is_moving_label = torch.zeros(abs_gt.shape[0]).to(device)
-                moving_mask = abs_gt > 0.3
-                static_mask = (abs_gt < 0.1) * gt_mask
-                is_moving_label[moving_mask] = 1
+                    speed_map_compressed = speed_map.reshape((B, FRAME, speed_map.shape[1], speed_map.shape[2], -1))
+                    speed_map_compressed_inds = (speed_map_compressed[:, :, :, :, -1] > 0).sum(dim=1)
+                    speed_map_compressed_mask = speed_map_compressed_inds > 0
+                    speed_map_compressed = torch.sum(speed_map_compressed[:, :, :, :, :2], dim=1)[
+                                               speed_map_compressed_mask] / speed_map_compressed_inds[:, :, :, None][
+                                               speed_map_compressed_mask]
+                    speed_map_compressed_pred = pred_dict['speed_compressed'][speed_map_compressed_mask]
 
-                speed_map_compressed = speed_map.reshape((B, FRAME, speed_map.shape[1], speed_map.shape[2], -1))
-                speed_map_compressed_inds = (speed_map_compressed[:, :, :, :, -1] > 0).sum(dim=1)
-                speed_map_compressed_mask = speed_map_compressed_inds > 0
-                speed_map_compressed = torch.sum(speed_map_compressed[:, :, :, :, :2], dim=1)[
-                                       speed_map_compressed_mask] / speed_map_compressed_inds[:, :, :, None][
-                                       speed_map_compressed_mask]
-                speed_map_compressed_pred = pred_dict['speed_compressed'][speed_map_compressed_mask]
+                    speed_loss = self.speed_loss_func(speed_pred[gt_mask], speed_gt[:, :-1][gt_mask])
+                    speed_compressed_loss = self.speed_loss_func(speed_map_compressed_pred, speed_map_compressed)
+                    speed_cls_loss = self.speed_cls_loss_func(is_moving_pred[gt_mask], is_moving_label[gt_mask])
 
+                    spatial_consistency_loss = self.spatial_consistency_loss(pillar_coordinates, speed_pred, speed_gt)
+                    temporal_consistency_loss = self.temporal_consistency_loss(coordinate_all, speed_pred, speed_gt)
 
-                speed_loss = self.speed_loss_func(speed_pred[gt_mask], speed_gt[:, :-1][gt_mask])
-                speed_compressed_loss = self.speed_loss_func(speed_map_compressed_pred,speed_map_compressed)
-                speed_cls_loss = self.speed_cls_loss_func(is_moving_pred[gt_mask], is_moving_label[gt_mask])
+                    motion_mask = abs_speed_map > self.model_cfg.LOSS_CONFIG.SPEED_THRESHOLD
 
-                spatial_consistency_loss = self.spatial_consistency_loss(pillar_coordinates, speed_pred, speed_gt)
-                temporal_consistency_loss = self.temporal_consistency_loss(coordinate_all, speed_pred, speed_gt)
+                    target_boxes = target_dicts['target_boxes'][idx]
+                    pred_boxes = torch.cat([pred_dict[head_name] for head_name in self.separate_head_cfg.HEAD_ORDER],
+                                           dim=1)
 
-                motion_mask = abs_speed_map > self.model_cfg.LOSS_CONFIG.SPEED_THRESHOLD
+                    print(
+                        'speed_ls:{:.3f} speed_compre_ls:{:.3f} cls_loss:{:.3f}  spa_consis_ls:{:.3f}  temp_consis_ls:{:.3f}'.format(
+                            speed_loss, speed_compressed_loss, speed_cls_loss, spatial_consistency_loss,
+                            temporal_consistency_loss))
+                    loss += speed_loss + speed_compressed_loss + speed_cls_loss + spatial_consistency_loss + temporal_consistency_loss
 
-                target_boxes = target_dicts['target_boxes'][idx]
-                pred_boxes = torch.cat([pred_dict[head_name] for head_name in self.separate_head_cfg.HEAD_ORDER], dim=1)
+                    if 'iou' in pred_dict:
+                        batch_box_preds_for_iou = batch_box_preds.permute(0, 3, 1, 2)  # (B, 7 or 9, H, W)
 
-                print('speed_ls:{:.3f} speed_compre_ls:{:.3f} cls_loss:{:.3f}  spa_consis_ls:{:.3f}  temp_consis_ls:{:.3f}'.format(speed_loss,speed_compressed_loss,speed_cls_loss,spatial_consistency_loss,temporal_consistency_loss))
-                loss += speed_loss+speed_compressed_loss+speed_cls_loss+spatial_consistency_loss+temporal_consistency_loss
+                        iou_loss = loss_utils.calculate_iou_loss_centerhead(
+                            iou_preds=pred_dict['iou'],
+                            batch_box_preds=batch_box_preds_for_iou.clone().detach(),
+                            mask=target_dicts['masks'][idx],
+                            ind=target_dicts['inds'][idx], gt_boxes=target_dicts['target_boxes_src'][idx]
+                        )
+                        loss += iou_loss
+                        tb_dict['iou_loss_head_%d' % idx] = iou_loss.item()
 
-                if 'iou' in pred_dict:
-                    batch_box_preds_for_iou = batch_box_preds.permute(0, 3, 1, 2)  # (B, 7 or 9, H, W)
-
-                    iou_loss = loss_utils.calculate_iou_loss_centerhead(
-                        iou_preds=pred_dict['iou'],
-                        batch_box_preds=batch_box_preds_for_iou.clone().detach(),
-                        mask=target_dicts['masks'][idx],
-                        ind=target_dicts['inds'][idx], gt_boxes=target_dicts['target_boxes_src'][idx]
-                    )
-                    loss += iou_loss
-                    tb_dict['iou_loss_head_%d' % idx] = iou_loss.item()
-
-                if self.model_cfg.get('IOU_REG_LOSS', False):
-                    iou_reg_loss = loss_utils.calculate_iou_reg_loss_centerhead(
-                        batch_box_preds=batch_box_preds_for_iou,
-                        mask=target_dicts['masks'][idx],
-                        ind=target_dicts['inds'][idx], gt_boxes=target_dicts['target_boxes_src'][idx]
-                    )
-                    if target_dicts['masks'][idx].sum().item() != 0:
-                        iou_reg_loss = iou_reg_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['loc_weight']
-                        loss += iou_reg_loss
-                        tb_dict['iou_reg_loss_head_%d' % idx] = iou_reg_loss.item()
-                    else:
-                        loss += (batch_box_preds_for_iou * 0.).sum()
-                        tb_dict['iou_reg_loss_head_%d' % idx] = (batch_box_preds_for_iou * 0.).sum()
-
+                    if self.model_cfg.get('IOU_REG_LOSS', False):
+                        iou_reg_loss = loss_utils.calculate_iou_reg_loss_centerhead(
+                            batch_box_preds=batch_box_preds_for_iou,
+                            mask=target_dicts['masks'][idx],
+                            ind=target_dicts['inds'][idx], gt_boxes=target_dicts['target_boxes_src'][idx]
+                        )
+                        if target_dicts['masks'][idx].sum().item() != 0:
+                            iou_reg_loss = iou_reg_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['loc_weight']
+                            loss += iou_reg_loss
+                            tb_dict['iou_reg_loss_head_%d' % idx] = iou_reg_loss.item()
+                        else:
+                            loss += (batch_box_preds_for_iou * 0.).sum()
+                            tb_dict['iou_reg_loss_head_%d' % idx] = (batch_box_preds_for_iou * 0.).sum()
+                else:
+                    speed_map = target_dicts['speed_map'][idx]
+                    speed_map_compressed = speed_map.reshape((B, FRAME, speed_map.shape[1], speed_map.shape[2], -1))
+                    speed_map_compressed_inds = (speed_map_compressed[:, :, :, :, -1] > 0).sum(dim=1)
+                    speed_map_compressed_mask = speed_map_compressed_inds > 0
+                    speed_map_compressed = torch.sum(speed_map_compressed[:, :, :, :, :2], dim=1)[
+                                               speed_map_compressed_mask] / speed_map_compressed_inds[:, :, :, None][
+                                               speed_map_compressed_mask]
+                    speed_map_compressed_pred = pred_dict['speed_compressed'][speed_map_compressed_mask]
+                    speed_compressed_loss = self.speed_loss_func(speed_map_compressed_pred, speed_map_compressed)
+                    print('compressed_loss: {:.4f}'.format(speed_compressed_loss))
+                    loss += speed_compressed_loss
             tb_dict['rpn_loss'] = loss.item()
             return loss, tb_dict
 
@@ -547,8 +564,8 @@ class CenterSpeedHead(nn.Module):
 
         pred_dicts = []
         if 'pillar_coords' in data_dict:
-            self.B = data_dict['pillar_coords'][:,0].max().item()+1
-            self.F = data_dict['pillar_coords'][:,1].max().item()+1
+            self.B = data_dict['pillar_coords'][:, 0].max().item() + 1
+            self.F = data_dict['pillar_coords'][:, 1].max().item() + 1
         spatial_features_2d = data_dict['spatial_features_2d']
         x = self.shared_conv(spatial_features_2d)
         for head in self.heads_list:
@@ -561,7 +578,7 @@ class CenterSpeedHead(nn.Module):
             FRAME = 4
             num_gt_boxes = torch.tensor([(gt_box[:, -2] == i).sum() for gt_box in gt_boxes for i in range(FRAME)])
             gt_boxes_new = torch.zeros(
-            (data_dict['batch_size'], num_gt_boxes.max(), gt_boxes.shape[-1] - 1))  # remove vx,vy,frame_id
+                (data_dict['batch_size'], num_gt_boxes.max(), gt_boxes.shape[-1] - 1))  # remove vx,vy,frame_id
             for b in range(gt_boxes.shape[0]):
                 for f in range(FRAME):
                     temp = gt_boxes[b][gt_boxes[b][:, -2] == f]

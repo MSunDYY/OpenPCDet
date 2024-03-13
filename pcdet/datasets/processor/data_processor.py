@@ -260,6 +260,8 @@ class DataProcessor(object):
             # to avoid pickling issues in multiprocess spawn
             return partial(self.transform_points_to_pillars, config=config)
         num_point_features = self.num_point_features + (1 if data_dict.get('label', False) is not False else 0)+(1 if config.get('WITH_TIME_STAMP',False) else 0)
+
+
         if self.pillar_generator is None:
             self.pillar_generator = VoxelGeneratorWrapper(
                 vsize_xyz=config.PILLAR_SIZE,

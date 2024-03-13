@@ -38,7 +38,7 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
             t1 = time.time()
             batch = next(dataloader_iter)
             t2 = time.time()
-            print('cpu_time:',t2-t1)
+            # print('cpu_time:',t2-t1)
         except StopIteration:
             dataloader_iter = iter(train_loader)
             batch = next(dataloader_iter)
@@ -64,7 +64,7 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
         with torch.cuda.amp.autocast(enabled=use_amp):
             loss, tb_dict, disp_dict = model_func(model, batch)
         t3 = time.time()
-        print('train_time:',t3-t2)
+        # print('train_time:',t3-t2)
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
         clip_grad_norm_(model.parameters(), optim_cfg.GRAD_NORM_CLIP)
@@ -84,8 +84,8 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
 
         t4 = time.time()
         #
-        print('bf:', t4 - t3)
-        print('-------------------')
+        # print('bf:', t4 - t3)
+        # print('-------------------')
         # log to console and tensorboard
         if rank == 0:
             batch_size = batch.get('batch_size', None)
@@ -111,7 +111,7 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
 
                     logger.info(
                         'Train: {:>4d}/{} ({:>3.0f}%) [{:>4d}/{} ({:>3.0f}%)]  '
-                        'Loss: {loss.val:#.4g} ({loss.avg:#.3g})  '
+                        'Loss: {loss.val:#.4g} ({loss.avg:#.4g})  '
                         'LR: {lr:.3e}  '
                         f'Time cost: {tbar.format_interval(trained_time_each_epoch)}/{tbar.format_interval(remaining_second_each_epoch)} '
                         f'[{tbar.format_interval(trained_time_past_all)}/{tbar.format_interval(remaining_second_all)}]  '
