@@ -80,16 +80,16 @@ DATA_CONFIG:
 
         - NAME: transform_points_to_pillars
           PILLAR_SIZE: [ 0.1, 0.1, 6 ]
-          MAX_POINTS_PER_PILLAR: 8
+          MAX_POINTS_PER_PILLAR: 6
           MAX_NUMBER_OF_PILLARS: {
-              'train': 40,
+              'train': 20,
               'test': 150
           }
           WITH_TIME_STAMP: False
           CONCAT: False
           GET_FLOW_VOXELS: 0.2
-          FILTER_GROUND: 0.2
-          RM_BF_RATIO: 0.3
+          FILTER_GROUND: 0.25
+          RM_BF_RATIO: 0.4
 MODEL:
     NAME: CenterSpeed
 
@@ -101,7 +101,7 @@ MODEL:
         WITH_DISTANCE: False
         USE_ABSOLUTE_XYZ: False
         USE_NORM: True
-        NUM_FILTERS: [16, 32]
+        NUM_FILTERS: [16, 16]
         TRAIN: True
         MAX_POINTS_PER_VOXEL: 2
         MAX_NUMBER_OF_VOXELS: {
@@ -185,7 +185,7 @@ OPTIMIZATION:
     NUM_EPOCHS: 30
 
     OPTIMIZER: adam_onecycle
-    LR: 0.003
+    LR: 0.001
     WEIGHT_DECAY: 0.01
     MOMENTUM: 0.9
 

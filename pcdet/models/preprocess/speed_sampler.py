@@ -299,8 +299,8 @@ class SpeedSampler(nn.Module):
         self.use_norm = model_cfg.USE_NORM
         self.use_absoluto_xyz = self.model_cfg.get('USE_ABSOLUTE_XYZ', False)
         self.num_point_features = 8
-        self.num_voxel_features = 5
-        self.num_out_voxel_features = 16
+        self.num_voxel_features = 2
+        self.num_out_voxel_features = 8
         self.num_features_layers = [self.num_point_features] + list(model_cfg.NUM_FILTERS)
         self.num_features = self.num_out_voxel_features + self.num_features_layers[-1]
 
@@ -312,10 +312,10 @@ class SpeedSampler(nn.Module):
             nn.ReLU())
         from functools import partial
         norm_fn = partial(nn.BatchNorm1d, momentum=0.01, eps=1e-3)
-        self.sp_conv = TemperalDownConv(self.num_out_voxel_features + self.num_features_layers[-1], 64, stride=[2, 2],
+        self.sp_conv = TemperalDownConv(self.num_out_voxel_features + self.num_features_layers[-1], 32, stride=[2, 2],
                                         norm_fn=norm_fn,
                                         )
-        self.sp_up_conv = TemperalUpConv(64, 16, stride=[2, 2], norm_fn=norm_fn)
+        self.sp_up_conv = TemperalUpConv(32, 16, stride=[2, 2], norm_fn=norm_fn)
         pfn = []
         for i in range(len(self.num_features_layers) - 1):
             in_channels = self.num_features_layers[i]
@@ -326,12 +326,12 @@ class SpeedSampler(nn.Module):
 
         cur_num_features = self.num_features_layers[-1]
         out_num_features = [int(cur_num_features / 2), int(cur_num_features / 4), int(cur_num_features / 4)]
-        self.motion_conv = nn.Conv2d(in_channels=self.num_features * 2, out_channels=2, kernel_size=3)
-        self.motion_conv = spconv.SparseSequential(
-            spconv.SubMConv3d(48 * 2, 64, kernel_size=(1, 3, 3)),
-            norm_fn(64),
-            nn.ReLU()
-        )
+        # self.motion_conv = nn.Conv2d(in_channels=self.num_features * 2, out_channels=2, kernel_size=3)
+        # self.motion_conv = spconv.SparseSequential(
+        #     spconv.SubMConv3d(48 * 2, 64, kernel_size=(1, 3, 3)),
+        #     norm_fn(64),
+        #     nn.ReLU()
+        # )
 
         # self.conv = nn.ModuleList([
         #     nn.ModuleList([nn.Sequential(
@@ -497,7 +497,7 @@ class SpeedSampler(nn.Module):
         voxel_num_points = batch_dict['pillar_num_points']
 
         coordinates = torch.concat([coordinates[:, 0:1], coordinates[:, 1:2], coordinates[:, 4:5], coordinates[:, 3:4]],
-                                   dim=-1)
+                                   dim=-1) #(b,f,z,y,x) -> (b,f,x,y)
 
         points_mean = voxels[:, :, :].sum(dim=-2) / (voxel_num_points.reshape(-1, 1).repeat(1, voxels.shape[-1]))
         f_cluster = voxels[:, :, :3] - points_mean[:, None, :3]
@@ -505,9 +505,9 @@ class SpeedSampler(nn.Module):
 
         f_center = torch.zeros_like(voxels[:, :, :3])
         f_center[:, :, 0] = voxels[:, :, 0] - (
-                coordinates[:, 3].to(voxels.dtype).unsqueeze(1) * self.voxel_x + self.offset_x)
+                coordinates[:, 2].to(voxels.dtype).unsqueeze(1) * self.voxel_x + self.offset_x)
         f_center[:, :, 1] = voxels[:, :, 1] - (
-                coordinates[:, 2].to(voxels.dtype).unsqueeze(1) * self.voxel_y + self.offset_y)
+                coordinates[:, 3].to(voxels.dtype).unsqueeze(1) * self.voxel_y + self.offset_y)
         f_center[:, :, 2] = voxels[:, :, 2] - (
                 torch.ones_like(coordinates[:, 2]).unsqueeze(1) * self.voxel_z + self.offset_z)
 
@@ -523,9 +523,9 @@ class SpeedSampler(nn.Module):
         features = features.squeeze()
 
         num_points = voxel_num_points[:, None]
-        size = voxels[:, :, :3].max(dim=-2)[0] - voxels[:, :, :3].min(dim=-2)[0]
+        # size = voxels[:, :, :3].max(dim=-2)[0] - voxels[:, :, :3].min(dim=-2)[0]
         max_height = voxels[:, :, 2:3].max(dim=-2)[0]
-        voxel_features = torch.concat([num_points, size, max_height], dim=-1)
+        voxel_features = torch.concat([num_points, max_height], dim=-1)
         voxel_features = self.linear(voxel_features)
         features = torch.concat([features, voxel_features], dim=-1)
 
