@@ -366,14 +366,43 @@ class SpeedSampler(nn.Module):
         norm_fn(16),
         nn.ReLU()
         )
-        self.regression_2d = spconv.SparseSequential(
 
-            spconv.SparseConv2d(16, 8, kernel_size=1,padding=0),
-            norm_fn(8),
+        self.dense_conv2d = nn.Sequential(
+            nn.Conv2d(in_channels=16,out_channels=16,stride=1,kernel_size=3,padding=1),
+            nn.BatchNorm2d(16),
             nn.ReLU(),
-            spconv.SparseConv2d(8, 2, kernel_size=1,padding=0)
+            nn.Conv2d(in_channels=16, out_channels=16, stride=1, kernel_size=3, padding=1),
+            nn.BatchNorm2d(16),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=16, out_channels=16, stride=1, kernel_size=3, padding=1),
+            nn.BatchNorm2d(16),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=16, out_channels=16, stride=1, kernel_size=3, padding=1),
+            nn.BatchNorm2d(16),
+            nn.ReLU()
         )
 
+
+        # self.regression_2d = spconv.SparseSequential(
+        #
+        #     spconv.SparseConv2d(16, 8, kernel_size=1,padding=0),
+        #     norm_fn(8),
+        #     nn.ReLU(),
+        #     spconv.SparseConv2d(8, 2, kernel_size=1,padding=0)
+        # )
+
+        self.regression_2d = nn.Sequential(
+            nn.Conv2d(16,8,kernel_size=1,padding=0),
+            nn.BatchNorm2d(8),
+            nn.ReLU(),
+            nn.Conv2d(8,2,kernel_size=1,padding=0)
+        )
+        self.classfier_2d = nn.Sequential(
+            nn.Conv2d(16, 8, kernel_size=1, padding=0),
+            nn.BatchNorm2d(8),
+            nn.ReLU(),
+            nn.Conv2d(8, 1, kernel_size=1, padding=0)
+        )
         self.classfier = spconv.SparseSequential(
             spconv.SubMConv2d(in_channels=16 * 3 * 2, out_channels=48, kernel_size=(3, 3), padding=(1, 1)),
             norm_fn(48),
@@ -575,13 +604,19 @@ class SpeedSampler(nn.Module):
         coordinate_1st = coordinates[coordinate_1st_mask]
         if bbox:
             # motion_features = motion_features.dense()
-            motion_features = self.conv2d(motion_features)
-            speed = self.regression_2d(motion_features).dense()[:,:,:-1,:-1]
-            batch_dict['speed_map_pred'] = speed.permute(0, 2, 3, 1)
+            # is_moving_pred = self.classfier(motion_features).dense().permute(0,2,3,1)[:,:-1,:-1,0]
+            # is_moving_pred = is_moving_pred.reshape(B,is_moving_pred.shape[1],is_moving_pred.shape[2])
+            # is_moving_pred = is_moving_pred[coordinates[:, 0], coordinates[:, 2], coordinates[:, 3]].squeeze()
+
+            motion_features = self.conv2d(motion_features).dense()
+            motion_features = self.dense_conv2d(motion_features)[:,:,:-1,:-1]
+            speed = self.regression_2d(motion_features)
+            is_moving_pred = self.classfier_2d(motion_features)
+            batch_dict['speed_map_pred'] = speed.permute(0, 2, 3, 1)[:,:-1,:-1,:]
 
             batch_dict['pillar_coords'] = coordinate_1st
             batch_dict['speed_1st'] = None
-            batch_dict['is_moving'] = None
+            batch_dict['is_moving_pred'] = is_moving_pred.permute(0,2,3,1)[:,:-1,:-1,:]
 
             batch_dict['points'][:, 0] = batch_dict['points'][:, 0] * F + batch_dict['points'][:, -1] * 10
             batch_dict['batch_size'] *= F
@@ -726,7 +761,7 @@ class SpeedSampler(nn.Module):
         speed_all[:] = speed_1st[:]
         batch_dict['pillar_coords'] = coordinate_1st
         batch_dict['speed_1st'] = speed_all
-        batch_dict['is_moving'] = is_moving[coordinate_1st_mask]
+        batch_dict['is_moving_pred'] = is_moving[coordinate_1st_mask]
 
         batch_dict['points'][:, 0] = batch_dict['points'][:, 0] * F + batch_dict['points'][:, -1] * 10
         batch_dict['batch_size'] *= F

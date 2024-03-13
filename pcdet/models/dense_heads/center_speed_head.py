@@ -396,7 +396,7 @@ class CenterSpeedHead(nn.Module):
                     pillar_coordinates[:, 0] = coordinate_all[:, 0] * FRAME + coordinate_all[:, 1]
                     speed_gt = speed_map[pillar_coordinates[:, 0], pillar_coordinates[:, 1], pillar_coordinates[:, 2]]
                     gt_mask = speed_gt[:, -1] > 0
-                    is_moving_pred = pred_dict['is_moving'].float()
+                    is_moving_pred = pred_dict['is_moving_pred']
                     abs_gt = torch.norm(speed_gt[:, :2], dim=-1, p=2)
                     is_moving_label = torch.zeros(abs_gt.shape[0]).to(device)
                     moving_mask = abs_gt > 0.3
@@ -409,7 +409,7 @@ class CenterSpeedHead(nn.Module):
                     speed_map_compressed = torch.sum(speed_map_compressed[:, :, :, :, :2], dim=1)[
                                                speed_map_compressed_mask] / speed_map_compressed_inds[:, :, :, None][
                                                speed_map_compressed_mask]
-                    speed_map_compressed_pred = pred_dict['speed_compressed'][speed_map_compressed_mask]
+                    speed_map_compressed_pred = pred_dict['speed_compressed_pred'][speed_map_compressed_mask]
 
                     speed_loss = self.speed_loss_func(speed_pred[gt_mask], speed_gt[:, :-1][gt_mask])
                     speed_compressed_loss = self.speed_loss_func(speed_map_compressed_pred, speed_map_compressed)
@@ -460,12 +460,19 @@ class CenterSpeedHead(nn.Module):
                     speed_map_compressed = speed_map.reshape((B, FRAME, speed_map.shape[1], speed_map.shape[2], -1))
                     speed_map_compressed_inds = (speed_map_compressed[:, :, :, :, -1] > 0).sum(dim=1)
                     speed_map_compressed_mask = speed_map_compressed_inds > 0
+
+
                     speed_map_compressed = torch.sum(speed_map_compressed[:, :, :, :, :2], dim=1)[
-                                               speed_map_compressed_mask] / speed_map_compressed_inds[:, :, :, None][
-                                               speed_map_compressed_mask]
-                    speed_map_compressed_pred = pred_dict['speed_compressed'][speed_map_compressed_mask]
+                                               speed_map_compressed_mask] / speed_map_compressed_inds[:, :, :, None][speed_map_compressed_mask]
+                    is_moving_mask_gt = (torch.norm(speed_map_compressed,dim=-1,p=2)>0.3)
+                    speed_map_compressed = speed_map_compressed[is_moving_mask_gt]
+
+                    is_moving_pred = pred_dict['is_moving_pred'][speed_map_compressed_mask]
+
+                    speed_cls_loss = self.speed_cls_loss_func(is_moving_pred,is_moving_mask_gt.float())
+                    speed_map_compressed_pred = pred_dict['speed_compressed_pred'][speed_map_compressed_mask]
                     speed_compressed_loss = self.speed_loss_func(speed_map_compressed_pred, speed_map_compressed)
-                    print('compressed_loss: {:.4f}'.format(speed_compressed_loss))
+                    print('compressed_loss: {:.4f} speed_cls_loss: {:.4f}'.format(speed_compressed_loss,speed_cls_loss))
                     loss += speed_compressed_loss
             tb_dict['rpn_loss'] = loss.item()
             return loss, tb_dict
