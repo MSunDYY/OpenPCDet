@@ -124,7 +124,7 @@ def main(args, cfgs):
     if cfg.LOCAL_RANK == 0:
         os.system('cp %s %s' % (args.cfg_file, output_dir))
 
-    tb_log = SummaryWriter(log_dir=str(output_dir / 'tensorboard')) if cfg.LOCAL_RANK == 0 else None
+    tb_log = SummaryWriter(log_dir=str(output_dir / 'tensorboard'),filename_suffix='latest_event.out.tfevents') if cfg.LOCAL_RANK == 0 else None
 
     logger.info("----------- Create dataloader & network & optimizer -----------")
     train_set, train_loader, train_sampler = build_dataloader(
