@@ -612,11 +612,11 @@ class SpeedSampler(nn.Module):
             motion_features = self.dense_conv2d(motion_features)[:,:,:-1,:-1]
             speed = self.regression_2d(motion_features)
             is_moving_pred = self.classfier_2d(motion_features)
-            batch_dict['speed_map_pred'] = speed.permute(0, 2, 3, 1)[:,:-1,:-1,:]
+            batch_dict['speed_map_pred'] = speed.permute(0, 2, 3, 1)
 
             batch_dict['pillar_coords'] = coordinate_1st
             batch_dict['speed_1st'] = None
-            batch_dict['is_moving_pred'] = is_moving_pred.permute(0,2,3,1)[:,:-1,:-1,:]
+            batch_dict['is_moving_pred'] = is_moving_pred.permute(0,2,3,1)[:,:,:,0]
 
             batch_dict['points'][:, 0] = batch_dict['points'][:, 0] * F + batch_dict['points'][:, -1] * 10
             batch_dict['batch_size'] *= F

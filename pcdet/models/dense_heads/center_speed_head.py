@@ -111,7 +111,7 @@ class CenterSpeedHead(nn.Module):
         self.add_module('hm_loss_func', loss_utils.FocalLossCenterNet())
         self.add_module('reg_loss_func', loss_utils.RegLossCenterNet())
         self.add_module('speed_loss_func', torch.nn.L1Loss())
-        self.add_module('speed_cls_loss_func', torch.nn.BCELoss())
+        self.add_module('speed_cls_loss_func', torch.nn.BCEWithLogitsLoss())
         # self.add_module('speed_loss_func',loss_utils.)
 
     def assign_target_of_single_head(
@@ -471,9 +471,9 @@ class CenterSpeedHead(nn.Module):
 
                     speed_cls_loss = self.speed_cls_loss_func(is_moving_pred,is_moving_mask_gt.float())
                     speed_map_compressed_pred = pred_dict['speed_compressed_pred'][speed_map_compressed_mask]
-                    speed_compressed_loss = self.speed_loss_func(speed_map_compressed_pred, speed_map_compressed)
+                    speed_compressed_loss = self.speed_loss_func(speed_map_compressed_pred[is_moving_mask_gt], speed_map_compressed)
                     print('compressed_loss: {:.4f} speed_cls_loss: {:.4f}'.format(speed_compressed_loss,speed_cls_loss))
-                    loss += speed_compressed_loss
+                    loss += speed_compressed_loss+speed_cls_loss
             tb_dict['rpn_loss'] = loss.item()
             return loss, tb_dict
 
