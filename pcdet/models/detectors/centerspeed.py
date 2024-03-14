@@ -20,6 +20,7 @@ class CenterSpeed(Detector3DTemplate):
             round((self.dataset.point_cloud_range[3] - self.dataset.point_cloud_range[0]) / self.pillar_size[0]),
             round((self.dataset.point_cloud_range[4] - self.dataset.point_cloud_range[1]) / self.pillar_size[1])]
         memory_max = torch.cuda.get_device_properties(0).total_memory / 1024 / 1024
+        self.sigmoid = torch.nn.Sigmoid()
         if memory_max > 5000:
             dataset.dataset_cfg.DATA_PROCESSOR[-1].MAX_NUMBER_OF_PILLARS['train'] *= 1000
             dataset.dataset_cfg.DATA_PROCESSOR[-1].MAX_NUMBER_OF_PILLARS['test'] *= 1000
@@ -114,9 +115,21 @@ class CenterSpeed(Detector3DTemplate):
         else:
             B = self.dense_head.B
             F = self.dense_head.F
-            is_moving_mask = batch_dict['is_moving']> 0.5
-            speed_pred = batch_dict['speed_1st']
-            pillar_coords = batch_dict['pillar_coords']
+            is_moving_pred = self.sigmoid(batch_dict['is_moving_pred'])> 0.5
+
+            speed_map_pred = batch_dict['speed_map_pred']
+            signal = False
+            if signal:
+                pillar_coords = batch_dict['pillar_coords']
+                speed_pred = batch_dict['speed_1st']
+                speed_sp_tensor = spconv.pytorch.SparseConvTensor(
+                    features=speed_pred,
+                    indices=pillar_coords.int(),
+                    spatial_shape=[F] + self.pillar_spatial_shape,
+                    batch_size=B
+                )
+                speed_dense_tensor = speed_sp_tensor.dense()
+                speed_dense_tensor = speed_dense_tensor.permute(0, 2, 3, 4, 1)
             gt_boxes_all = batch_dict['gt_boxes']
             gt_boxes = batch_dict['gt_boxes']
             gt_boxes = [gt_box[gt_box[:, -2] == 0] for gt_box in gt_boxes]
@@ -126,20 +139,15 @@ class CenterSpeed(Detector3DTemplate):
             for b in range(B):
                 gt_boxes_temp[b, :gt_boxes_num[b], :-1] = gt_boxes[b][:, :-2]
                 gt_boxes_temp[b, :gt_boxes_num[b], -1] = gt_boxes[b][:, -1]
-            speed_sp_tensor = spconv.pytorch.SparseConvTensor(
-                features=speed_pred,
-                indices=pillar_coords.int(),
-                spatial_shape=[F] + self.pillar_spatial_shape,
-                batch_size=B
-            )
 
-            speed_dense_tensor = speed_sp_tensor.dense()
-            speed_dense_tensor = speed_dense_tensor.permute(0, 2, 3, 4, 1)
             cor_final_pred_dict = []
             speed_map_all = []
             for index in range(B):
-                pred_boxes = final_pred_dict[index * F]['pred_boxes']
-                pred_dict_temp = {'pred_boxes': [], 'pred_scores': [], 'pred_labels': []}
+
+                pred_dict = final_pred_dict[index * F]['pred_boxes']
+                pred_boxes = pred_dict['pred_boxes']
+
+                pred_dict_temp = {'pred_boxes': [pred_boxes], 'pred_scores': [pred_dict['pred_scores']], 'pred_labels': [pred_dict['pred_labels']]}
                 gt_box_batch = gt_boxes_all[index]
                 speed_map_batch = []
 
@@ -151,34 +159,35 @@ class CenterSpeed(Detector3DTemplate):
                 gt_box[:, 3:5] = (gt_box[:, 3:5]) / torch.tensor(self.pillar_size[:2])[None, :].to(device)
                 gt_box[:, 6][gt_box[:, 6] < 0] += torch.pi
                 box2map.box2map_gpu(gt_box[:, :7].contiguous(), speed_map_gt, gt_box[:, 7:9].contiguous())
+
                 speed_map_batch.append(speed_map_gt[None, :])
 
                 for f in range(1, F):
                     pred_boxes_pre = final_pred_dict[index * F + f]['pred_boxes']
-                    coord_mask = (pillar_coords[:, 0] == index) * (pillar_coords[:, 1] == f)
+                    # coord_mask = (pillar_coords[:, 0] == index) * (pillar_coords[:, 1] == f)
                     pred_boxes_pre_coor = ((pred_boxes_pre[:, :2] - torch.from_numpy(
                         self.preprocess.point_cloud_range[:2]).to(device)) // torch.tensor(
                         self.pillar_size[:2]).to(device))
-                    pred_boxes_pre[:, :2] += speed_dense_tensor[
-                                                 index, f][pred_boxes_pre_coor[:, 0].long(), pred_boxes_pre_coor[:,
+                    pred_boxes_pre[:, :2] += speed_map_pred[
+                                                 index][pred_boxes_pre_coor[:, 0].long(), pred_boxes_pre_coor[:,
                                                                                              1].long()] * 0.1 * f
                     pred_dict_temp['pred_boxes'].append(pred_boxes_pre)
                     pred_dict_temp['pred_labels'].append(final_pred_dict[index * F + f]['pred_labels'])
                     pred_dict_temp['pred_scores'].append(final_pred_dict[index * F + f]['pred_scores'])
-                    speed_map_gt = torch.zeros(self.pillar_spatial_shape + [2]).to(device)
-                    speed_map_pred = batch_dict['speed_map_pred']
-                    gt_box = gt_box_batch[gt_box_batch[:, -2] == f]
-                    gt_box[:, :2] = (gt_box[:, :2] - torch.from_numpy(self.dataset.point_cloud_range[:2]).to(device)) / torch.tensor(
-                        self.pillar_size[:2])[None, :].to(device)
-                    gt_box[:,3:5] = (gt_box[:,3:5]) / torch.tensor(self.pillar_size[:2])[None,:].to(device)
-                    gt_box[:,6][gt_box[:,6]<0]+=torch.pi
-                    box2map.box2map_gpu(gt_box[:, :7].contiguous(), speed_map_gt, gt_box[:, 7:9].contiguous())
-                    speed_map_batch.append(speed_map_gt[None,:])
+                    # speed_map_gt = torch.zeros(self.pillar_spatial_shape + [2]).to(device)
+                    # speed_map_pred = batch_dict['speed_map_pred']
+                    # gt_box = gt_box_batch[gt_box_batch[:, -2] == f]
+                    # gt_box[:, :2] = (gt_box[:, :2] - torch.from_numpy(self.dataset.point_cloud_range[:2]).to(device)) / torch.tensor(
+                    #     self.pillar_size[:2])[None, :].to(device)
+                    # gt_box[:,3:5] = (gt_box[:,3:5]) / torch.tensor(self.pillar_size[:2])[None,:].to(device)
+                    # gt_box[:,6][gt_box[:,6]<0]+=torch.pi
+                    # box2map.box2map_gpu(gt_box[:, :7].contiguous(), speed_map_gt, gt_box[:, 7:9].contiguous())
+                    # speed_map_batch.append(speed_map_gt[None,:])
 
 
 
-                speed_map_batch = torch.concat(speed_map_batch,dim=0)
-                speed_map_all.append(speed_map_batch[None,:])
+                # speed_map_batch = torch.concat(speed_map_batch,dim=0)
+                # speed_map_all.append(speed_map_batch[None,:])
                 pred_dict_temp['pred_boxes'] = torch.concat(pred_dict_temp['pred_boxes'], dim=0)
                 pred_dict_temp['pred_scores'] = torch.concat(pred_dict_temp['pred_scores'], dim=0)
                 pred_dict_temp['pred_labels'] = torch.concat(pred_dict_temp['pred_labels'], dim=0)
@@ -189,16 +198,16 @@ class CenterSpeed(Detector3DTemplate):
                     thresh_list=post_process_cfg.RECALL_THRESH_LIST,
                     visualization=False
                 )
-            speed_map_all = torch.concat(speed_map_all,dim=0)
+            # speed_map_all = torch.concat(speed_map_all,dim=0)
 
-            speed_pillar_gt = speed_map_all[pillar_coords[:,0],pillar_coords[:,1],pillar_coords[:,2],pillar_coords[:,3]]
-
+            # speed_pillar_gt = speed_map_all[pillar_coords[:,0],pillar_coords[:,1],pillar_coords[:,2],pillar_coords[:,3]]
+            #
             final_pred_dict = cor_final_pred_dict
-
-            speed_map_compressed = speed_map_all[...,-1]**2+speed_map_all[...,-2]**2
-            speed_map_compressed_inds = (speed_map_compressed>0).sum(dim=1)
-
-            speed_map_compressed = torch.sum(speed_map_compressed,dim=1)
+            #
+            # speed_map_compressed = speed_map_all[...,-1]**2+speed_map_all[...,-2]**2
+            # speed_map_compressed_inds = (speed_map_compressed>0).sum(dim=1)
+            #
+            # speed_map_compressed = torch.sum(speed_map_compressed,dim=1)
 
             final_pred_dict = self.generate_speed_eval(speed_pillar_gt,speed_map_all,is_moving_mask,speed_pred,final_pred_dict)
 
