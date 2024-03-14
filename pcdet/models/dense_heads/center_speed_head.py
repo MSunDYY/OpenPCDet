@@ -165,8 +165,8 @@ class CenterSpeedHead(nn.Module):
                                speed.shape[-1])
             speed_map = torch.zeros(speed_map_shape).to(
                 device)
-            box_coor = boxes[:,:2].long()
-            speed_map[box_coor[:,0],box_coor[:,1]] = speed.to(device)
+            box_coor = boxes[:, :2].long()
+            speed_map[box_coor[:, 0], box_coor[:, 1]] = speed.to(device)
 
             # box2map.box2map_gpu(boxes.to(device), speed_map, speed.to(device))
 
@@ -469,22 +469,24 @@ class CenterSpeedHead(nn.Module):
                                                speed_map_compressed_mask]
                     is_moving_mask_gt = (torch.norm(speed_map_compressed, dim=-1, p=2) > 0.3)
                     is_moving_pred = pred_dict['is_moving_pred'][speed_map_compressed_mask]
-                    speed_cls_loss = self.speed_cls_loss_func(is_moving_pred, is_moving_mask_gt.float())
+                    speed_cls_loss = self.speed_cls_loss_func(is_moving_pred, is_moving_mask_gt.float()) * \
+                                     self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['speed_cls_weight']
 
                     if is_moving_mask_gt.sum():
                         speed_map_compressed_gt = speed_map_compressed[is_moving_mask_gt]
 
                         speed_map_compressed_pred = pred_dict['speed_compressed_pred'][speed_map_compressed_mask]
                         speed_compressed_loss = self.speed_loss_func(speed_map_compressed_pred[is_moving_mask_gt],
-                                                                 speed_map_compressed_gt)
+                                                                     speed_map_compressed_gt)
                         print(
-                        'compressed_loss: {:.4f} speed_cls_loss: {:.4f}'.format(speed_compressed_loss, speed_cls_loss))
-                        loss += speed_compressed_loss
+                            'compressed_loss: {:.4f} speed_cls_loss: {:.4f}'.format(speed_compressed_loss,
+                                                                                    speed_cls_loss))
+                        loss += speed_compressed_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['speed_weight']
 
 
                     else:
                         print('num_moving_gt = {}'.format(0))
-                        speed_compressed_loss=torch.tensor([0])
+                        speed_compressed_loss = torch.tensor([0])
 
                     loss += speed_cls_loss
 

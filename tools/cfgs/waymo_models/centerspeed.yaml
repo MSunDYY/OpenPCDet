@@ -79,8 +79,8 @@ DATA_CONFIG:
           GET_FLOW_VOXELS: 0.2
 
         - NAME: transform_points_to_pillars
-          PILLAR_SIZE: [ 0.2, 0.2, 6 ]
-          MAX_POINTS_PER_PILLAR: 6
+          PILLAR_SIZE: [ 0.1, 0.2, 6 ]
+          MAX_POINTS_PER_PILLAR: 8
           MAX_NUMBER_OF_PILLARS: {
               'train': 20,
               'test': 150
@@ -89,7 +89,7 @@ DATA_CONFIG:
           CONCAT: False
           GET_FLOW_VOXELS: 0.2
           FILTER_GROUND: 0.2
-          RM_BF_RATIO: {
+          RM_BK_RATIO: {
               'train': 0.3,
               'test': 0
           }
@@ -162,7 +162,9 @@ MODEL:
             LOSS_WEIGHTS: {
                 'cls_weight': 1.0,
                 'loc_weight': 2.0,
-                'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 0.2]
+                'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 0.2],
+                'speed_weight': 1.0,
+                'speed_cls_weight': 0.4
             }
             SPEED_THRESHOLD: 0.5
 
@@ -188,7 +190,7 @@ OPTIMIZATION:
     NUM_EPOCHS: 30
 
     OPTIMIZER: adam_onecycle
-    LR: 0.001
+    LR: 0.003
     WEIGHT_DECAY: 0.01
     MOMENTUM: 0.9
 
