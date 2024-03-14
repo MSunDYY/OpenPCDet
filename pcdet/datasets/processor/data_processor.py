@@ -284,7 +284,7 @@ class DataProcessor(object):
                 points_single_frame = points[points[:, -1] == 0.1 * frame, :-1]
                 ratio = config.get('RM_BK_RATIO',None)
                 if ratio is not None:
-
+                    ratio = config.RM_BK_RATIO[self.mode]
                     gt_box_single_frame = gt_boxes[gt_boxes[:,-2]==frame][:,:7]
 
                     points1,points2= np.split(points_single_frame,np.array([points_single_frame.shape[0]*ratio],dtype=np.int))
