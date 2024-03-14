@@ -10,6 +10,8 @@ from pcdet.ops.box2map import box2map
 class CenterSpeed(Detector3DTemplate):
     def __init__(self, model_cfg, num_class, dataset):
         super().__init__(model_cfg=model_cfg, num_class=num_class, dataset=dataset)
+        self.model_cfg.DENSE_HEAD.pillar_size = dataset.dataset_cfg.DATA_PROCESSOR[-1].PILLAR_SIZE
+        self.model_cfg.PREPROCESS.pillar_size = dataset.dataset_cfg.DATA_PROCESSOR[-1].PILLAR_SIZE
         self.module_list = self.build_networks()
         self.speed_est = SpeedEstimater()
         self.train_box = model_cfg.DENSE_HEAD.TRAIN_BOX
@@ -21,7 +23,6 @@ class CenterSpeed(Detector3DTemplate):
         if memory_max > 5000:
             dataset.dataset_cfg.DATA_PROCESSOR[-1].MAX_NUMBER_OF_PILLARS['train'] *= 1000
             dataset.dataset_cfg.DATA_PROCESSOR[-1].MAX_NUMBER_OF_PILLARS['test'] *= 1000
-
         if not model_cfg.DENSE_HEAD.TRAIN_BOX:
             if dataset.training:
                 dataset.data_augmentor.data_augmentor_queue.pop(0)

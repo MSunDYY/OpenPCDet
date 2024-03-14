@@ -294,8 +294,8 @@ class SpeedSampler(nn.Module):
         self.stride = model_cfg.STRIDE
         self.num_point_features = num_point_features
         self.voxel_size = [voxel_size[i] * self.stride[i] for i in range(3)]
-        self.grid_size = [int(grid_size[i] / self.stride[i]) for i in range(3)]
-
+        self.grid_size = [round(grid_size[i] / self.stride[i]) for i in range(3)]
+        self.pillar_spatial_size = [round((point_cloud_range[3+i]-point_cloud_range[i])/model_cfg.pillar_size[i]) for i in range(2)]
         self.use_norm = model_cfg.USE_NORM
         self.use_absoluto_xyz = self.model_cfg.get('USE_ABSOLUTE_XYZ', False)
         self.num_point_features = 8
@@ -360,8 +360,12 @@ class SpeedSampler(nn.Module):
         self.conv2d = spconv.SparseSequential(
             spconv.SparseConv2d(in_channels=16 * 3 * 2, out_channels=32, kernel_size=3, padding=1),
         norm_fn(32),
-
         nn.ReLU(),
+
+        spconv.SparseConv2d(in_channels=32,out_channels=32,kernel_size=3,padding=1),
+        norm_fn(32),
+        nn.ReLU(),
+
         spconv.SparseConv2d(in_channels=32,out_channels=16,kernel_size=3,padding=1),
         norm_fn(16),
         nn.ReLU()
@@ -561,7 +565,7 @@ class SpeedSampler(nn.Module):
         B = int(coordinates[:, 0].max().item()) + 1
         # voxels[:, :, 5] *= 10
         F = int(coordinates[:, 1].max().item()) + 1
-        H, W = self.grid_size[:2]
+        H, W = self.pillar_spatial_size[:2]
 
         input_sp_tensor = spconv.SparseConvTensor(
             features=features,
