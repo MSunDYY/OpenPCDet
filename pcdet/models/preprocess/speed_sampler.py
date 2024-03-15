@@ -433,24 +433,7 @@ class SpeedSampler(nn.Module):
         self.offset_x = self.voxel_x / 2 + point_cloud_range[0]
         self.offset_y = self.voxel_y / 2 + point_cloud_range[1]
         self.offset_z = self.voxel_z / 2 + point_cloud_range[2]
-        self.embedding1 = nn.Sequential(
-            nn.Conv1d(in_channels=9, out_channels=16, kernel_size=1),
-            nn.BatchNorm1d(num_features=16),
-            nn.ReLU(),
-            nn.Conv1d(in_channels=16, out_channels=32, kernel_size=1),
-            nn.BatchNorm1d(32),
-            nn.ReLU(),
-        )
-        self.diff_embedding1 = nn.Sequential(
-            nn.Conv1d(in_channels=9, out_channels=16, kernel_size=1),
-            nn.BatchNorm1d(num_features=16),
-            nn.ReLU(),
-            nn.Conv1d(in_channels=16, out_channels=32, kernel_size=1),
-            nn.BatchNorm1d(32),
-            nn.ReLU(),
-        )
-
-        # self.embedding2 = nn.Sequential(
+        # self.embedding1 = nn.Sequential(
         #     nn.Conv1d(in_channels=9, out_channels=16, kernel_size=1),
         #     nn.BatchNorm1d(num_features=16),
         #     nn.ReLU(),
@@ -458,7 +441,7 @@ class SpeedSampler(nn.Module):
         #     nn.BatchNorm1d(32),
         #     nn.ReLU(),
         # )
-        # self.diff_embedding2 = nn.Sequential(
+        # self.diff_embedding1 = nn.Sequential(
         #     nn.Conv1d(in_channels=9, out_channels=16, kernel_size=1),
         #     nn.BatchNorm1d(num_features=16),
         #     nn.ReLU(),
@@ -466,13 +449,15 @@ class SpeedSampler(nn.Module):
         #     nn.BatchNorm1d(32),
         #     nn.ReLU(),
         # )
-
-        self.diff_speed_pred = nn.Sequential(
-            nn.Conv1d(in_channels=32 * 2, out_channels=16, kernel_size=1),
-            nn.BatchNorm1d(num_features=16),
-            nn.ReLU(),
-            nn.Conv1d(in_channels=16, out_channels=2, kernel_size=1)
-        )
+        #
+        #
+        #
+        # self.diff_speed_pred = nn.Sequential(
+        #     nn.Conv1d(in_channels=32 * 2, out_channels=16, kernel_size=1),
+        #     nn.BatchNorm1d(num_features=16),
+        #     nn.ReLU(),
+        #     nn.Conv1d(in_channels=16, out_channels=2, kernel_size=1)
+        # )
 
     def get_output_feature_dim(self):
         return self.num_point_features
