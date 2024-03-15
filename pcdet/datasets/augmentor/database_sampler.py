@@ -28,7 +28,9 @@ class DataBaseSampler(object):
             self.db_infos[class_name] = []
 
         self.use_shared_memory = sampler_cfg.get('USE_SHARED_MEMORY', False)
-
+        import GPUtil
+        if GPUtil.getGPUs()[0].name.endswith('3090'):
+            self.use_shared_memory = False
         for db_info_path in sampler_cfg['DB_INFO_PATH']:
             db_info_path = self.root_path.resolve() / db_info_path
             if not db_info_path.exists():
