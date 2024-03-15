@@ -469,7 +469,7 @@ class CenterSpeedHead(nn.Module):
                                                speed_map_compressed_mask]
 
                     is_moving_mask_gt = (torch.norm(speed_map_compressed, dim=-1, p=2) > 0.5)
-                    is_train_mask_gt = is_moving_mask_gt * (torch.norm(speed_map_compressed, dim=-1, p=2) < 0.2)
+                    is_train_mask_gt = is_moving_mask_gt + (torch.norm(speed_map_compressed, dim=-1, p=2) < 0.2)
 
                     is_moving_pred = pred_dict['is_moving_pred'][speed_map_compressed_mask]
                     speed_cls_loss = self.speed_cls_loss_func(is_moving_pred[is_train_mask_gt],
@@ -483,14 +483,18 @@ class CenterSpeedHead(nn.Module):
                                                                      speed_map_compressed_gt)
                         print(
                             'compressed_loss: {:.4f} speed_cls_loss: {:.4f}'.format(speed_compressed_loss,
-                                                                                    speed_cls_loss))
+                                                                                    speed_cls_loss), end='  '
+                        )
                         loss += speed_compressed_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['speed_weight']
 
 
                     else:
-                        print('num_moving_gt = {}'.format(0))
+                        print('num_moving_gt = {} speed_cls_loss: {:.4f}'.format(0,speed_cls_loss), end=' ')
                         speed_compressed_loss = torch.tensor([0])
 
+                    print(
+                        'moving_gt_num:  {}/{}/{}'.format(is_moving_mask_gt.sum().item(), is_train_mask_gt.sum().item(),
+                                                          is_moving_mask_gt.shape[0]))
                     loss += speed_cls_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['speed_cls_weight']
 
                     tb_dict['speed_loss'] = speed_compressed_loss.item()
