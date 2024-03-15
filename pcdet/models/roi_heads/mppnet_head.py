@@ -111,7 +111,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
             cur_roi, cur_gt, cur_roi_labels, cur_roi_scores = rois[index],gt_boxes[index], roi_labels[index], roi_scores[index]
 
             if 'valid_length' in batch_dict.keys():
-                cur_valid_length = valid_length[index]
+                cur_valid_length = valid_length[index].to(device)
 
 
 
