@@ -5,7 +5,7 @@ from .detector3d_template import Detector3DTemplate
 from tools.visual_utils.open3d_vis_utils import draw_scenes
 from pcdet.models.preprocess.speed_estimate import SpeedEstimater
 from pcdet.ops.box2map import box2map
-
+from pcdet.datasets.augmentor.database_sampler import DataBaseSampler
 
 class CenterSpeed(Detector3DTemplate):
     def __init__(self, model_cfg, num_class, dataset):
@@ -26,17 +26,24 @@ class CenterSpeed(Detector3DTemplate):
             dataset.dataset_cfg.DATA_PROCESSOR[-1].MAX_NUMBER_OF_PILLARS['test'] *= 1000
         if not model_cfg.DENSE_HEAD.TRAIN_BOX:
             if dataset.training:
-                dataset.data_augmentor.data_augmentor_queue.pop(0)
+                for obj in dataset.data_augmentor.data_augmentor_queue:
+                    if isinstance(obj,DataBaseSampler):
+                        dataset.data_augmentor.data_augmentor_queue.remove(obj)
         else:
-            if dataset.training:
-                dataset.data_augmentor.data_augmentor_queue.pop(1)
+
             dataset.dataset_cfg['SEQUENCE_CONFIG'].ENABLED = False
             if dataset.training:
                 dataset.dataset_cfg.DATA_AUGMENTOR.AUG_CONFIG_LIST[0].NUM_POINT_FEATURES -= 1
             dataset.CONCAT = True
-            dataset.dataset_cfg.DATA_PROCESSOR[2].CONCAT = True
-            dataset.dataset_cfg.DATA_PROCESSOR[3].CONCAT = True
-            dataset.data_processor.data_processor_queue.pop(-1)
+            for obj in dataset.data_augmentor.data_augmentor_queue:
+                if hasattr(obj,'keywords'):
+                    if obj.keywords['config'].NAME=='transfor_points_to_pillars':
+                        dataset.data_processor.data_processor_queue.move(obj)
+            for obj in dataset.dataset_cfg.DATA_PROCESSOR:
+                if hasattr(obj,'CONCAT'):
+                    obj.CONCAT = True
+
+
 
     def forward(self, batch_dict):
 
