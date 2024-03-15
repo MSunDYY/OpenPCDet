@@ -538,7 +538,10 @@ class WaymoDataset(DatasetTemplate):
                 if self.dataset_cfg.get('INFO_WITH_FAKELIDAR', False):
                     gt_boxes_lidar = box_utils.boxes3d_kitti_fakelidar_to_lidar(annos['gt_boxes_lidar'])
                 else:
-                    gt_boxes_lidar = gt_boxes
+                    if isinstance(gt_boxes,list):
+                        gt_boxes_lidar = gt_boxes
+                    else:
+                        gt_boxes_lidar = gt_boxes
 
                 if self.dataset_cfg.get('GT_DATA_PATH', None) is not None:
                     gt_data = torch.from_numpy(np.load(self.gt_data_path / (info['frame_id'] + '_0.npy')))
@@ -549,7 +552,7 @@ class WaymoDataset(DatasetTemplate):
                 if self.dataset_cfg.get('TRAIN_WITH_SPEED', False):
                     assert gt_boxes_lidar[0].shape[-1] == 9 + (0 if self.dataset_cfg.get('CONCAT',True) else 1)
                 else:
-                    gt_boxes_lidar = gt_boxes_lidar[:, 0:7]
+                    gt_boxes_lidar = [gt_boxes[:, 0:7] for gt_boxes in gt_boxes_lidar]
 
                 if self.training and self.dataset_cfg.get('FILTER_EMPTY_BOXES_FOR_TRAIN', False):
                     mask = [(anno['num_points_in_gt'] > 0) for anno in annos]  # filter empty boxes
