@@ -60,6 +60,9 @@ DATA_CONFIG:
         - NAME: mask_points_and_boxes_outside_range
           REMOVE_OUTSIDE_BOXES: True
 
+        - NAME: select_trajectory_boxes
+
+
         - NAME: shuffle_points
           SHUFFLE_ENABLED: {
               'train': True,
@@ -161,10 +164,10 @@ MODEL:
                 'cls_weight': 1.0,
                 'loc_weight': 2.0,
                 'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 0.2],
-                'speed_weight': 0.4,
-                'speed_cls_weight': 0.2
+                'speed_weight': 0.8,
+                'speed_cls_weight': 0.4
             }
-            SPEED_THRESHOLD: 0.5
+            SPEED_THRESHOLD: 0.8
 
         POST_PROCESSING:
             SCORE_THRESH: 0.1

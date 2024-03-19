@@ -142,16 +142,16 @@ class CenterSpeed(Detector3DTemplate):
             gt_boxes = [gt_box[gt_box[:, -2] == 0] for gt_box in gt_boxes]
             gt_boxes_num = [gt_box.shape[0] for gt_box in gt_boxes]
             gt_boxes_temp = torch.zeros((B, max(gt_boxes_num), 10)).to(device)
-            batch_dict['gt_boxes'] = gt_boxes_temp
+            
             for b in range(B):
                 gt_boxes_temp[b, :gt_boxes_num[b], :-1] = gt_boxes[b][:, :-2]
                 gt_boxes_temp[b, :gt_boxes_num[b], -1] = gt_boxes[b][:, -1]
-
+            batch_dict['gt_boxes'] = gt_boxes_temp
             cor_final_pred_dict = []
             speed_map_all = []
             for index in range(B):
 
-                pred_dict = final_pred_dict[index * F]['pred_boxes']
+                pred_dict = final_pred_dict[index * F]
                 pred_boxes = pred_dict['pred_boxes']
 
                 pred_dict_temp = {'pred_boxes': [pred_boxes], 'pred_scores': [pred_dict['pred_scores']], 'pred_labels': [pred_dict['pred_labels']]}
@@ -174,10 +174,12 @@ class CenterSpeed(Detector3DTemplate):
                     # coord_mask = (pillar_coords[:, 0] == index) * (pillar_coords[:, 1] == f)
                     pred_boxes_pre_coor = ((pred_boxes_pre[:, :2] - torch.from_numpy(
                         self.preprocess.point_cloud_range[:2]).to(device)) // torch.tensor(
-                        self.pillar_size[:2]).to(device))
-                    pred_boxes_pre[:, :2] += speed_map_pred[
-                                                 index][pred_boxes_pre_coor[:, 0].long(), pred_boxes_pre_coor[:,
-                                                                                             1].long()] * 0.1 * f
+                        self.pillar_size[:2]).to(device)).long()
+                    
+                    is_moving_pred_mask = is_moving_pred[b][pred_boxes_pre_coor[:,0],pred_boxes_pre_coor[:,1]]
+                    pred_boxes_pre[:, :2][is_moving_pred_mask] += speed_map_pred[
+                                                 index][pred_boxes_pre_coor[:, 0], pred_boxes_pre_coor[:,
+                                                                                             1]][is_moving_pred_mask] * 0.1 * f
                     pred_dict_temp['pred_boxes'].append(pred_boxes_pre)
                     pred_dict_temp['pred_labels'].append(final_pred_dict[index * F + f]['pred_labels'])
                     pred_dict_temp['pred_scores'].append(final_pred_dict[index * F + f]['pred_scores'])

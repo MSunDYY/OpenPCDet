@@ -92,6 +92,7 @@ class DataProcessor(object):
                 use_center_to_filter=config.get('USE_CENTER_TO_FILTER', True)
             )
             data_dict['gt_boxes'] = data_dict['gt_boxes'][mask]
+            data_dict['gt_names'] = data_dict['gt_names'][mask]
         return data_dict
 
     def shuffle_points(self, data_dict=None, config=None):
@@ -250,6 +251,35 @@ class DataProcessor(object):
         return data_dict
 
 
+    def select_trajectory_boxes(self,data_dict=None,config=None):
+        
+        def distance(tensor1,tensor2):
+            pass
+        
+        if data_dict is None:
+            return partial(self.select_trajectory_boxes,config=config)
+        
+        FRAME = data_dict['num_points_all'].shape[0]
+        gt_boxes = np.concatenate(gt_boxes[:,:-2],np.zeros([gt_boxes.shape[0],1]),gt_boxes[:,-2:])
+        
+        gt_boxes = data_dict['gt_boxes']
+        gt_boxes = [gt_boxes[gt_boxes[:,-2]==i] for i in range(FRAME)]
+        gt_tra_boxes = [[] for i in range(FRAME)]
+        gt_boxes[0][:,-3] = np.arange(gt_boxes[0].shape[0]+1)
+        
+        idx = gt_boxes[0].shape[0]+1
+        
+        for i in range(FRAME-1):
+            cur_boxes = gt_boxes[i]
+            pre_boxes = gt_boxes[i+1]
+            
+            dis = np.sqrt((((cur_boxes[:,:2]-0.1*cur_boxes[:,7:9])[:,None,:]-pre_boxes[i+1][:,:2][None,:,:])**2).sum(axis=-1))
+            dis_min = np.min(dis,axis=-1)
+            arg_min = np.argmin(dis,axis=-1)
+            cur_boxes[:,-3][dis<0.001] = pre_boxes[:,-3][arg_min][dis<0.001]
+            cur_boxes[:,-3][dis>=0.001] = np.arange((idx,idx+(dis>=0.001).sum))
+            
+        
 
     def transform_points_to_pillars(self, data_dict=None, config=None):
         if data_dict is None:
@@ -260,8 +290,10 @@ class DataProcessor(object):
             # to avoid pickling issues in multiprocess spawn
             return partial(self.transform_points_to_pillars, config=config)
         num_point_features = self.num_point_features + (1 if data_dict.get('label', False) is not False else 0)+(1 if config.get('WITH_TIME_STAMP',False) else 0)
-
-
+        gt_mask = data_dict['gt_boxes'][:,2]>=config.FILTER_GROUND
+        assert data_dict['gt_boxes'].shape[0] == data_dict['gt_names'].shape[0]
+        data_dict['gt_boxes']= data_dict['gt_boxes'][gt_mask]
+        data_dict['gt_names'] = data_dict['gt_names'][gt_mask]
         if self.pillar_generator is None:
             self.pillar_generator = VoxelGeneratorWrapper(
                 vsize_xyz=config.PILLAR_SIZE,

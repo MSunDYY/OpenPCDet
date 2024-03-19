@@ -566,7 +566,7 @@ class WaymoDataset(DatasetTemplate):
                     'gt_boxes': np.concatenate(gt_boxes_lidar, axis=0),
                     'num_points_in_gt': np.concatenate([anno.get('num_points_in_gt', None) for anno in annos], axis=-1)
                 })
-
+        assert input_dict['gt_boxes'].shape[0] == input_dict['gt_names'].shape[0]
         data_dict = self.prepare_data(data_dict=input_dict)
 
         data_dict['metadata'] = info.get('metasdata', info['frame_id'])
