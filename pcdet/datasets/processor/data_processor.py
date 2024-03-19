@@ -253,33 +253,39 @@ class DataProcessor(object):
 
     def select_trajectory_boxes(self,data_dict=None,config=None):
         
-        def distance(tensor1,tensor2):
-            pass
+
         
         if data_dict is None:
             return partial(self.select_trajectory_boxes,config=config)
         
         FRAME = data_dict['num_points_all'].shape[0]
-        gt_boxes = np.concatenate(gt_boxes[:,:-2],np.zeros([gt_boxes.shape[0],1]),gt_boxes[:,-2:])
+        dis_threshold = config.DIS_THRE
         
         gt_boxes = data_dict['gt_boxes']
+        gt_boxes = np.concatenate([gt_boxes[:, :-2], np.zeros([gt_boxes.shape[0], 1]), gt_boxes[:, -2:]],axis=-1)
         gt_boxes = [gt_boxes[gt_boxes[:,-2]==i] for i in range(FRAME)]
         gt_tra_boxes = [[] for i in range(FRAME)]
-        gt_boxes[0][:,-3] = np.arange(gt_boxes[0].shape[0]+1)
+        gt_boxes[0][:,-3] = np.arange(gt_boxes[0].shape[0])+1
         
         idx = gt_boxes[0].shape[0]+1
         
         for i in range(FRAME-1):
-            cur_boxes = gt_boxes[i]
+            cur_boxes = np.concatenate(gt_boxes[:i+1])
             pre_boxes = gt_boxes[i+1]
             
-            dis = np.sqrt((((cur_boxes[:,:2]-0.1*cur_boxes[:,7:9])[:,None,:]-pre_boxes[i+1][:,:2][None,:,:])**2).sum(axis=-1))
+            dis = np.sqrt((((cur_boxes[:,:2]-0.1 * (i+1-cur_boxes[:,-2:-1])*cur_boxes[:,7:9])[None,:,:]-pre_boxes[:,:2][:,None,:])**2).sum(axis=-1))
+            vel_dis= np.sqrt(((cur_boxes[:,7:9][None,:,:]-pre_boxes[:,7:9][:,None,:])**2).sum(axis=-1))
+            dis+=vel_dis
             dis_min = np.min(dis,axis=-1)
             arg_min = np.argmin(dis,axis=-1)
-            cur_boxes[:,-3][dis<0.001] = pre_boxes[:,-3][arg_min][dis<0.001]
-            cur_boxes[:,-3][dis>=0.001] = np.arange((idx,idx+(dis>=0.001).sum))
-            
-        
+
+
+            pre_boxes[:,-3][dis_min<dis_threshold] = cur_boxes[:,-3][arg_min][dis_min<dis_threshold]
+            pre_boxes[:,-3][dis_min>=dis_threshold] = np.arange(idx,idx+(dis_min>=dis_threshold).sum())
+            idx+=(dis_min>=dis_threshold).sum()
+
+        data_dict['gt_boxes'] = np.concatenate(gt_boxes,0)
+        return data_dict
 
     def transform_points_to_pillars(self, data_dict=None, config=None):
         if data_dict is None:

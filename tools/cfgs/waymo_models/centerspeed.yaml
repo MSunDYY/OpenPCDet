@@ -61,7 +61,7 @@ DATA_CONFIG:
           REMOVE_OUTSIDE_BOXES: True
 
         - NAME: select_trajectory_boxes
-
+          DIS_THRE: 0.4
 
         - NAME: shuffle_points
           SHUFFLE_ENABLED: {
