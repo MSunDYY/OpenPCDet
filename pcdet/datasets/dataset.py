@@ -97,6 +97,8 @@ class DatasetTemplate(torch_data.Dataset):
             pred_dict['score'] = pred_scores
             pred_dict['boxes_lidar'] = pred_boxes
             pred_dict['pred_labels'] = pred_labels
+            if 'num_pred_gt' in box_dict:
+                pred_dict['num_pred_gt'] = box_dict['num_pred_gt'].cpu().numpy()
 
             return pred_dict
 

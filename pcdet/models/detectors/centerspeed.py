@@ -7,6 +7,7 @@ from pcdet.models.preprocess.speed_estimate import SpeedEstimater
 from pcdet.ops.box2map import box2map
 from pcdet.datasets.augmentor.database_sampler import DataBaseSampler
 
+
 class CenterSpeed(Detector3DTemplate):
     def __init__(self, model_cfg, num_class, dataset):
         super().__init__(model_cfg=model_cfg, num_class=num_class, dataset=dataset)
@@ -27,23 +28,31 @@ class CenterSpeed(Detector3DTemplate):
         if not model_cfg.DENSE_HEAD.TRAIN_BOX:
             if dataset.training:
                 for obj in dataset.data_augmentor.data_augmentor_queue:
-                    if isinstance(obj,DataBaseSampler):
+                    if isinstance(obj, DataBaseSampler):
                         dataset.data_augmentor.data_augmentor_queue.remove(obj)
+            else:
+                for obj in dataset.data_processor.data_processor_queue:
+                    if obj.keywords['config'].NAME == 'select_trajectory_boxes':
+                        dataset.data_processor.data_processor_queue.remove(obj)
+
         else:
 
             dataset.dataset_cfg['SEQUENCE_CONFIG'].ENABLED = False
             if dataset.training:
                 dataset.dataset_cfg.DATA_AUGMENTOR.AUG_CONFIG_LIST[0].NUM_POINT_FEATURES -= 1
+
             dataset.CONCAT = True
-            for obj in dataset.data_augmentor.data_augmentor_queue:
-                if hasattr(obj,'keywords'):
-                    if obj.keywords['config'].NAME=='transfor_points_to_pillars':
-                        dataset.data_processor.data_processor_queue.move(obj)
+
+            for obj in dataset.data_processor.data_processor_queue:
+                if hasattr(obj, 'keywords'):
+                    if obj.keywords['config'].NAME == 'transform_points_to_pillars':
+                        dataset.data_processor.data_processor_queue.remove(obj)
+                    if obj.keywords['config'].NAME == 'select_trajectory_boxes':
+                        dataset.data_processor.data_processor_queue.remove(obj)
+                
             for obj in dataset.dataset_cfg.DATA_PROCESSOR:
-                if hasattr(obj,'CONCAT'):
+                if hasattr(obj, 'CONCAT'):
                     obj.CONCAT = True
-
-
 
     def forward(self, batch_dict):
 
@@ -91,18 +100,20 @@ class CenterSpeed(Detector3DTemplate):
 
         loss = loss_rpn
         return loss, tb_dict, disp_dict
-    def generate_speed_eval(self,speed_pillar_gt,speed_map_gt,is_moving_mask,speed_pred,final_pred_dict):
-        is_moving_mask_gt = torch.pow(speed_pillar_gt,2).sum(dim=-1)>0.25
-         # = is_moving_mask==is_moving_mask_gt
-        speed_res = (speed_pillar_gt[is_moving_mask] - speed_pred[is_moving_mask])**2
-        speed_res = torch.sqrt(torch.sum(speed_res)/speed_res.shape[0])
+
+    def generate_speed_eval(self, speed_pillar_gt, speed_map_gt, is_moving_mask, speed_pred, final_pred_dict):
+        is_moving_mask_gt = torch.pow(speed_pillar_gt, 2).sum(dim=-1) > 0.25
+        # = is_moving_mask==is_moving_mask_gt
+        speed_res = (speed_pillar_gt[is_moving_mask] - speed_pred[is_moving_mask]) ** 2
+        speed_res = torch.sqrt(torch.sum(speed_res) / speed_res.shape[0])
 
         speed_map_compressed_gt = speed_map_gt.reshape()
 
-        print('speed_moving_cls:  {} / {}'.format((is_moving_mask[is_moving_mask_gt]).sum(),is_moving_mask_gt.sum()))
+        print('speed_moving_cls:  {} / {}'.format((is_moving_mask[is_moving_mask_gt]).sum(), is_moving_mask_gt.sum()))
         print('mean_speed_res:  {:.4f}'.format(speed_res))
 
         return final_pred_dict
+
     def post_processing(self, batch_dict):
         post_process_cfg = self.model_cfg.POST_PROCESSING
         batch_size = batch_dict['batch_size']
@@ -122,7 +133,7 @@ class CenterSpeed(Detector3DTemplate):
         else:
             B = self.dense_head.B
             F = self.dense_head.F
-            is_moving_pred = self.sigmoid(batch_dict['is_moving_pred'])> 0.5
+            is_moving_pred = self.sigmoid(batch_dict['is_moving_pred']) > 0.5
 
             speed_map_pred = batch_dict['speed_map_pred']
             signal = False
@@ -142,7 +153,7 @@ class CenterSpeed(Detector3DTemplate):
             gt_boxes = [gt_box[gt_box[:, -2] == 0] for gt_box in gt_boxes]
             gt_boxes_num = [gt_box.shape[0] for gt_box in gt_boxes]
             gt_boxes_temp = torch.zeros((B, max(gt_boxes_num), 10)).to(device)
-            
+
             for b in range(B):
                 gt_boxes_temp[b, :gt_boxes_num[b], :-1] = gt_boxes[b][:, :-2]
                 gt_boxes_temp[b, :gt_boxes_num[b], -1] = gt_boxes[b][:, -1]
@@ -154,15 +165,30 @@ class CenterSpeed(Detector3DTemplate):
                 pred_dict = final_pred_dict[index * F]
                 pred_boxes = pred_dict['pred_boxes']
 
-                pred_dict_temp = {'pred_boxes': [pred_boxes], 'pred_scores': [pred_dict['pred_scores']], 'pred_labels': [pred_dict['pred_labels']]}
+                pred_boxes_coor = ((pred_boxes[:, :2] - torch.from_numpy(
+                    self.preprocess.point_cloud_range[:2]).to(device)) // torch.tensor(
+                    self.pillar_size[:2]).to(device)).long()
+
+                is_moving_pred_mask = is_moving_pred[b][pred_boxes_coor[:, 0], pred_boxes_coor[:, 1]]
+
+                pred_speed = speed_map_pred[
+                    index][pred_boxes_coor[:, 0], pred_boxes_coor[:,
+                                                      1]]
+                pred_speed *= is_moving_pred_mask[:, None]
+                pred_boxes = torch.concat([pred_boxes,pred_speed],dim=-1)
+                
+                pred_dict_temp = {'pred_boxes': [pred_boxes], 'pred_scores': [pred_dict['pred_scores']],
+                                  'pred_labels': [pred_dict['pred_labels']],'num_pred_gt':torch.zeros(4)}
+                pred_dict_temp['num_pred_gt'][0] = pred_boxes.shape[0]
                 gt_box_batch = gt_boxes_all[index]
                 speed_map_batch = []
 
                 speed_map_gt = torch.zeros(self.pillar_spatial_shape + [2]).to(device)
 
-                gt_box = gt_box_batch[gt_box_batch[:,-2]==0]
-                gt_box[:,:2] = (gt_box[:, :2] - torch.from_numpy(self.dataset.point_cloud_range[:2]).to(device)) / torch.tensor(
-                        self.pillar_size[:2])[None, :].to(device)
+                gt_box = gt_box_batch[gt_box_batch[:, -2] == 0]
+                gt_box[:, :2] = (gt_box[:, :2] - torch.from_numpy(self.dataset.point_cloud_range[:2]).to(
+                    device)) / torch.tensor(
+                    self.pillar_size[:2])[None, :].to(device)
                 gt_box[:, 3:5] = (gt_box[:, 3:5]) / torch.tensor(self.pillar_size[:2])[None, :].to(device)
                 gt_box[:, 6][gt_box[:, 6] < 0] += torch.pi
                 box2map.box2map_gpu(gt_box[:, :7].contiguous(), speed_map_gt, gt_box[:, 7:9].contiguous())
@@ -175,14 +201,21 @@ class CenterSpeed(Detector3DTemplate):
                     pred_boxes_pre_coor = ((pred_boxes_pre[:, :2] - torch.from_numpy(
                         self.preprocess.point_cloud_range[:2]).to(device)) // torch.tensor(
                         self.pillar_size[:2]).to(device)).long()
+
+                    is_moving_pred_mask = is_moving_pred[b][pred_boxes_pre_coor[:, 0], pred_boxes_pre_coor[:, 1]]
                     
-                    is_moving_pred_mask = is_moving_pred[b][pred_boxes_pre_coor[:,0],pred_boxes_pre_coor[:,1]]
-                    pred_boxes_pre[:, :2][is_moving_pred_mask] += speed_map_pred[
-                                                 index][pred_boxes_pre_coor[:, 0], pred_boxes_pre_coor[:,
-                                                                                             1]][is_moving_pred_mask] * 0.1 * f
+                    pred_speed_pre = speed_map_pred[
+                        index][pred_boxes_pre_coor[:, 0], pred_boxes_pre_coor[:,
+                                                          1]]
+                    pred_speed_pre*=is_moving_pred_mask[:,None]
+                    pred_boxes_pre[:, :2] += pred_speed_pre*0.1*f
+                    pred_boxes_pre = torch.concat([pred_boxes_pre,pred_speed_pre],dim=-1)
+                    
                     pred_dict_temp['pred_boxes'].append(pred_boxes_pre)
                     pred_dict_temp['pred_labels'].append(final_pred_dict[index * F + f]['pred_labels'])
                     pred_dict_temp['pred_scores'].append(final_pred_dict[index * F + f]['pred_scores'])
+                    pred_dict_temp['num_pred_gt'][f] = pred_boxes_pre.shape[0]
+                    
                     # speed_map_gt = torch.zeros(self.pillar_spatial_shape + [2]).to(device)
                     # speed_map_pred = batch_dict['speed_map_pred']
                     # gt_box = gt_box_batch[gt_box_batch[:, -2] == f]
@@ -192,8 +225,6 @@ class CenterSpeed(Detector3DTemplate):
                     # gt_box[:,6][gt_box[:,6]<0]+=torch.pi
                     # box2map.box2map_gpu(gt_box[:, :7].contiguous(), speed_map_gt, gt_box[:, 7:9].contiguous())
                     # speed_map_batch.append(speed_map_gt[None,:])
-
-
 
                 # speed_map_batch = torch.concat(speed_map_batch,dim=0)
                 # speed_map_all.append(speed_map_batch[None,:])
@@ -218,7 +249,6 @@ class CenterSpeed(Detector3DTemplate):
             #
             # speed_map_compressed = torch.sum(speed_map_compressed,dim=1)
 
-            final_pred_dict = self.generate_speed_eval(speed_pillar_gt,speed_map_all,is_moving_mask,speed_pred,final_pred_dict)
-
+            # final_pred_dict = self.generate_speed_eval(speed_pillar_gt,speed_map_all,is_moving_mask,speed_pred,final_pred_dict)
 
         return final_pred_dict, recall_dict

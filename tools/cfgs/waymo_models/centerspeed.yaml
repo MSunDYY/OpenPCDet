@@ -4,7 +4,7 @@ DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/waymo_dataset_multiframe.yaml
     GET_FLOW_VOXELS: True
     SAMPLED_INTERVAL: {
-        'train': 5,
+        'train': 1,
         'test': 5
     }
     CONCAT: False
@@ -61,7 +61,7 @@ DATA_CONFIG:
           REMOVE_OUTSIDE_BOXES: True
 
         - NAME: select_trajectory_boxes
-          DIS_THRE: 0.4
+          DIS_THRE: 0.5
 
         - NAME: shuffle_points
           SHUFFLE_ENABLED: {
@@ -81,7 +81,7 @@ DATA_CONFIG:
 
         - NAME: transform_points_to_pillars
           PILLAR_SIZE: [ 0.2, 0.2, 6 ]
-          MAX_POINTS_PER_PILLAR: 8
+          MAX_POINTS_PER_PILLAR: 12
           MAX_NUMBER_OF_PILLARS: {
               'train': 20,
               'test': 150
@@ -89,7 +89,8 @@ DATA_CONFIG:
           WITH_TIME_STAMP: False
           CONCAT: False
           GET_FLOW_VOXELS: 0.2
-          FILTER_GROUND: 0.2
+          MARGIN: 0.05
+          FILTER_GROUND: True
           RM_BK_RATIO: {
               'train': 0.3,
               'test': 0
@@ -165,14 +166,17 @@ MODEL:
                 'loc_weight': 2.0,
                 'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 0.2],
                 'speed_weight': 0.8,
-                'speed_cls_weight': 0.4
+                'speed_cls_weight': 0.4,
+                'speed_temperal_weight': 0.5,
+
             }
+            BASE_LOSS_NUM: 30
             SPEED_THRESHOLD: 0.8
 
         POST_PROCESSING:
             SCORE_THRESH: 0.1
             POST_CENTER_LIMIT_RANGE: [-75.2, -75.2, -2, 75.2, 75.2, 4]
-            MAX_OBJ_PER_SAMPLE: 1000
+            MAX_OBJ_PER_SAMPLE: 500
             NMS_CONFIG:
                 NMS_TYPE: nms_gpu
                 NMS_THRESH: 0.7

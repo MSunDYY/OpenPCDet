@@ -317,7 +317,9 @@ class DataProcessor(object):
             num_pillars = np.zeros((frame_num)).astype(np.int64)
             gt_boxes = data_dict['gt_boxes']
             if config.get('FILTER_GROUND', False) is not False:
-                points = points[points[:,2]>=config.get('FILTER_GROUND')]
+                bin = np.array([-0.3,-0.2,-0.1,0,0.1,0.2,0.3])
+                num,_ = np.histogram(points[:,2],bin)
+                points = points[points[:,2]>bin[np.argmax(num)+1]+config.MARGIN]
             for frame in range(frame_num):
                 points_single_frame = points[points[:, -1] == 0.1 * frame, :-1]
                 ratio = config.get('RM_BK_RATIO',None)
