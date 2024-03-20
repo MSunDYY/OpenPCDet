@@ -660,13 +660,13 @@ class CenterSpeedHead(nn.Module):
 
         if not self.train_box:
             FRAME = 4
-            num_gt_boxes = torch.tensor([(gt_box[:, -2] == i).sum() for gt_box in gt_boxes for i in range(FRAME)])
-            print('num gt_boxes {:.4f}'.format(num_gt_boxes.sum().item()),end='  ')
+            num_gt_boxes = torch.tensor([(gt_box[:, -2] == i+1).sum() for gt_box in gt_boxes for i in range(FRAME)])
+            print('num gt_boxes {:d}'.format(num_gt_boxes.sum().item()),end='  ')
             gt_boxes_new = torch.zeros(
                 (data_dict['batch_size'], num_gt_boxes.max(), gt_boxes.shape[-1] - 1))  # remove vx,vy,frame_id
             for b in range(gt_boxes.shape[0]):
                 for f in range(FRAME):
-                    temp = gt_boxes[b][gt_boxes[b][:, -2] == f]
+                    temp = gt_boxes[b][gt_boxes[b][:, -2] == f+1]
                     temp = torch.concat([temp[:, :-2], temp[:, -1:]], dim=-1)
                     gt_boxes_new[b * FRAME + f, :temp.shape[0]] = temp
         else:

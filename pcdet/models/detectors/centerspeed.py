@@ -26,6 +26,10 @@ class CenterSpeed(Detector3DTemplate):
             dataset.dataset_cfg.DATA_PROCESSOR[-1].MAX_NUMBER_OF_PILLARS['train'] *= 1000
             dataset.dataset_cfg.DATA_PROCESSOR[-1].MAX_NUMBER_OF_PILLARS['test'] *= 1000
         if not model_cfg.DENSE_HEAD.TRAIN_BOX:
+            for model in self.module_list[1:]:
+                for param in model.parameters():
+                    param.requires_grad=False
+            
             if dataset.training:
                 for obj in dataset.data_augmentor.data_augmentor_queue:
                     if isinstance(obj, DataBaseSampler):

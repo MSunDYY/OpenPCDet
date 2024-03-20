@@ -332,7 +332,7 @@ class WaymoDataset(DatasetTemplate):
 
         gt_boxes_cur = info['annos']['gt_boxes_lidar']
         if not concat:
-            gt_boxes_cur = np.concatenate([gt_boxes_cur, np.zeros((gt_boxes_cur.shape[0], 1))], axis=-1)
+            gt_boxes_cur = np.concatenate([gt_boxes_cur, np.ones((gt_boxes_cur.shape[0], 1))], axis=-1)
         gt_boxes = [gt_boxes_cur]
 
         for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
@@ -375,7 +375,7 @@ class WaymoDataset(DatasetTemplate):
                 del_theta = np.arccos(pose_pre2cur[0, 0])
                 gt_boxes_pre[:, 6] -= del_theta
                 gt_boxes_pre[:, 7:9] = np.dot(gt_boxes_pre[:, 7:9], pose_pre2cur[:2, :2].T)
-                gt_boxes_pre = np.concatenate([gt_boxes_pre, np.full((gt_boxes_pre.shape[0], 1), idx + 1)], axis=-1)
+                gt_boxes_pre = np.concatenate([gt_boxes_pre, np.full((gt_boxes_pre.shape[0], 1), idx + 2)], axis=-1)
                 gt_boxes.append(gt_boxes_pre)
             if get_gt:
                 points_pre, points_gt_pre = np.split(points_pre, [num_points_pre_temp])

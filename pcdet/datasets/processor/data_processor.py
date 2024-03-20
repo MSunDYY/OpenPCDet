@@ -263,7 +263,7 @@ class DataProcessor(object):
         
         gt_boxes = data_dict['gt_boxes']
         gt_boxes = np.concatenate([gt_boxes[:, :-2], np.zeros([gt_boxes.shape[0], 1]), gt_boxes[:, -2:]],axis=-1)
-        gt_boxes = [gt_boxes[gt_boxes[:,-2]==i] for i in range(FRAME)]
+        gt_boxes = [gt_boxes[gt_boxes[:,-2]==i+1] for i in range(FRAME)]
         gt_tra_boxes = [[] for i in range(FRAME)]
         gt_boxes[0][:,-3] = np.arange(gt_boxes[0].shape[0])+1
         
@@ -272,10 +272,16 @@ class DataProcessor(object):
         for i in range(FRAME-1):
             cur_boxes = np.concatenate(gt_boxes[:i+1])
             pre_boxes = gt_boxes[i+1]
+            vel_pre_abs = abs(pre_boxes[:, 7:9])
+            dis = np.sqrt(((((cur_boxes[:,:2]-0.1 * (i+1-cur_boxes[:,-2:-1])*cur_boxes[:,7:9])[None,:,:]-pre_boxes[:,:2][:,None,:])/np.clip(vel_pre_abs,a_min=1,a_max=None)[:,None,:])**2).sum(axis=-1))
             
-            dis = np.sqrt((((cur_boxes[:,:2]-0.1 * (i+1-cur_boxes[:,-2:-1])*cur_boxes[:,7:9])[None,:,:]-pre_boxes[:,:2][:,None,:])**2).sum(axis=-1))
-            vel_dis= np.sqrt(((cur_boxes[:,7:9][None,:,:]-pre_boxes[:,7:9][:,None,:])**2).sum(axis=-1))
+
+            
+            vel_dis= np.sqrt((((cur_boxes[:,7:9][None,:,:]-pre_boxes[:,7:9][:,None,:])/np.clip(vel_pre_abs,a_min=1,a_max=None)[:,None,:])**2).sum(axis=-1))
+            
             dis+=vel_dis
+            if dis.shape[0] * dis.shape[1] == 0:
+                continue
             dis_min = np.min(dis,axis=-1)
             arg_min = np.argmin(dis,axis=-1)
 
@@ -296,10 +302,7 @@ class DataProcessor(object):
             # to avoid pickling issues in multiprocess spawn
             return partial(self.transform_points_to_pillars, config=config)
         num_point_features = self.num_point_features + (1 if data_dict.get('label', False) is not False else 0)+(1 if config.get('WITH_TIME_STAMP',False) else 0)
-        gt_mask = data_dict['gt_boxes'][:,2]>=config.FILTER_GROUND
-        assert data_dict['gt_boxes'].shape[0] == data_dict['gt_names'].shape[0]
-        data_dict['gt_boxes']= data_dict['gt_boxes'][gt_mask]
-        data_dict['gt_names'] = data_dict['gt_names'][gt_mask]
+        
         if self.pillar_generator is None:
             self.pillar_generator = VoxelGeneratorWrapper(
                 vsize_xyz=config.PILLAR_SIZE,
@@ -319,7 +322,11 @@ class DataProcessor(object):
             if config.get('FILTER_GROUND', False) is not False:
                 bin = np.array([-0.3,-0.2,-0.1,0,0.1,0.2,0.3])
                 num,_ = np.histogram(points[:,2],bin)
+                GROUND = bin[np.argmax(num)+1]+config.MARGIN
                 points = points[points[:,2]>bin[np.argmax(num)+1]+config.MARGIN]
+                gt_mask = data_dict['gt_boxes'][:, 2] >= GROUND
+                data_dict['gt_boxes'] = data_dict['gt_boxes'][gt_mask]
+                data_dict['gt_names'] = data_dict['gt_names'][gt_mask]
             for frame in range(frame_num):
                 points_single_frame = points[points[:, -1] == 0.1 * frame, :-1]
                 ratio = config.get('RM_BK_RATIO',None)
