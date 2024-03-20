@@ -11,20 +11,20 @@ from pcdet.datasets.augmentor.database_sampler import DataBaseSampler
 class CenterSpeed(Detector3DTemplate):
     def __init__(self, model_cfg, num_class, dataset):
         super().__init__(model_cfg=model_cfg, num_class=num_class, dataset=dataset)
-        self.model_cfg.DENSE_HEAD.pillar_size = dataset.dataset_cfg.DATA_PROCESSOR[-1].PILLAR_SIZE
-        self.model_cfg.PREPROCESS.pillar_size = dataset.dataset_cfg.DATA_PROCESSOR[-1].PILLAR_SIZE
+        self.model_cfg.DENSE_HEAD.pillar_size = model_cfg.PREPROCESS.transform_points_to_pillars.PILLAR_SIZE
+        self.model_cfg.PREPROCESS.pillar_size = model_cfg.PREPROCESS.transform_points_to_pillars.PILLAR_SIZE
         self.module_list = self.build_networks()
         self.speed_est = SpeedEstimater()
         self.train_box = model_cfg.DENSE_HEAD.TRAIN_BOX
-        self.pillar_size = self.dataset.dataset_cfg.DATA_PROCESSOR[-1].PILLAR_SIZE
+        self.pillar_size = model_cfg.PREPROCESS.transform_points_to_pillars.PILLAR_SIZE
         self.pillar_spatial_shape = [
             round((self.dataset.point_cloud_range[3] - self.dataset.point_cloud_range[0]) / self.pillar_size[0]),
             round((self.dataset.point_cloud_range[4] - self.dataset.point_cloud_range[1]) / self.pillar_size[1])]
         memory_max = torch.cuda.get_device_properties(0).total_memory / 1024 / 1024
         self.sigmoid = torch.nn.Sigmoid()
-        if memory_max > 5000:
-            dataset.dataset_cfg.DATA_PROCESSOR[-1].MAX_NUMBER_OF_PILLARS['train'] *= 1000
-            dataset.dataset_cfg.DATA_PROCESSOR[-1].MAX_NUMBER_OF_PILLARS['test'] *= 1000
+        # if memory_max > 5000:
+        #     dataset.dataset_cfg.DATA_PROCESSOR[-1].MAX_NUMBER_OF_PILLARS['train'] *= 1000
+        #     dataset.dataset_cfg.DATA_PROCESSOR[-1].MAX_NUMBER_OF_PILLARS['test'] *= 1000
         if not model_cfg.DENSE_HEAD.TRAIN_BOX:
             for model in self.module_list[1:]:
                 for param in model.parameters():

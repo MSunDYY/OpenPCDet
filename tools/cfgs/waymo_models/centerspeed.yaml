@@ -78,23 +78,23 @@ DATA_CONFIG:
           }
           CONCAT: False
           GET_FLOW_VOXELS: 0.2
-
-        - NAME: transform_points_to_pillars
-          PILLAR_SIZE: [ 0.2, 0.2, 6 ]
-          MAX_POINTS_PER_PILLAR: 12
-          MAX_NUMBER_OF_PILLARS: {
-              'train': 20,
-              'test': 150
-          }
-          WITH_TIME_STAMP: False
-          CONCAT: False
-          GET_FLOW_VOXELS: 0.2
-          MARGIN: 0.05
-          FILTER_GROUND: True
-          RM_BK_RATIO: {
-              'train': 0.3,
-              'test': 0
-          }
+#
+#        - NAME: transform_points_to_pillars
+#          PILLAR_SIZE: [ 0.2, 0.2, 6 ]
+#          MAX_POINTS_PER_PILLAR: 12
+#          MAX_NUMBER_OF_PILLARS: {
+#              'train': 20,
+#              'test': 150
+#          }
+#          WITH_TIME_STAMP: False
+#          CONCAT: False
+#          GET_FLOW_VOXELS: 0.2
+#          MARGIN: 0.05
+#          FILTER_GROUND: True
+#          RM_BK_RATIO: {
+#              'train': 0.3,
+#              'test': 0
+#          }
 MODEL:
     NAME: CenterSpeed
 
@@ -114,6 +114,21 @@ MODEL:
             'test': 150000
         }
         FILTER_GROUND: 0.2
+
+        transform_points_to_pillars:
+          PILLAR_SIZE: [ 0.2, 0.2, 6 ]
+          MAX_POINTS_PER_PILLAR: 12
+          MAX_NUMBER_OF_PILLARS: 30000
+          WITH_TIME_STAMP: False
+          CONCAT: False
+          GET_FLOW_VOXELS: 0.2
+          MARGIN: 0.05
+          FILTER_GROUND: True
+          RM_BK_RATIO: {
+            'train': 0.3,
+            'test': 0
+          }
+          NUM_FRAMES: 4
 
     VFE:
         NAME: MeanVFE

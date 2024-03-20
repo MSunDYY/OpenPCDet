@@ -34,9 +34,9 @@ def parse_config():
 
     parser.add_argument('--batch_size', type=int, default=1, required=False, help='batch size for training')
     parser.add_argument('--workers', type=int, default=4, help='number of workers for dataloader')
-    parser.add_argument('--extra_tag', type=str, default='default', help='extra tag for this experiment')
+    parser.add_argument('--extra_tag', type=str, default='test', help='extra tag for this experiment')
     parser.add_argument('--ckpt', type=str,
-                        default='../output/waymo_models/centerspeed/default/ckpt/checkpoint_epoch_12.pth',
+                        default='../output/waymo_models/centerspeed/test/ckpt/checkpoint_epoch_8.pth',
                         help='checkpoint to start from')
     parser.add_argument('--pretrained_model', type=str, default=None, help='pretrained_model')
     parser.add_argument('--launcher', choices=['none', 'pytorch', 'slurm'], default='none')

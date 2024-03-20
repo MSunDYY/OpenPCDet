@@ -12,6 +12,7 @@ from pcdet.ops.deformDETR.functions import MSDeformAttnFunction
 from pcdet.ops.pointnet2.pointnet2_stack.pointnet2_utils import ball_query, grouping_operation
 from spconv.pytorch.functional import sparse_add
 from spconv.pytorch.core import SparseConvTensor
+from spconv.pytorch.utils import PointToVoxel
 
 
 class DeformableTransformerCrossAttention(nn.Module):
@@ -295,7 +296,8 @@ class SpeedSampler(nn.Module):
         self.num_point_features = num_point_features
         self.voxel_size = [voxel_size[i] * self.stride[i] for i in range(3)]
         self.grid_size = [round(grid_size[i] / self.stride[i]) for i in range(3)]
-        self.pillar_spatial_size = [round((point_cloud_range[3+i]-point_cloud_range[i])/model_cfg.pillar_size[i]) for i in range(2)]
+        self.pillar_spatial_size = [round((point_cloud_range[3 + i] - point_cloud_range[i]) / model_cfg.pillar_size[i])
+                                    for i in range(2)]
         self.use_norm = model_cfg.USE_NORM
         self.use_absoluto_xyz = self.model_cfg.get('USE_ABSOLUTE_XYZ', False)
         self.num_point_features = 8
@@ -311,6 +313,15 @@ class SpeedSampler(nn.Module):
             nn.BatchNorm1d(self.num_out_voxel_features, eps=1e-3, momentum=0.01),
             nn.ReLU())
         from functools import partial
+        self.gen = PointToVoxel(
+            vsize_xyz=model_cfg.pillar_size[:-1] + [
+                model_cfg.pillar_size[-1] / model_cfg.transform_points_to_pillars.NUM_FRAMES],
+            coors_range_xyz=point_cloud_range,
+            num_point_features=6,
+            max_num_voxels=model_cfg.transform_points_to_pillars.MAX_NUMBER_OF_PILLARS * model_cfg.transform_points_to_pillars.NUM_FRAMES,
+            max_num_points_per_voxel=model_cfg.transform_points_to_pillars.MAX_POINTS_PER_PILLAR,
+            device=device
+        )
         norm_fn = partial(nn.BatchNorm1d, momentum=0.01, eps=1e-3)
         self.sp_conv = TemperalDownConv(self.num_out_voxel_features + self.num_features_layers[-1], 32, stride=[2, 2],
                                         norm_fn=norm_fn,
@@ -359,20 +370,20 @@ class SpeedSampler(nn.Module):
 
         self.conv2d = spconv.SparseSequential(
             spconv.SparseConv2d(in_channels=16 * 3 * 2, out_channels=32, kernel_size=3, padding=1),
-        norm_fn(32),
-        nn.ReLU(),
+            norm_fn(32),
+            nn.ReLU(),
 
-        spconv.SparseConv2d(in_channels=32,out_channels=32,kernel_size=3,padding=1),
-        norm_fn(32),
-        nn.ReLU(),
+            spconv.SparseConv2d(in_channels=32, out_channels=32, kernel_size=3, padding=1),
+            norm_fn(32),
+            nn.ReLU(),
 
-        spconv.SparseConv2d(in_channels=32,out_channels=16,kernel_size=3,padding=1),
-        norm_fn(16),
-        nn.ReLU()
+            spconv.SparseConv2d(in_channels=32, out_channels=16, kernel_size=3, padding=1),
+            norm_fn(16),
+            nn.ReLU()
         )
 
         self.dense_conv2d = nn.Sequential(
-            nn.Conv2d(in_channels=16,out_channels=16,stride=1,kernel_size=3,padding=1),
+            nn.Conv2d(in_channels=16, out_channels=16, stride=1, kernel_size=3, padding=1),
             nn.BatchNorm2d(16),
             nn.ReLU(),
             nn.Conv2d(in_channels=16, out_channels=16, stride=1, kernel_size=3, padding=1),
@@ -386,7 +397,6 @@ class SpeedSampler(nn.Module):
             nn.ReLU()
         )
 
-
         # self.regression_2d = spconv.SparseSequential(
         #
         #     spconv.SparseConv2d(16, 8, kernel_size=1,padding=0),
@@ -396,10 +406,10 @@ class SpeedSampler(nn.Module):
         # )
 
         self.regression_2d = nn.Sequential(
-            nn.Conv2d(16,8,kernel_size=1,padding=0),
+            nn.Conv2d(16, 8, kernel_size=1, padding=0),
             nn.BatchNorm2d(8),
             nn.ReLU(),
-            nn.Conv2d(8,2,kernel_size=1,padding=0)
+            nn.Conv2d(8, 2, kernel_size=1, padding=0)
         )
         self.classfier_2d = nn.Sequential(
             nn.Conv2d(16, 8, kernel_size=1, padding=0),
@@ -466,6 +476,59 @@ class SpeedSampler(nn.Module):
 
         pass
 
+    def transform_points_to_pillars(self, data_dict, config):
+
+        voxels = []
+        coors = []
+        nums_points = []
+        points = data_dict['points']
+        if config.get('FILTER_GROUND', False) is not False:
+            bin = torch.tensor([-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3]).to(device)
+
+        B = data_dict['batch_size']
+        F = data_dict['num_points_all'].shape[1]
+        for b in range(B):
+            voxels_single_batch = []
+            coors_single_batch = []
+            num_points_single_batch = []
+
+            points_single_batch = points[points[:, 0] == b][:, 1:]
+            gt_boxes_single_batch = data_dict['gt_boxes'][b]
+
+            if config.get('FILTER_GROUND', False) is not False:
+                num = torch.tensor([torch.logical_and(points_single_batch[:, 2] >= bin[i],
+                                                      points_single_batch[:, 2] < bin[i + 1]).sum() for i in
+                                    range(len(bin) - 1)])
+                GROUND = bin[torch.argmax(num) + 1] + config.MARGIN
+                points_single_batch = points_single_batch[points_single_batch[:, 2] > GROUND]
+                non_gt_mask = data_dict['gt_boxes'][b][:, 2] <= GROUND
+                data_dict['gt_boxes'][b][non_gt_mask] = 0
+
+            voxels_single_batch, coors_single_batch, num_points_single_batch = self.gen(
+                torch.concat([points_single_batch[:, :2],
+                              points_single_batch[:, -1:] * self.gen.vsize[0] * 10 + self.gen.vsize[0] / 2 +
+                              self.gen.coors_range[0], points_single_batch[:, 2:-1]], dim=-1)
+            )
+            voxels_single_batch = torch.concat([voxels_single_batch[:, :, :2], voxels_single_batch[:, :, 3:]], dim=-1)
+
+            # for f in range(F):
+            #     voxel,coor,num_points = self.gen(points_single_batch[points_single_batch[:,-1]==f*0.1][:,:-1])
+            #     coor = torch.concat([torch.full((voxel.shape[0],1),f).to(device),coor],dim=-1)
+            #     voxels_single_batch.append(voxel)
+            #     coors_single_batch.append(coor)
+            #     num_points_single_batch.append(num_points)
+
+            coors_single_batch = torch.concat(
+                [torch.full((coors_single_batch.shape[0], 1), b).to(device), coors_single_batch], dim=-1)
+
+            voxels.append(voxels_single_batch)
+            coors.append(coors_single_batch)
+            nums_points.append(num_points_single_batch)
+        data_dict['pillars'] = torch.concat(voxels)
+        data_dict['pillar_coords'] = torch.concat(coors)
+        data_dict['pillar_num_points'] = torch.concat(nums_points)
+        return data_dict
+
     def forward(self, batch_dict, **kwargs):
         num_points = batch_dict['num_points_all'].int()
 
@@ -510,12 +573,12 @@ class SpeedSampler(nn.Module):
         # coordinates = torch.concat(coordinates)
         # voxel_num_points = torch.concat(nums_points_voxels)
 
+        batch_dict = self.transform_points_to_pillars(batch_dict, self.model_cfg.transform_points_to_pillars)
         voxels = batch_dict['pillars']
         coordinates = batch_dict['pillar_coords']
         voxel_num_points = batch_dict['pillar_num_points']
-
-        coordinates = torch.concat([coordinates[:, 0:1], coordinates[:, 1:2], coordinates[:, 4:5], coordinates[:, 3:4]],
-                                   dim=-1) #(b,f,z,y,x) -> (b,f,x,y)
+        coordinates = torch.concat([coordinates[:, 0:1], coordinates[:, 1:2], coordinates[:, 3:4], coordinates[:, 2:3]],
+                                   dim=-1)  # (b,f,z,y,x) -> (b,f,x,y)
 
         points_mean = voxels[:, :, :].sum(dim=-2) / (voxel_num_points.reshape(-1, 1).repeat(1, voxels.shape[-1]))
         f_cluster = voxels[:, :, :3] - points_mean[:, None, :3]
@@ -598,14 +661,14 @@ class SpeedSampler(nn.Module):
             # is_moving_pred = is_moving_pred[coordinates[:, 0], coordinates[:, 2], coordinates[:, 3]].squeeze()
 
             motion_features = self.conv2d(motion_features).dense()
-            motion_features = self.dense_conv2d(motion_features)[:,:,:-1,:-1]
+            motion_features = self.dense_conv2d(motion_features)[:, :, :-1, :-1]
             speed = self.regression_2d(motion_features)
             is_moving_pred = self.classfier_2d(motion_features)
             batch_dict['speed_map_pred'] = speed.permute(0, 2, 3, 1)
 
             batch_dict['pillar_coords'] = coordinate_1st
             batch_dict['speed_1st'] = None
-            batch_dict['is_moving_pred'] = is_moving_pred.permute(0,2,3,1)[:,:,:,0]
+            batch_dict['is_moving_pred'] = is_moving_pred.permute(0, 2, 3, 1)[:, :, :, 0]
 
             batch_dict['points'][:, 0] = batch_dict['points'][:, 0] * F + batch_dict['points'][:, -1] * 10
             batch_dict['batch_size'] *= F
@@ -624,7 +687,6 @@ class SpeedSampler(nn.Module):
 
         is_moving = classification
         is_moving = is_moving[coordinates[:, 0], coordinates[:, 2], coordinates[:, 3]].squeeze()
-
 
         # coordinate_2st = coordinates[coordinate_2st_mask]
         num_voxel_1st = [torch.unique(coordinate_1st[coordinate_1st[:, 0] == b][:, 1], return_counts=True)[1] for b in
