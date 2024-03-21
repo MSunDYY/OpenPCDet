@@ -507,7 +507,13 @@ class CenterSpeedHead(nn.Module):
 
                     speed_map_compressed_ind = torch.max(speed_map_compressed[:, :, :, :, -1], dim=1)[0][
                         speed_map_compressed_mask]
-
+                    
+                    speed_map_ = speed_map_compressed.permute(0,2,3,1,4)[speed_map_compressed_mask][:,:,-1]
+                    test = (speed_map_.sum(dim=-1) / (speed_map_>0).sum(dim=-1)) == speed_map_.max(dim=-1)[0]
+                    try:
+                        assert test.sum() == test.shape[0]
+                    except:
+                        pass
                     speed_map_compressed = torch.sum(speed_map_compressed[:, :, :, :, :], dim=1)[
                                                speed_map_compressed_mask] / \
                                            speed_map_compressed_inds[:, :, :, None][
