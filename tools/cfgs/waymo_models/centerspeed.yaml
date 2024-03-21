@@ -8,7 +8,8 @@ DATA_CONFIG:
         'test': 5
     }
     CONCAT: False
-    REMOVE_INITIAL_FRAME: 3
+
+    REMOVE_FIRST_FRAME: 3
     SEQUENCE_CONFIG:
         ENABLED: True
         SAMPLE_OFFSET: [ -3, 0 ]

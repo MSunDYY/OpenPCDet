@@ -86,16 +86,19 @@ class WaymoDataset(DatasetTemplate):
                 continue
             with open(info_path, 'rb') as f:
                 infos = pickle.load(f)
-                num_rm_frame = self.dataset_cfg.get('REMOVE_INITIAL_FRAME', 0)
+                num_rm_frame = self.dataset_cfg.get('REMOVE_FIRST_FRAME', 0)
                 waymo_infos.extend(infos[num_rm_frame:])
                 seq_name_to_infos[infos[0]['point_cloud']['lidar_sequence']] = infos
         self.infos.extend(waymo_infos[:])
         self.logger.info('Total skipped info %s' % num_skipped_infos)
         self.logger.info('Total samples for Waymo dataset: %d' % (len(waymo_infos)))
 
+
+
         if self.dataset_cfg['SAMPLED_INTERVAL'][mode] > 1:
             sampled_waymo_infos = []
             for k in range(0, len(self.infos), self.dataset_cfg['SAMPLED_INTERVAL'][mode]):
+
                 sampled_waymo_infos.append(self.infos[k])
             self.infos = sampled_waymo_infos
             self.logger.info('Total sampled samples for Waymo dataset: %d' % len(self.infos))

@@ -296,12 +296,13 @@ class SpeedSampler(nn.Module):
         self.num_point_features = num_point_features
         self.voxel_size = [voxel_size[i] * self.stride[i] for i in range(3)]
         self.grid_size = [round(grid_size[i] / self.stride[i]) for i in range(3)]
+        self.pillar_size = np.array(model_cfg.pillar_size)
         self.pillar_spatial_size = [round((point_cloud_range[3 + i] - point_cloud_range[i]) / model_cfg.pillar_size[i])
                                     for i in range(2)]
         self.use_norm = model_cfg.USE_NORM
         self.use_absoluto_xyz = self.model_cfg.get('USE_ABSOLUTE_XYZ', False)
-        self.num_point_features = 8
-        self.num_voxel_features = 2
+        self.num_point_features = 6
+        self.num_voxel_features = 6
         self.num_out_voxel_features = 8
         self.num_features_layers = [self.num_point_features] + list(model_cfg.NUM_FILTERS)
         self.num_features = self.num_out_voxel_features + self.num_features_layers[-1]
@@ -437,12 +438,12 @@ class SpeedSampler(nn.Module):
         )
         self.sigmoid = nn.Sigmoid()
 
-        self.voxel_x = self.voxel_size[0]
-        self.voxel_y = self.voxel_size[1]
-        self.voxel_z = self.voxel_size[2]
-        self.offset_x = self.voxel_x / 2 + point_cloud_range[0]
-        self.offset_y = self.voxel_y / 2 + point_cloud_range[1]
-        self.offset_z = self.voxel_z / 2 + point_cloud_range[2]
+        self.pillar_x = self.pillar_size[0]
+        self.pillar_y = self.pillar_size[1]
+        self.pillar_z = self.pillar_size[2]
+        self.offset_x = self.pillar_x / 2 + point_cloud_range[0]
+        self.offset_y = self.pillar_y / 2 + point_cloud_range[1]
+        self.offset_z = self.pillar_z / 2 + point_cloud_range[2]
         # self.embedding1 = nn.Sequential(
         #     nn.Conv1d(in_channels=9, out_channels=16, kernel_size=1),
         #     nn.BatchNorm1d(num_features=16),
@@ -584,16 +585,16 @@ class SpeedSampler(nn.Module):
         f_cluster = voxels[:, :, :3] - points_mean[:, None, :3]
         h_cluster = voxels[:, :, 2:3] - voxels[:, :, 2:3].min(dim=-2)[0].unsqueeze(-2)
 
-        f_center = torch.zeros_like(voxels[:, :, :3])
-        f_center[:, :, 0] = voxels[:, :, 0] - (
-                coordinates[:, 2].to(voxels.dtype).unsqueeze(1) * self.voxel_x + self.offset_x)
-        f_center[:, :, 1] = voxels[:, :, 1] - (
-                coordinates[:, 3].to(voxels.dtype).unsqueeze(1) * self.voxel_y + self.offset_y)
-        f_center[:, :, 2] = voxels[:, :, 2] - (
-                torch.ones_like(coordinates[:, 2]).unsqueeze(1) * self.voxel_z + self.offset_z)
+        # f_center = torch.zeros_like(voxels[:, :, :3])
+        points_mean[:, 0] = points_mean[:, 0] - (
+                coordinates[:, 2].to(voxels.dtype) * self.pillar_size[0] + self.offset_x)
+        points_mean[:, 1] = points_mean[:, 1] - (
+                coordinates[:, 3].to(voxels.dtype)* self.pillar_size[1] + self.offset_y)
+        points_mean[:, 2] = points_mean[:, 2] - (
+                torch.ones_like(coordinates[:, 2]) * self.pillar_size[2] + self.offset_z)
 
-        features = [f_cluster, h_cluster,
-                    voxels[:, :, 3:-1], f_center]
+        features = [f_cluster,
+                    voxels[:, :, 3:], h_cluster]
         coordinates = coordinates.long()
         features = torch.cat(features, dim=-1)
         padding = torch.arange(voxels.shape[-2]).reshape((1, -1)).repeat(voxels.shape[0], 1).to(device)
@@ -603,10 +604,10 @@ class SpeedSampler(nn.Module):
             features = pfn(features)
         features = features.squeeze()
 
-        num_points = voxel_num_points[:, None]
+        mean_height = voxels[:,:,2:3].mean(dim= -2)
         # size = voxels[:, :, :3].max(dim=-2)[0] - voxels[:, :, :3].min(dim=-2)[0]
         max_height = voxels[:, :, 2:3].max(dim=-2)[0]
-        voxel_features = torch.concat([num_points, max_height], dim=-1)
+        voxel_features = torch.concat([points_mean, max_height], dim=-1)
         voxel_features = self.linear(voxel_features)
         features = torch.concat([features, voxel_features], dim=-1)
 
