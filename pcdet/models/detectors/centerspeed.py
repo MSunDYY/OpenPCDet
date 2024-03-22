@@ -154,7 +154,7 @@ class CenterSpeed(Detector3DTemplate):
                 speed_dense_tensor = speed_dense_tensor.permute(0, 2, 3, 4, 1)
             gt_boxes_all = batch_dict['gt_boxes']
             gt_boxes = batch_dict['gt_boxes']
-            gt_boxes = [gt_box[gt_box[:, -2] == 0] for gt_box in gt_boxes]
+            gt_boxes = [gt_box[gt_box[:, -2] == 1] for gt_box in gt_boxes]
             gt_boxes_num = [gt_box.shape[0] for gt_box in gt_boxes]
             gt_boxes_temp = torch.zeros((B, max(gt_boxes_num), 10)).to(device)
 
@@ -170,8 +170,8 @@ class CenterSpeed(Detector3DTemplate):
                 pred_boxes = pred_dict['pred_boxes']
 
                 pred_boxes_coor = ((pred_boxes[:, :2] - torch.from_numpy(
-                    self.preprocess.point_cloud_range[:2]).to(device)) // torch.tensor(
-                    self.pillar_size[:2]).to(device)).long()
+                    self.preprocess.point_cloud_range[:2]).to(device)) / torch.tensor(
+                    self.pillar_size[:2])[None,:].to(device)).long()
 
                 is_moving_pred_mask = is_moving_pred[b][pred_boxes_coor[:, 0], pred_boxes_coor[:, 1]]
 
@@ -195,16 +195,16 @@ class CenterSpeed(Detector3DTemplate):
                     self.pillar_size[:2])[None, :].to(device)
                 gt_box[:, 3:5] = (gt_box[:, 3:5]) / torch.tensor(self.pillar_size[:2])[None, :].to(device)
                 gt_box[:, 6][gt_box[:, 6] < 0] += torch.pi
-                box2map.box2map_gpu(gt_box[:, :7].contiguous(), speed_map_gt, gt_box[:, 7:9].contiguous())
+                # box2map.box2map_gpu(gt_box[:, :7].contiguous(), speed_map_gt, gt_box[:, 7:9].contiguous())
 
                 speed_map_batch.append(speed_map_gt[None, :])
 
                 for f in range(1, F):
                     pred_boxes_pre = final_pred_dict[index * F + f]['pred_boxes']
                     # coord_mask = (pillar_coords[:, 0] == index) * (pillar_coords[:, 1] == f)
-                    pred_boxes_pre_coor = ((pred_boxes_pre[:, :2] - torch.from_numpy(
-                        self.preprocess.point_cloud_range[:2]).to(device)) // torch.tensor(
-                        self.pillar_size[:2]).to(device)).long()
+
+                    pred_boxes_pre_coor = pred_boxes_pre[:, :2] - torch.tensor(self.preprocess.point_cloud_range[:2])[None,:].to(device)
+                    pred_boxes_pre_coor = (pred_boxes_pre_coor/ torch.tensor(self.pillar_size[:2])[None,:].to(device)).long()
 
                     is_moving_pred_mask = is_moving_pred[b][pred_boxes_pre_coor[:, 0], pred_boxes_pre_coor[:, 1]]
                     
