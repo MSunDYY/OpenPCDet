@@ -6,7 +6,7 @@ from .voxelrcnn_head import VoxelRCNNHead
 from .roi_head_template import RoIHeadTemplate
 from .mppnet_head import MPPNetHead
 from .mppnet_memory_bank_e2e import MPPNetHeadE2E
-
+from .velocity_head import VelocityHead
 __all__ = {
     'RoIHeadTemplate': RoIHeadTemplate,
     'PartA2FCHead': PartA2FCHead,
@@ -16,4 +16,6 @@ __all__ = {
     'VoxelRCNNHead': VoxelRCNNHead,
     'MPPNetHead': MPPNetHead,
     'MPPNetHeadE2E': MPPNetHeadE2E,
+    'VelocityHead': VelocityHead,
+
 }
