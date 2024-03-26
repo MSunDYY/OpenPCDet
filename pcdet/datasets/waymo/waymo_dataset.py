@@ -53,7 +53,6 @@ class WaymoDataset(DatasetTemplate):
         else:
             self.pred_boxes_dict = {}
 
-
     def set_split(self, split):
         super().__init__(
             dataset_cfg=self.dataset_cfg, class_names=self.class_names, training=self.training,
@@ -93,12 +92,9 @@ class WaymoDataset(DatasetTemplate):
         self.logger.info('Total skipped info %s' % num_skipped_infos)
         self.logger.info('Total samples for Waymo dataset: %d' % (len(waymo_infos)))
 
-
-
         if self.dataset_cfg['SAMPLED_INTERVAL'][mode] > 1:
             sampled_waymo_infos = []
             for k in range(0, len(self.infos), self.dataset_cfg['SAMPLED_INTERVAL'][mode]):
-
                 sampled_waymo_infos.append(self.infos[k])
             self.infos = sampled_waymo_infos
             self.logger.info('Total sampled samples for Waymo dataset: %d' % len(self.infos))
@@ -475,7 +471,6 @@ class WaymoDataset(DatasetTemplate):
         et = time.time()
         # print('loading time is',et-st)
 
-
         if self.dataset_cfg.get('SEQUENCE_CONFIG', None) is not None and self.dataset_cfg[
             'SEQUENCE_CONFIG'].ENABLED:
             if self.dataset_cfg.get('GET_LABEL', False):
@@ -541,7 +536,7 @@ class WaymoDataset(DatasetTemplate):
                 if self.dataset_cfg.get('INFO_WITH_FAKELIDAR', False):
                     gt_boxes_lidar = box_utils.boxes3d_kitti_fakelidar_to_lidar(annos['gt_boxes_lidar'])
                 else:
-                    if isinstance(gt_boxes,list):
+                    if isinstance(gt_boxes, list):
                         gt_boxes_lidar = gt_boxes
                     else:
                         gt_boxes_lidar = gt_boxes
@@ -553,9 +548,11 @@ class WaymoDataset(DatasetTemplate):
                     input_dict['label'] = label
                     assert label.shape[0] == points.shape[0]
                 if self.dataset_cfg.get('TRAIN_WITH_SPEED', False):
-                    assert gt_boxes_lidar[0].shape[-1] == 9 + (0 if self.dataset_cfg.get('CONCAT',True) else 1)
+                    assert gt_boxes_lidar[0].shape[-1] == 9 + (0 if self.dataset_cfg.get('CONCAT', True) else 1)
                 else:
-                    gt_boxes_lidar = [gt_boxes[:, 0:7] for gt_boxes in gt_boxes_lidar]
+                    gt_boxes_lidar = [gt_boxes[:, 0:7] for gt_boxes in gt_boxes_lidar] if self.dataset_cfg.get('CONCAT',
+                                                                                                               True) else [
+                        np.concatenate([gt_box[:, :7], gt_box[:, -1:]], axis=-1) for gt_box in gt_boxes_lidar]
 
                 if self.training and self.dataset_cfg.get('FILTER_EMPTY_BOXES_FOR_TRAIN', False):
                     mask = [(anno['num_points_in_gt'] > 0) for anno in annos]  # filter empty boxes
@@ -990,7 +987,7 @@ def create_waymo_infos(dataset_cfg, class_names, data_path, save_path,
 
     dataset.set_split(val_split)
     waymo_infos_val = dataset.get_infos(
-        raw_data_path=data_path / raw_data_tag.replace('training','validating'),
+        raw_data_path=data_path / raw_data_tag.replace('training', 'validating'),
         save_path=save_path / processed_data_tag, num_workers=workers, has_label=True,
         sampled_interval=1, update_info_only=update_info_only
     )

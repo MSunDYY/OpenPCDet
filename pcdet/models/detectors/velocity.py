@@ -16,6 +16,7 @@ class VelocityNet(Detector3DTemplate):
 
     def forward(self, batch_dict):
         batch_dict['proposals_list'] = batch_dict['roi_boxes']
+        batch_dict['gt_boxes'] = torch.concat([batch_dict['gt_boxes'][:,:,:7],batch_dict['gt_boxes'][:,:,9:]],dim=-1)
         for cur_module in self.module_list[:]:
             batch_dict = cur_module(batch_dict)
         

@@ -160,7 +160,7 @@ class ProposalTargetLayer(nn.Module):
             raise NotImplementedError
 
         sampled_inds = torch.cat((fg_inds, bg_inds), dim=0)
-        return sampled_inds
+        return sampled_inds.long() , fg_inds.long() , bg_inds.long()
 
     @staticmethod
     def sample_bg_inds(hard_bg_inds, easy_bg_inds, bg_rois_per_this_image, hard_bg_ratio):

@@ -8,19 +8,20 @@ DATA_CONFIG:
         'train': 1,
         'test': 1
     }
+
     FILTER_EMPTY_BOXES_FOR_TRAIN: False
     DISABLE_NLZ_FLAG_ON_POINTS: True
-    TRAIN_WITH_SPEED: False
+    TRAIN_WITH_SPEED: True
     SEQUENCE_CONFIG:
         ENABLED: True
         SAMPLE_OFFSET: [-3,0]
 
     USE_PREDBOX: True
     ROI_BOXES_PATH: {
-        'train': '../output/waymo_models/centerpoint_4frames/default/eval/epoch_0/train/default/result.pkl',  # example: predicted boxes of RPN in training set
-        'test': '../output/waymo_models/centerpoint_4frames/default/eval/epoch_0/val/default/result.pkl',  # example: predicted boxes of RPN in evalulation set
+        'train': '../output/waymo_models/centerspeed/default/eval/epoch_30/train/default/result.pkl',  # example: predicted boxes of RPN in training set
+        'test': '../output/waymo_models/centerspeed/default/eval/epoch_30/val/default/result.pkl',  # example: predicted boxes of RPN in evalulation set
     }
-
+    CONCAT: False
     DATA_AUGMENTOR:
         DISABLE_AUG_LIST: [ 'placeholder' ]
         AUG_CONFIG_LIST:
@@ -104,7 +105,7 @@ MODEL:
             RATIO: 0.2
             USE_ROI_AUG: True
             USE_TRAJ_AUG:
-                ENABLED: True
+                ENABLED: False
                 THRESHOD: 0.8
             SAMPLE_ROI_BY_EACH_CLASS: True
             CLS_SCORE_TYPE: roi_iou

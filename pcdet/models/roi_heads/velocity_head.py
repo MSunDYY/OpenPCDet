@@ -12,9 +12,10 @@ from .target_assigner.proposal_target_layer import ProposalTargetLayer
 from pcdet.ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_stack_modules
 from pcdet import device
 
+
 class ProposalTargetLayerMPPNet(ProposalTargetLayer):
     def __init__(self, roi_sampler_cfg):
-        super().__init__(roi_sampler_cfg = roi_sampler_cfg)
+        super().__init__(roi_sampler_cfg=roi_sampler_cfg)
 
     def forward(self, batch_dict):
         """
@@ -37,7 +38,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
         """
 
         batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_scores, batch_roi_labels, \
-        batch_trajectory_rois,batch_valid_length = self.sample_rois_for_mppnet(batch_dict=batch_dict)
+            batch_trajectory_rois, batch_valid_length = self.sample_rois_for_mppnet(batch_dict=batch_dict)
 
         # regression valid mask
         reg_valid_mask = (batch_roi_ious > self.roi_sampler_cfg.REG_FG_THRESH).long()
@@ -61,11 +62,10 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
         else:
             raise NotImplementedError
 
-
-        targets_dict = {'rois': batch_rois, 'gt_of_rois': batch_gt_of_rois, 
-                        'gt_iou_of_rois': batch_roi_ious,'roi_scores': batch_roi_scores,
-                        'roi_labels': batch_roi_labels,'reg_valid_mask': reg_valid_mask, 
-                        'rcnn_cls_labels': batch_cls_labels,'trajectory_rois':batch_trajectory_rois,
+        targets_dict = {'rois': batch_rois, 'gt_of_rois': batch_gt_of_rois,
+                        'gt_iou_of_rois': batch_roi_ious, 'roi_scores': batch_roi_scores,
+                        'roi_labels': batch_roi_labels, 'reg_valid_mask': reg_valid_mask,
+                        'rcnn_cls_labels': batch_cls_labels, 'trajectory_rois': batch_trajectory_rois,
                         'valid_length': batch_valid_length,
                         }
 
@@ -82,98 +82,117 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
                 roi_labels: (B, num_rois)
         Returns:
         """
-        cur_frame_idx = 0
+        FRAME = batch_dict['num_points_all'].shape[1]
         batch_size = batch_dict['batch_size']
-        rois = batch_dict['trajectory_rois'][:,cur_frame_idx,:,:]
-        roi_scores = batch_dict['roi_scores'][:,:,cur_frame_idx]
-        roi_labels = batch_dict['roi_labels']
-        gt_boxes = batch_dict['gt_boxes']
-
-        code_size = rois.shape[-1]
-        batch_rois = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, code_size)
-        batch_gt_of_rois = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, gt_boxes.shape[-1])
-        batch_roi_ious = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE)
-        batch_roi_scores = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE)
-        batch_roi_labels = rois.new_zeros((batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE), dtype=torch.long)
-
-
 
         trajectory_rois = batch_dict['trajectory_rois']
-        batch_trajectory_rois = rois.new_zeros(batch_size, trajectory_rois.shape[1],self.roi_sampler_cfg.ROI_PER_IMAGE,trajectory_rois.shape[-1])
+        batch_trajectory_rois = trajectory_rois.new_zeros(batch_size, trajectory_rois.shape[1],
+                                                          self.roi_sampler_cfg.ROI_PER_IMAGE, trajectory_rois.shape[-1])
 
         valid_length = batch_dict['valid_length']
-        batch_valid_length = rois.new_zeros((batch_size, batch_dict['trajectory_rois'].shape[1], self.roi_sampler_cfg.ROI_PER_IMAGE))
+        batch_valid_length = trajectory_rois.new_zeros(
+            (batch_size, batch_dict['trajectory_rois'].shape[1], self.roi_sampler_cfg.ROI_PER_IMAGE))
+        batch_rois_list = []
+        batch_gt_of_rois_list = []
+        batch_roi_ious_list = []
+        batch_roi_scores_list = []
+        batch_roi_labels_list = []
 
-        for index in range(batch_size):
- 
-            cur_trajectory_rois = trajectory_rois[index]
+        for cur_frame_idx in range(FRAME):
+            # cur_frame_idx = 0
 
-            cur_roi, cur_gt, cur_roi_labels, cur_roi_scores = rois[index],gt_boxes[index], roi_labels[index], roi_scores[index]
+            rois = batch_dict['trajectory_rois'][:, cur_frame_idx, :, :]
+            roi_scores = batch_dict['roi_scores'][:, :, cur_frame_idx]
+            roi_labels = batch_dict['roi_labels']
+            gt_boxes = batch_dict['gt_boxes'][batch_dict['gt_boxes'][:, :, -2] == cur_frame_idx + 1].unsqueeze(0)
 
-            if 'valid_length' in batch_dict.keys():
-                cur_valid_length = valid_length[index].to(device)
+            code_size = rois.shape[-1]
+            batch_rois = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, code_size)
+            batch_gt_of_rois = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, gt_boxes.shape[-1])
+            batch_roi_ious = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE)
+            batch_roi_scores = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE)
+            batch_roi_labels = rois.new_zeros((batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE), dtype=torch.long)
 
+            for index in range(batch_size):
 
+                cur_trajectory_rois = trajectory_rois[index]
 
-            k = cur_gt.__len__() - 1
-            while k > 0 and cur_gt[k].sum() == 0:
-                k -= 1
+                cur_roi, cur_gt, cur_roi_labels, cur_roi_scores = rois[index], gt_boxes[index], roi_labels[index], \
+                    roi_scores[index]
 
-            cur_gt = cur_gt[:k + 1]
-            cur_gt = cur_gt.new_zeros((1, cur_gt.shape[1])) if len(cur_gt) == 0 else cur_gt
+                if 'valid_length' in batch_dict.keys():
+                    cur_valid_length = valid_length[index].to(device)
 
-            if self.roi_sampler_cfg.get('SAMPLE_ROI_BY_EACH_CLASS', False):
-                max_overlaps, gt_assignment = self.get_max_iou_with_same_class(
-                    rois=cur_roi, roi_labels=cur_roi_labels,
-                    gt_boxes=cur_gt[:, 0:7], gt_labels=cur_gt[:, -1].long()
-                )
+                k = cur_gt.__len__() - 1
+                while k > 0 and cur_gt[k].sum() == 0:
+                    k -= 1
 
-            else:
-                iou3d = iou3d_nms_utils.boxes_iou3d_gpu(cur_roi.cuda(), cur_gt.cuda()[:, 0:7]).to(device)  # (M, N)
-                max_overlaps, gt_assignment = torch.max(iou3d, dim=1)
+                cur_gt = cur_gt[:k + 1]
+                cur_gt = cur_gt.new_zeros((1, cur_gt.shape[1])) if len(cur_gt) == 0 else cur_gt
 
-            sampled_inds,fg_inds, bg_inds = self.subsample_rois(max_overlaps=max_overlaps)
+                if self.roi_sampler_cfg.get('SAMPLE_ROI_BY_EACH_CLASS', False):
+                    max_overlaps, gt_assignment = self.get_max_iou_with_same_class(
+                        rois=cur_roi, roi_labels=cur_roi_labels,
+                        gt_boxes=cur_gt[:, 0:7], gt_labels=cur_gt[:, -1].long()
+                    )
 
-            batch_roi_labels[index] = cur_roi_labels[sampled_inds.long()]
+                else:
+                    iou3d = iou3d_nms_utils.boxes_iou3d_gpu(cur_roi.cuda(), cur_gt.cuda()[:, 0:7]).to(device)  # (M, N)
+                    max_overlaps, gt_assignment = torch.max(iou3d, dim=1)
 
+                sampled_inds, fg_inds, bg_inds = self.subsample_rois(max_overlaps=max_overlaps)
 
-            if self.roi_sampler_cfg.get('USE_ROI_AUG',False):
+                batch_roi_labels[index] = cur_roi_labels[sampled_inds.long()]
 
-                fg_rois, fg_iou3d = self.aug_roi_by_noise_torch(cur_roi[fg_inds], cur_gt[gt_assignment[fg_inds]],
-                                          max_overlaps[fg_inds], aug_times=self.roi_sampler_cfg.ROI_FG_AUG_TIMES)
-                bg_rois = cur_roi[bg_inds]
-                bg_iou3d = max_overlaps[bg_inds]
+                if self.roi_sampler_cfg.get('USE_ROI_AUG', False):
 
-                batch_rois[index] = torch.cat([fg_rois,bg_rois],0)
-                batch_roi_ious[index] = torch.cat([fg_iou3d,bg_iou3d],0)
-                batch_gt_of_rois[index] = cur_gt[gt_assignment[sampled_inds]]
+                    fg_rois, fg_iou3d = self.aug_roi_by_noise_torch(cur_roi[fg_inds], cur_gt[gt_assignment[fg_inds]],
+                                                                    max_overlaps[fg_inds],
+                                                                    aug_times=self.roi_sampler_cfg.ROI_FG_AUG_TIMES)
+                    bg_rois = cur_roi[bg_inds]
+                    bg_iou3d = max_overlaps[bg_inds]
 
-            else:
-                batch_rois[index] = cur_roi[sampled_inds]
-                batch_roi_ious[index] = max_overlaps[sampled_inds]
-                batch_gt_of_rois[index] = cur_gt[gt_assignment[sampled_inds]]
+                    batch_rois[index] = torch.cat([fg_rois, bg_rois], 0)
+                    batch_roi_ious[index] = torch.cat([fg_iou3d, bg_iou3d], 0)
+                    batch_gt_of_rois[index] = cur_gt[gt_assignment[sampled_inds]]
 
+                else:
+                    batch_rois[index] = cur_roi[sampled_inds]
+                    batch_roi_ious[index] = max_overlaps[sampled_inds]
+                    batch_gt_of_rois[index] = cur_gt[gt_assignment[sampled_inds]]
 
-            batch_roi_scores[index] = cur_roi_scores[sampled_inds]
+                batch_roi_scores[index] = cur_roi_scores[sampled_inds]
 
-            if 'valid_length' in batch_dict.keys():
-                batch_valid_length[index] = cur_valid_length[:,sampled_inds]
+                if 'valid_length' in batch_dict.keys():
+                    batch_valid_length[index] = cur_valid_length[:, sampled_inds]
 
-            if self.roi_sampler_cfg.USE_TRAJ_AUG.ENABLED:
-                batch_trajectory_rois_list = []
-                for idx in range(0,batch_dict['num_frames']):
-                    if idx== cur_frame_idx:
-                        batch_trajectory_rois_list.append(cur_trajectory_rois[cur_frame_idx:cur_frame_idx+1,sampled_inds])
-                        continue
-                    fg_trajs, _ = self.aug_roi_by_noise_torch(cur_trajectory_rois[idx,fg_inds], cur_trajectory_rois[idx,fg_inds][:,:8], max_overlaps[fg_inds], \
-                                        aug_times=self.roi_sampler_cfg.ROI_FG_AUG_TIMES,pos_thresh=self.roi_sampler_cfg.USE_TRAJ_AUG.THRESHOD)
-                    bg_trajs = cur_trajectory_rois[idx,bg_inds]
-                    batch_trajectory_rois_list.append(torch.cat([fg_trajs,bg_trajs],0)[None,:,:])
-                batch_trajectory_rois[index] = torch.cat(batch_trajectory_rois_list,0)
-            else:
-                batch_trajectory_rois[index] = cur_trajectory_rois[:,sampled_inds]
-                    
-        return batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_scores, batch_roi_labels, batch_trajectory_rois,batch_valid_length
+            batch_rois_list.append(batch_rois)
+            batch_gt_of_rois_list.append(batch_gt_of_rois)
+            batch_roi_ious_list.append(batch_roi_ious)
+            batch_roi_scores_list.append(batch_roi_scores)
+            batch_roi_labels_list.append(batch_roi_labels)
+        if self.roi_sampler_cfg.USE_TRAJ_AUG.ENABLED:
+            batch_trajectory_rois_list = []
+            for idx in range(0, batch_dict['num_frames']):
+                if idx == cur_frame_idx:
+                    batch_trajectory_rois_list.append(
+                        cur_trajectory_rois[cur_frame_idx:cur_frame_idx + 1, sampled_inds])
+                    continue
+                fg_trajs, _ = self.aug_roi_by_noise_torch(cur_trajectory_rois[idx, fg_inds],
+                                                          cur_trajectory_rois[idx, fg_inds][:, :8],
+                                                          max_overlaps[fg_inds], \
+                                                          aug_times=self.roi_sampler_cfg.ROI_FG_AUG_TIMES,
+                                                          pos_thresh=self.roi_sampler_cfg.USE_TRAJ_AUG.THRESHOD)
+                bg_trajs = cur_trajectory_rois[idx, bg_inds]
+                batch_trajectory_rois_list.append(torch.cat([fg_trajs, bg_trajs], 0)[None, :, :])
+            batch_trajectory_rois[index] = torch.cat(batch_trajectory_rois_list, 0)
+        else:
+            batch_trajectory_rois[index] = cur_trajectory_rois[:, sampled_inds]
+
+        return torch.concat(batch_rois_list, 1), torch.concat(batch_gt_of_rois_list, 1), torch.concat(
+            batch_roi_ious_list,
+            1), torch.concat(batch_roi_scores_list, 1), torch.concat(batch_roi_labels_list,
+                                                                     1), batch_trajectory_rois, batch_valid_length
 
     def subsample_rois(self, max_overlaps):
         # sample fg, easy_bg, hard_bg
@@ -183,7 +202,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
         fg_inds = ((max_overlaps >= fg_thresh)).nonzero().view(-1)
         easy_bg_inds = ((max_overlaps < self.roi_sampler_cfg.CLS_BG_THRESH_LO)).nonzero().view(-1)
         hard_bg_inds = ((max_overlaps < self.roi_sampler_cfg.REG_FG_THRESH) &
-                (max_overlaps >= self.roi_sampler_cfg.CLS_BG_THRESH_LO)).nonzero().view(-1)
+                        (max_overlaps >= self.roi_sampler_cfg.CLS_BG_THRESH_LO)).nonzero().view(-1)
 
         fg_num_rois = fg_inds.numel()
         bg_num_rois = hard_bg_inds.numel() + easy_bg_inds.numel()
@@ -222,7 +241,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
         sampled_inds = torch.cat((fg_inds, bg_inds), dim=0)
         return sampled_inds.long(), fg_inds.long(), bg_inds.long()
 
-    def aug_roi_by_noise_torch(self,roi_boxes3d, gt_boxes3d, iou3d_src, aug_times=10, pos_thresh=None):
+    def aug_roi_by_noise_torch(self, roi_boxes3d, gt_boxes3d, iou3d_src, aug_times=10, pos_thresh=None):
         iou_of_rois = torch.zeros(roi_boxes3d.shape[0]).type_as(gt_boxes3d)
         if pos_thresh is None:
             pos_thresh = min(self.roi_sampler_cfg.REG_FG_THRESH, self.roi_sampler_cfg.CLS_FG_THRESH)
@@ -242,7 +261,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
                     aug_box3d = self.random_aug_box3d(roi_box3d)
                     keep = False
                 aug_box3d = aug_box3d.view((1, aug_box3d.shape[-1]))
-                iou3d = iou3d_nms_utils.boxes_iou3d_gpu(aug_box3d.cuda()[:,:7], gt_box3d.cuda()[:,:7]).to(device)
+                iou3d = iou3d_nms_utils.boxes_iou3d_gpu(aug_box3d.cuda()[:, :7], gt_box3d.cuda()[:, :7]).to(device)
                 temp_iou = iou3d[0][0]
                 cnt += 1
             roi_boxes3d[k] = aug_box3d.view(-1)
@@ -252,7 +271,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
                 iou_of_rois[k] = temp_iou
         return roi_boxes3d, iou_of_rois
 
-    def random_aug_box3d(self,box3d):
+    def random_aug_box3d(self, box3d):
         """
         :param box3d: (7) [x, y, z, h, w, l, ry]
         random shift, scale, orientation
@@ -262,7 +281,8 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
             pos_shift = (torch.rand(3, device=box3d.device) - 0.5)  # [-0.5 ~ 0.5]
             hwl_scale = (torch.rand(3, device=box3d.device) - 0.5) / (0.5 / 0.15) + 1.0  #
             angle_rot = (torch.rand(1, device=box3d.device) - 0.5) / (0.5 / (np.pi / 12))  # [-pi/12 ~ pi/12]
-            aug_box3d = torch.cat([box3d[0:3] + pos_shift, box3d[3:6] * hwl_scale, box3d[6:7] + angle_rot, box3d[7:]], dim=0)
+            aug_box3d = torch.cat([box3d[0:3] + pos_shift, box3d[3:6] * hwl_scale, box3d[6:7] + angle_rot, box3d[7:]],
+                                  dim=0)
             return aug_box3d
         elif self.roi_sampler_cfg.REG_AUG_METHOD == 'multiple':
             # pos_range, hwl_range, angle_range, mean_iou
@@ -295,12 +315,13 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
         else:
             raise NotImplementedError
 
+
 class VelocityHead(RoIHeadTemplate):
-    def __init__(self,model_cfg, num_class=1,**kwargs):
+    def __init__(self, model_cfg, num_class=1, **kwargs):
         super().__init__(num_class=num_class, model_cfg=model_cfg)
         self.model_cfg = model_cfg
         self.proposal_target_layer = ProposalTargetLayerMPPNet(roi_sampler_cfg=self.model_cfg.TARGET_CONFIG)
-        self.use_time_stamp = self.model_cfg.get('USE_TIMESTAMP',None)
+        self.use_time_stamp = self.model_cfg.get('USE_TIMESTAMP', None)
         self.num_lidar_points = self.model_cfg.Transformer.num_lidar_points
         self.avg_stage1_score = self.model_cfg.get('AVG_STAGE1_SCORE', None)
 
@@ -312,35 +333,38 @@ class VelocityHead(RoIHeadTemplate):
 
         self.grid_size = model_cfg.ROI_GRID_POOL.GRID_SIZE
         self.num_proxy_points = model_cfg.Transformer.num_proxy_points
-        self.seqboxembed = PointNet(8,model_cfg=self.model_cfg)
-        self.jointembed = MLP(self.hidden_dim*(self.num_groups+1), model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
-
+        self.seqboxembed = PointNet(8, model_cfg=self.model_cfg)
+        self.jointembed = MLP(self.hidden_dim * (self.num_groups + 1), model_cfg.Transformer.hidden_dim,
+                              self.box_coder.code_size * self.num_class, 4)
 
         num_radius = len(self.model_cfg.ROI_GRID_POOL.POOL_RADIUS)
-        self.up_dimension_geometry = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim//num_radius, num_layers = 3)
-        self.up_dimension_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim = hidden_dim, num_layers = 3)
+        self.up_dimension_geometry = MLP(input_dim=29, hidden_dim=64, output_dim=hidden_dim // num_radius, num_layers=3)
+        self.up_dimension_motion = MLP(input_dim=30, hidden_dim=64, output_dim=hidden_dim, num_layers=3)
 
         self.transformer = build_transformer(model_cfg.Transformer)
 
         self.roi_grid_pool_layer = pointnet2_stack_modules.StackSAModuleMSG(
-                radii=self.model_cfg.ROI_GRID_POOL.POOL_RADIUS,
-                nsamples=self.model_cfg.ROI_GRID_POOL.NSAMPLE,
-                mlps=self.model_cfg.ROI_GRID_POOL.MLPS,
-                use_xyz=True,
-                pool_method=self.model_cfg.ROI_GRID_POOL.POOL_METHOD,
-                )
+            radii=self.model_cfg.ROI_GRID_POOL.POOL_RADIUS,
+            nsamples=self.model_cfg.ROI_GRID_POOL.NSAMPLE,
+            mlps=self.model_cfg.ROI_GRID_POOL.MLPS,
+            use_xyz=True,
+            pool_method=self.model_cfg.ROI_GRID_POOL.POOL_METHOD,
+        )
 
         self.class_embed = nn.ModuleList()
         self.class_embed.append(nn.Linear(model_cfg.Transformer.hidden_dim, 1))
 
         self.bbox_embed = nn.ModuleList()
         for _ in range(self.num_groups):
-            self.bbox_embed.append(MLP(model_cfg.Transformer.hidden_dim, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4))
+            self.bbox_embed.append(MLP(model_cfg.Transformer.hidden_dim, model_cfg.Transformer.hidden_dim,
+                                       self.box_coder.code_size * self.num_class, 4))
 
         if self.model_cfg.Transformer.use_grid_pos.enabled:
             if self.model_cfg.Transformer.use_grid_pos.init_type == 'index':
-                self.grid_index = torch.cat([i.reshape(-1,1)for i in torch.meshgrid(torch.arange(self.grid_size), torch.arange(self.grid_size), torch.arange(self.grid_size))],1).float().cuda()
-                self.grid_pos_embeded = MLP(input_dim = 3, hidden_dim = 256, output_dim = hidden_dim, num_layers = 2)
+                self.grid_index = torch.cat([i.reshape(-1, 1) for i in
+                                             torch.meshgrid(torch.arange(self.grid_size), torch.arange(self.grid_size),
+                                                            torch.arange(self.grid_size))], 1).float().cuda()
+                self.grid_pos_embeded = MLP(input_dim=3, hidden_dim=256, output_dim=hidden_dim, num_layers=2)
             else:
                 self.pos = nn.Parameter(torch.zeros(1, self.num_grid_points, 256))
 
@@ -380,51 +404,50 @@ class VelocityHead(RoIHeadTemplate):
     @staticmethod
     def get_dense_grid_points(rois, batch_size_rcnn, grid_size):
         faked_features = rois.new_ones((grid_size, grid_size, grid_size))
-        dense_idx = faked_features.nonzero()  
-        dense_idx = dense_idx.repeat(batch_size_rcnn, 1, 1).float()  
+        dense_idx = faked_features.nonzero()
+        dense_idx = dense_idx.repeat(batch_size_rcnn, 1, 1).float()
 
         local_roi_size = rois.view(batch_size_rcnn, -1)[:, 3:6]
         roi_grid_points = (dense_idx + 0.5) / grid_size * local_roi_size.unsqueeze(dim=1) \
-                          - (local_roi_size.unsqueeze(dim=1) / 2)  
+                          - (local_roi_size.unsqueeze(dim=1) / 2)
         return roi_grid_points
 
     @staticmethod
     def get_corner_points(rois, batch_size_rcnn):
         faked_features = rois.new_ones((2, 2, 2))
 
-        dense_idx = faked_features.nonzero()  
-        dense_idx = dense_idx.repeat(batch_size_rcnn, 1, 1).float()  
+        dense_idx = faked_features.nonzero()
+        dense_idx = dense_idx.repeat(batch_size_rcnn, 1, 1).float()
 
         local_roi_size = rois.view(batch_size_rcnn, -1)[:, 3:6]
         roi_grid_points = dense_idx * local_roi_size.unsqueeze(dim=1) \
-                          - (local_roi_size.unsqueeze(dim=1) / 2)  
+                          - (local_roi_size.unsqueeze(dim=1) / 2)
         return roi_grid_points
 
-    def roi_grid_pool(self, batch_size, rois, point_coords, point_features,batch_dict=None,batch_cnt=None):
+    def roi_grid_pool(self, batch_size, rois, point_coords, point_features, batch_dict=None, batch_cnt=None):
 
         num_frames = batch_dict['num_frames']
-        num_rois = rois.shape[2]*rois.shape[1]
+        num_rois = rois.shape[2] * rois.shape[1]
 
         global_roi_proxy_points, local_roi_proxy_points = self.get_proxy_points_of_roi(
-            rois.permute(0,2,1,3).contiguous(), grid_size=self.grid_size
-        )  
+            rois.permute(0, 2, 1, 3).contiguous(), grid_size=self.grid_size
+        )
 
         global_roi_proxy_points = global_roi_proxy_points.view(batch_size, -1, 3)
-  
 
-        point_coords = point_coords.view(point_coords.shape[0]*num_frames,point_coords.shape[1]//num_frames,point_coords.shape[-1])
-        xyz = point_coords[:, :, 0:3].view(-1,3)
+        point_coords = point_coords.view(point_coords.shape[0] * num_frames, point_coords.shape[1] // num_frames,
+                                         point_coords.shape[-1])
+        xyz = point_coords[:, :, 0:3].view(-1, 3)
 
-        
         num_points = point_coords.shape[1]
         num_proxy_points = self.num_proxy_points
 
         if batch_cnt is None:
-            xyz_batch_cnt = torch.tensor([num_points]*num_rois*batch_size).cuda().int()
+            xyz_batch_cnt = torch.tensor([num_points] * num_rois * batch_size).cuda().int()
         else:
             xyz_batch_cnt = torch.tensor(batch_cnt).cuda().int()
 
-        new_xyz_batch_cnt = torch.tensor([num_proxy_points]*num_rois*batch_size).cuda().int()
+        new_xyz_batch_cnt = torch.tensor([num_proxy_points] * num_rois * batch_size).cuda().int()
         new_xyz = global_roi_proxy_points.view(-1, 3)
 
         _, pooled_features = self.roi_grid_pool_layer(
@@ -432,21 +455,23 @@ class VelocityHead(RoIHeadTemplate):
             xyz_batch_cnt=xyz_batch_cnt,
             new_xyz=new_xyz,
             new_xyz_batch_cnt=new_xyz_batch_cnt,
-            features=point_features.view(-1,point_features.shape[-1]).contiguous(),
-        )  
+            features=point_features.view(-1, point_features.shape[-1]).contiguous(),
+        )
 
         features = pooled_features.view(
-            point_features.shape[0], num_frames*self.num_proxy_points,
-            pooled_features.shape[-1]).contiguous()  
+            point_features.shape[0], num_frames * self.num_proxy_points,
+            pooled_features.shape[-1]).contiguous()
 
-        return features,global_roi_proxy_points.view(batch_size*rois.shape[2], num_frames*num_proxy_points,3).contiguous()
+        return features, global_roi_proxy_points.view(batch_size * rois.shape[2], num_frames * num_proxy_points,
+                                                      3).contiguous()
 
     def get_proxy_points_of_roi(self, rois, grid_size):
         rois = rois.view(-1, rois.shape[-1])
         batch_size_rcnn = rois.shape[0]
 
-        local_roi_grid_points = self.get_dense_grid_points(rois, batch_size_rcnn, grid_size)  
-        local_roi_grid_points = common_utils.rotate_points_along_z(local_roi_grid_points.clone(), rois[:, 6]).squeeze(dim=1)
+        local_roi_grid_points = self.get_dense_grid_points(rois, batch_size_rcnn, grid_size)
+        local_roi_grid_points = common_utils.rotate_points_along_z(local_roi_grid_points.clone(), rois[:, 6]).squeeze(
+            dim=1)
         global_center = rois[:, 0:3].clone()
         global_roi_grid_points = local_roi_grid_points + global_center.unsqueeze(dim=1)
         return global_roi_grid_points, local_roi_grid_points
@@ -454,9 +479,9 @@ class VelocityHead(RoIHeadTemplate):
     def spherical_coordinate(self, src, diag_dist):
         assert (src.shape[-1] == 27)
         device = src.device
-        indices_x = torch.LongTensor([0,3,6,9,12,15,18,21,24]).to(device)  #
-        indices_y = torch.LongTensor([1,4,7,10,13,16,19,22,25]).to(device) # 
-        indices_z = torch.LongTensor([2,5,8,11,14,17,20,23,26]).to(device) 
+        indices_x = torch.LongTensor([0, 3, 6, 9, 12, 15, 18, 21, 24]).to(device)  #
+        indices_y = torch.LongTensor([1, 4, 7, 10, 13, 16, 19, 22, 25]).to(device)  #
+        indices_z = torch.LongTensor([2, 5, 8, 11, 14, 17, 20, 23, 26]).to(device)
         src_x = torch.index_select(src, -1, indices_x)
         src_y = torch.index_select(src, -1, indices_y)
         src_z = torch.index_select(src, -1, indices_z)
@@ -464,64 +489,70 @@ class VelocityHead(RoIHeadTemplate):
         phi = torch.atan(src_y / (src_x + 1e-5))
         the = torch.acos(src_z / (dis + 1e-5))
         dis = dis / (diag_dist + 1e-5)
-        src = torch.cat([dis, phi, the], dim = -1)
+        src = torch.cat([dis, phi, the], dim=-1)
         return src
 
-    def crop_current_frame_points(self, src, batch_size,trajectory_rois,num_rois,batch_dict):
+    def crop_current_frame_points(self, src, batch_size, trajectory_rois, num_rois, batch_dict):
 
         for bs_idx in range(batch_size):
-            cur_batch_boxes = trajectory_rois[bs_idx,0,:,:7].view(-1,7)
-            cur_radiis = torch.sqrt((cur_batch_boxes[:,3]/2) ** 2 + (cur_batch_boxes[:,4]/2) ** 2) * 1.1
-            cur_points = batch_dict['points'][(batch_dict['points'][:, 0] == bs_idx)][:,1:]
-            dis = torch.norm((cur_points[:,:2].unsqueeze(0) - cur_batch_boxes[:,:2].unsqueeze(1).repeat(1,cur_points.shape[0],1)), dim = 2)
+            cur_batch_boxes = trajectory_rois[bs_idx, 0, :, :7].view(-1, 7)
+            cur_radiis = torch.sqrt((cur_batch_boxes[:, 3] / 2) ** 2 + (cur_batch_boxes[:, 4] / 2) ** 2) * 1.1
+            cur_points = batch_dict['points'][(batch_dict['points'][:, 0] == bs_idx)][:, 1:]
+            cur_points = cur_points[cur_points[:,-1]==0]
+            dis = torch.norm((cur_points[:, :2].unsqueeze(0) - cur_batch_boxes[:, :2].unsqueeze(1).repeat(1,
+                                                                                                          cur_points.shape[
+                                                                                                              0], 1)),
+                             dim=2)
             point_mask = (dis <= cur_radiis.unsqueeze(-1))
-            
 
-            sampled_idx = torch.topk(point_mask.float(),128)[1]
-            sampled_idx_buffer = sampled_idx[:, 0:1].repeat(1, 128)  
+            sampled_idx = torch.topk(point_mask.float(), 128)[1]
+            sampled_idx_buffer = sampled_idx[:, 0:1].repeat(1, 128)
             roi_idx = torch.arange(num_rois)[:, None].repeat(1, 128)
-            sampled_mask = point_mask[roi_idx, sampled_idx] 
+            sampled_mask = point_mask[roi_idx, sampled_idx]
             sampled_idx_buffer[sampled_mask] = sampled_idx[sampled_mask]
 
-            src[bs_idx] = cur_points[sampled_idx_buffer][:,:,:5] 
-            empty_flag = sampled_mask.sum(-1)==0
-            src[bs_idx,empty_flag] = 0
+            src[bs_idx] = cur_points[sampled_idx_buffer][:, :, :5]
+            empty_flag = sampled_mask.sum(-1) == 0
+            src[bs_idx, empty_flag] = 0
 
-        src = src.repeat([1,1,trajectory_rois.shape[1],1])
+        src = src.repeat([1, 1, trajectory_rois.shape[1], 1])
 
         return src
 
-    def crop_previous_frame_points(self,src,batch_size,trajectory_rois,num_rois,valid_length,batch_dict):
+    def crop_previous_frame_points(self, src, batch_size, trajectory_rois, num_rois, valid_length, batch_dict):
         for bs_idx in range(batch_size):
-            
-            cur_points = batch_dict['points'][(batch_dict['points'][:, 0] == bs_idx)][:,1:]
 
+            cur_points = batch_dict['points'][(batch_dict['points'][:, 0] == bs_idx)][:, 1:]
 
-            for idx in range(1,trajectory_rois.shape[1]):
-            
-                time_mask = (cur_points[:,-1] - idx*0.1).abs() < 1e-3
+            for idx in range(1, trajectory_rois.shape[1]):
+
+                time_mask = (cur_points[:, -1] - idx * 0.1).abs() < 1e-3
                 cur_time_points = cur_points[time_mask]
-                cur_batch_boxes = trajectory_rois[bs_idx,idx,:,:7].view(-1,7)
+                cur_batch_boxes = trajectory_rois[bs_idx, idx, :, :7].view(-1, 7)
 
-                cur_radiis = torch.sqrt((cur_batch_boxes[:,3]/2) ** 2 + (cur_batch_boxes[:,4]/2) ** 2) * 1.1
+                cur_radiis = torch.sqrt((cur_batch_boxes[:, 3] / 2) ** 2 + (cur_batch_boxes[:, 4] / 2) ** 2) * 1.1
                 if not self.training and cur_batch_boxes.shape[0] > 32:
-                    length_iter= cur_batch_boxes.shape[0]//32
+                    length_iter = cur_batch_boxes.shape[0] // 32
                     dis_list = []
-                    for i in range(length_iter+1):
-                        dis = torch.norm((cur_time_points[:,:2].unsqueeze(0) - \
-                            cur_batch_boxes[32*i:32*(i+1),:2].unsqueeze(1).repeat(1,cur_time_points.shape[0],1)), dim = 2)
+                    for i in range(length_iter + 1):
+                        dis = torch.norm((cur_time_points[:, :2].unsqueeze(0) - \
+                                          cur_batch_boxes[32 * i:32 * (i + 1), :2].unsqueeze(1).repeat(1,
+                                                                                                       cur_time_points.shape[
+                                                                                                           0], 1)),
+                                         dim=2)
                         dis_list.append(dis)
-                    dis = torch.cat(dis_list,0)
+                    dis = torch.cat(dis_list, 0)
                 else:
-                    dis = torch.norm((cur_time_points[:,:2].unsqueeze(0) - \
-                        cur_batch_boxes[:,:2].unsqueeze(1).repeat(1,cur_time_points.shape[0],1)), dim = 2)
-                
-                point_mask = (dis <= cur_radiis.unsqueeze(-1)).view(trajectory_rois.shape[2],-1)
+                    dis = torch.norm((cur_time_points[:, :2].unsqueeze(0) - \
+                                      cur_batch_boxes[:, :2].unsqueeze(1).repeat(1, cur_time_points.shape[0], 1)),
+                                     dim=2)
+
+                point_mask = (dis <= cur_radiis.unsqueeze(-1)).view(trajectory_rois.shape[2], -1)
 
                 for roi_box_idx in range(0, num_rois):
 
-                    if not valid_length[bs_idx,idx,roi_box_idx]:
-                            continue
+                    if not valid_length[bs_idx, idx, roi_box_idx]:
+                        continue
 
                     cur_roi_points = cur_time_points[point_mask[roi_box_idx]]
 
@@ -529,7 +560,7 @@ class VelocityHead(RoIHeadTemplate):
                         np.random.seed(0)
                         choice = np.random.choice(cur_roi_points.shape[0], self.num_lidar_points, replace=True)
                         cur_roi_points_sample = cur_roi_points[choice]
-                        
+
                     elif cur_roi_points.shape[0] == 0:
                         cur_roi_points_sample = cur_roi_points.new_zeros(self.num_lidar_points, 6)
 
@@ -537,129 +568,128 @@ class VelocityHead(RoIHeadTemplate):
                         empty_num = self.num_lidar_points - cur_roi_points.shape[0]
                         add_zeros = cur_roi_points.new_zeros(empty_num, 6)
                         add_zeros = cur_roi_points[0].repeat(empty_num, 1)
-                        cur_roi_points_sample = torch.cat([cur_roi_points, add_zeros], dim = 0)
+                        cur_roi_points_sample = torch.cat([cur_roi_points, add_zeros], dim=0)
 
                     if not self.use_time_stamp:
-                        cur_roi_points_sample = cur_roi_points_sample[:,:-1]
+                        cur_roi_points_sample = cur_roi_points_sample[:, :-1]
 
-                    src[bs_idx, roi_box_idx, self.num_lidar_points*idx:self.num_lidar_points*(idx+1), :] = cur_roi_points_sample
-
+                    src[bs_idx, roi_box_idx, self.num_lidar_points * idx:self.num_lidar_points * (idx + 1),
+                    :] = cur_roi_points_sample
 
         return src
-    
 
-    def get_proposal_aware_geometry_feature(self,src, batch_size,trajectory_rois,num_rois,batch_dict):
+    def get_proposal_aware_geometry_feature(self, src, batch_size, trajectory_rois, num_rois, batch_dict):
         proposal_aware_feat_list = []
         for i in range(trajectory_rois.shape[1]):
+            corner_points, _ = self.get_corner_points_of_roi(trajectory_rois[:, i, :, :].contiguous())
 
-            corner_points, _ = self.get_corner_points_of_roi(trajectory_rois[:,i,:,:].contiguous()) 
-
-            corner_points = corner_points.view(batch_size, num_rois, -1, corner_points.shape[-1]) 
+            corner_points = corner_points.view(batch_size, num_rois, -1, corner_points.shape[-1])
             corner_points = corner_points.view(batch_size * num_rois, -1)
-            trajectory_roi_center = trajectory_rois[:,i,:,:].contiguous().reshape(batch_size * num_rois, -1)[:,:3]
-            corner_add_center_points = torch.cat([corner_points, trajectory_roi_center], dim = -1)
-            proposal_aware_feat = src[:,i*self.num_lidar_points:(i+1)*self.num_lidar_points,:3].repeat(1,1,9) - \
-                                  corner_add_center_points.unsqueeze(1).repeat(1,self.num_lidar_points,1) 
+            trajectory_roi_center = trajectory_rois[:, i, :, :].contiguous().reshape(batch_size * num_rois, -1)[:, :3]
+            corner_add_center_points = torch.cat([corner_points, trajectory_roi_center], dim=-1)
+            proposal_aware_feat = src[:, i * self.num_lidar_points:(i + 1) * self.num_lidar_points, :3].repeat(1, 1,
+                                                                                                               9) - \
+                                  corner_add_center_points.unsqueeze(1).repeat(1, self.num_lidar_points, 1)
 
-            lwh = trajectory_rois[:,i,:,:].reshape(batch_size * num_rois, -1)[:,3:6].unsqueeze(1).repeat(1,proposal_aware_feat.shape[1],1)
-            diag_dist = (lwh[:,:,0]**2 + lwh[:,:,1]**2 + lwh[:,:,2]**2) ** 0.5
-            proposal_aware_feat = self.spherical_coordinate(proposal_aware_feat, diag_dist = diag_dist.unsqueeze(-1))
+            lwh = trajectory_rois[:, i, :, :].reshape(batch_size * num_rois, -1)[:, 3:6].unsqueeze(1).repeat(1,
+                                                                                                             proposal_aware_feat.shape[
+                                                                                                                 1], 1)
+            diag_dist = (lwh[:, :, 0] ** 2 + lwh[:, :, 1] ** 2 + lwh[:, :, 2] ** 2) ** 0.5
+            proposal_aware_feat = self.spherical_coordinate(proposal_aware_feat, diag_dist=diag_dist.unsqueeze(-1))
             proposal_aware_feat_list.append(proposal_aware_feat)
 
-        proposal_aware_feat = torch.cat(proposal_aware_feat_list,dim=1)
-        proposal_aware_feat = torch.cat([proposal_aware_feat, src[:,:,3:]], dim = -1)
-        src_gemoetry = self.up_dimension_geometry(proposal_aware_feat) 
-        proxy_point_geometry, proxy_points = self.roi_grid_pool(batch_size,trajectory_rois,src,src_gemoetry,batch_dict,batch_cnt=None)
-        return proxy_point_geometry,proxy_points
+        proposal_aware_feat = torch.cat(proposal_aware_feat_list, dim=1)
+        proposal_aware_feat = torch.cat([proposal_aware_feat, src[:, :, 3:]], dim=-1)
+        src_gemoetry = self.up_dimension_geometry(proposal_aware_feat)
+        proxy_point_geometry, proxy_points = self.roi_grid_pool(batch_size, trajectory_rois, src, src_gemoetry,
+                                                                batch_dict, batch_cnt=None)
+        return proxy_point_geometry, proxy_points
 
+    def get_proposal_aware_motion_feature(self, proxy_point, batch_size, trajectory_rois, num_rois, batch_dict):
 
-
-    def get_proposal_aware_motion_feature(self,proxy_point,batch_size,trajectory_rois,num_rois,batch_dict):
-
-
-        time_stamp   = torch.ones([proxy_point.shape[0],proxy_point.shape[1],1]).to(device)
-        padding_zero = torch.zeros([proxy_point.shape[0],proxy_point.shape[1],2]).to(device)
-        proxy_point_time_padding = torch.cat([padding_zero,time_stamp],-1)
+        time_stamp = torch.ones([proxy_point.shape[0], proxy_point.shape[1], 1]).to(device)
+        padding_zero = torch.zeros([proxy_point.shape[0], proxy_point.shape[1], 2]).to(device)
+        proxy_point_time_padding = torch.cat([padding_zero, time_stamp], -1)
 
         num_frames = trajectory_rois.shape[1]
 
         for i in range(num_frames):
-            proxy_point_time_padding[:,i*self.num_proxy_points:(i+1)*self.num_proxy_points,-1] = i*0.1
+            proxy_point_time_padding[:, i * self.num_proxy_points:(i + 1) * self.num_proxy_points, -1] = i * 0.1
 
-
-        corner_points, _ = self.get_corner_points_of_roi(trajectory_rois[:,0,:,:].contiguous()) 
-        corner_points = corner_points.view(batch_size, num_rois, -1, corner_points.shape[-1]) 
+        corner_points, _ = self.get_corner_points_of_roi(trajectory_rois[:, 0, :, :].contiguous())
+        corner_points = corner_points.view(batch_size, num_rois, -1, corner_points.shape[-1])
         corner_points = corner_points.view(batch_size * num_rois, -1)
-        trajectory_roi_center = trajectory_rois[:,0,:,:].reshape(batch_size * num_rois, -1)[:,:3]
-        corner_add_center_points = torch.cat([corner_points, trajectory_roi_center], dim = -1)
+        trajectory_roi_center = trajectory_rois[:, 0, :, :].reshape(batch_size * num_rois, -1)[:, :3]
+        corner_add_center_points = torch.cat([corner_points, trajectory_roi_center], dim=-1)
 
-        proposal_aware_feat = proxy_point[:,:,:3].repeat(1,1,9) - corner_add_center_points.unsqueeze(1) 
+        proposal_aware_feat = proxy_point[:, :, :3].repeat(1, 1, 9) - corner_add_center_points.unsqueeze(1)
 
-        lwh = trajectory_rois[:,0,:,:].reshape(batch_size * num_rois, -1)[:,3:6].unsqueeze(1).repeat(1,proxy_point.shape[1],1)
-        diag_dist = (lwh[:,:,0]**2 + lwh[:,:,1]**2 + lwh[:,:,2]**2) ** 0.5
-        proposal_aware_feat = self.spherical_coordinate(proposal_aware_feat, diag_dist = diag_dist.unsqueeze(-1))
+        lwh = trajectory_rois[:, 0, :, :].reshape(batch_size * num_rois, -1)[:, 3:6].unsqueeze(1).repeat(1,
+                                                                                                         proxy_point.shape[
+                                                                                                             1], 1)
+        diag_dist = (lwh[:, :, 0] ** 2 + lwh[:, :, 1] ** 2 + lwh[:, :, 2] ** 2) ** 0.5
+        proposal_aware_feat = self.spherical_coordinate(proposal_aware_feat, diag_dist=diag_dist.unsqueeze(-1))
 
-
-        proposal_aware_feat = torch.cat([proposal_aware_feat,proxy_point_time_padding],-1)
+        proposal_aware_feat = torch.cat([proposal_aware_feat, proxy_point_time_padding], -1)
         proxy_point_motion_feat = self.up_dimension_motion(proposal_aware_feat)
 
         return proxy_point_motion_feat
 
-    def trajectories_auxiliary_branch(self,trajectory_rois):
+    def trajectories_auxiliary_branch(self, trajectory_rois):
 
-        time_stamp = torch.ones([trajectory_rois.shape[0],trajectory_rois.shape[1],trajectory_rois.shape[2],1]).to(device)
+        time_stamp = torch.ones([trajectory_rois.shape[0], trajectory_rois.shape[1], trajectory_rois.shape[2], 1]).to(
+            device)
         for i in range(time_stamp.shape[1]):
-            time_stamp[:,i,:] = i*0.1 
+            time_stamp[:, i, :] = i * 0.1
 
-        box_seq = torch.cat([trajectory_rois[:,:,:,:7],time_stamp],-1)
+        box_seq = torch.cat([trajectory_rois[:, :, :, :7], time_stamp], -1)
 
-        box_seq[:, :, :,0:3] = box_seq[:, :, :,0:3] - box_seq[:, 0:1, :, 0:3]
+        box_seq[:, :, :, 0:3] = box_seq[:, :, :, 0:3] - box_seq[:, 0:1, :, 0:3]
 
-        roi_ry = box_seq[:,:,:,6] % (2 * np.pi)
-        roi_ry_t0 = roi_ry[:,0] 
-        roi_ry_t0 = roi_ry_t0.repeat(1,box_seq.shape[1])
-
+        roi_ry = box_seq[:, :, :, 6] % (2 * np.pi)
+        roi_ry_t0 = roi_ry[:, 0]
+        roi_ry_t0 = roi_ry_t0.repeat(1, box_seq.shape[1])
 
         box_seq = common_utils.rotate_points_along_z(
             points=box_seq.view(-1, 1, box_seq.shape[-1]), angle=-roi_ry_t0.view(-1)
-        ).view(box_seq.shape[0],box_seq.shape[1], -1, box_seq.shape[-1])
+        ).view(box_seq.shape[0], box_seq.shape[1], -1, box_seq.shape[-1])
 
-        box_seq[:, :, :, 6]  =  0
+        box_seq[:, :, :, 6] = 0
 
-        batch_rcnn = box_seq.shape[0]*box_seq.shape[2]
+        batch_rcnn = box_seq.shape[0] * box_seq.shape[2]
 
-        box_reg, box_feat, _ = self.seqboxembed(box_seq.permute(0,2,3,1).contiguous().view(batch_rcnn,box_seq.shape[-1],box_seq.shape[1]))
-        
+        box_reg, box_feat, _ = self.seqboxembed(
+            box_seq.permute(0, 2, 3, 1).contiguous().view(batch_rcnn, box_seq.shape[-1], box_seq.shape[1]))
+
         return box_reg, box_feat
 
-    def generate_trajectory(self,cur_batch_boxes,proposals_list,batch_dict):
- 
-        trajectory_rois = cur_batch_boxes[:,None,:,:].repeat(1,batch_dict['rois'].shape[-2],1,1)
-        trajectory_rois[:,0,:,:]= cur_batch_boxes
-        valid_length = torch.zeros([batch_dict['batch_size'],batch_dict['rois'].shape[-2],trajectory_rois.shape[2]])
-        valid_length[:,0] = 1
+    def generate_trajectory(self, cur_batch_boxes, proposals_list, batch_dict):
+
+        trajectory_rois = cur_batch_boxes[:, None, :, :].repeat(1, batch_dict['rois'].shape[-2], 1, 1)
+        trajectory_rois[:, 0, :, :] = cur_batch_boxes
+        valid_length = torch.zeros([batch_dict['batch_size'], batch_dict['rois'].shape[-2], trajectory_rois.shape[2]])
+        valid_length[:, 0] = 1
         num_frames = batch_dict['rois'].shape[-2]
-        for i in range(1,num_frames):
+        for i in range(1, num_frames):
             frame = torch.zeros_like(cur_batch_boxes)
-            frame[:,:,0:2] = trajectory_rois[:,i-1,:,0:2] + trajectory_rois[:,i-1,:,7:9]
-            frame[:,:,2:] = trajectory_rois[:,i-1,:,2:]
+            frame[:, :, 0:2] = trajectory_rois[:, i - 1, :, 0:2] + trajectory_rois[:, i - 1, :, 7:9]
+            frame[:, :, 2:] = trajectory_rois[:, i - 1, :, 2:]
 
-            for bs_idx in range( batch_dict['batch_size']):
-
-                iou3d = iou3d_nms_utils.boxes_iou3d_gpu(frame.cuda()[bs_idx,:,:7], proposals_list.cuda()[bs_idx,i,:,:7]).to(device)
+            for bs_idx in range(batch_dict['batch_size']):
+                iou3d = iou3d_nms_utils.boxes_iou3d_gpu(frame.cuda()[bs_idx, :, :7],
+                                                        proposals_list.cuda()[bs_idx, i, :, :7]).to(device)
 
                 max_overlaps, traj_assignment = torch.max(iou3d, dim=1)
 
-
                 fg_inds = ((max_overlaps >= 0.5)).nonzero().view(-1)
-                    
-                valid_length[bs_idx,i,fg_inds] = 1
 
-                trajectory_rois[bs_idx,i,fg_inds,:] = proposals_list[bs_idx,i,traj_assignment[fg_inds]]
+                valid_length[bs_idx, i, fg_inds] = 1
+
+                trajectory_rois[bs_idx, i, fg_inds, :] = proposals_list[bs_idx, i, traj_assignment[fg_inds]]
 
             batch_dict['valid_length'] = valid_length
-        
-        return trajectory_rois,valid_length
+
+        return trajectory_rois, valid_length
 
     def forward(self, batch_dict):
         """
@@ -667,17 +697,17 @@ class VelocityHead(RoIHeadTemplate):
         :return:
         """
 
-        batch_dict['rois'] = batch_dict['proposals_list'].permute(0,2,1,3)
+        batch_dict['rois'] = batch_dict['proposals_list'].permute(0, 2, 1, 3)
         num_rois = batch_dict['rois'].shape[1]
         batch_dict['num_frames'] = batch_dict['rois'].shape[2]
-        batch_dict['roi_scores'] = batch_dict['roi_scores'].permute(0,2,1)
-        batch_dict['roi_labels'] = batch_dict['roi_labels'][:,0,:].long()
+        batch_dict['roi_scores'] = batch_dict['roi_scores'].permute(0, 2, 1)
+        batch_dict['roi_labels'] = batch_dict['roi_labels'][:, 0, :].long()
         proposals_list = batch_dict['proposals_list']
         batch_size = batch_dict['batch_size']
-        cur_batch_boxes = copy.deepcopy(batch_dict['rois'].detach())[:,:,0]
+        cur_batch_boxes = copy.deepcopy(batch_dict['rois'].detach())[:, :, 0]
         batch_dict['cur_frame_idx'] = 0
 
-        trajectory_rois,valid_length = self.generate_trajectory(cur_batch_boxes,proposals_list,batch_dict)
+        trajectory_rois, valid_length = self.generate_trajectory(cur_batch_boxes, proposals_list, batch_dict)
 
         batch_dict['traj_memory'] = trajectory_rois
         batch_dict['has_class_labels'] = True
@@ -688,44 +718,47 @@ class VelocityHead(RoIHeadTemplate):
             batch_dict['rois'] = targets_dict['rois']
             batch_dict['roi_scores'] = targets_dict['roi_scores']
             batch_dict['roi_labels'] = targets_dict['roi_labels']
-            targets_dict['trajectory_rois'][:,batch_dict['cur_frame_idx'],:,:] = batch_dict['rois']
+            targets_dict['trajectory_rois'][:, :, :, :] = batch_dict['rois'].reshape(
+                batch_size, batch_dict['num_frames'], -1, batch_dict['rois'].shape[-1])
             trajectory_rois = targets_dict['trajectory_rois']
             valid_length = targets_dict['valid_length']
-            empty_mask = batch_dict['rois'][:,:,:6].sum(-1)==0
+            empty_mask = batch_dict['rois'][:, :, :6].sum(-1) == 0
 
         else:
-            empty_mask = batch_dict['rois'][:,:,0,:6].sum(-1)==0
+            empty_mask = batch_dict['rois'][:, :, 0, :6].sum(-1) == 0
             batch_dict['valid_traj_mask'] = ~empty_mask
 
         rois = batch_dict['rois']
-        num_rois = batch_dict['rois'].shape[1]
-        num_sample = self.num_lidar_points 
-        src = rois.new_zeros(batch_size, num_rois, num_sample, 5) 
+        num_rois = batch_dict['rois'].shape[1]//batch_dict['num_frames']
+        num_sample = self.num_lidar_points
+        src = rois.new_zeros(batch_size, num_rois, num_sample, 5)
 
-        src = self.crop_current_frame_points(src, batch_size, trajectory_rois, num_rois,batch_dict)
+        src = self.crop_current_frame_points(src, batch_size, trajectory_rois, num_rois, batch_dict)
 
-        src = self.crop_previous_frame_points(src, batch_size,trajectory_rois, num_rois,valid_length,batch_dict)
+        src = self.crop_previous_frame_points(src, batch_size, trajectory_rois, num_rois, valid_length, batch_dict)
 
-        src = src.view(batch_size * num_rois, -1, src.shape[-1]) 
+        src = src.view(batch_size * num_rois, -1, src.shape[-1])
 
-        src_geometry_feature,proxy_points = self.get_proposal_aware_geometry_feature(src,batch_size,trajectory_rois,num_rois,batch_dict)
+        src_geometry_feature, proxy_points = self.get_proposal_aware_geometry_feature(src, batch_size, trajectory_rois,
+                                                                                      num_rois, batch_dict)
 
-        src_motion_feature = self.get_proposal_aware_motion_feature(proxy_points,batch_size,trajectory_rois,num_rois,batch_dict)
+        # src_motion_feature = self.get_proposal_aware_motion_feature(proxy_points, batch_size, trajectory_rois, num_rois,
+        #                                                             batch_dict)
 
-        src = src_geometry_feature + src_motion_feature
+        src = src_geometry_feature
 
         box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
-        
-        if self.model_cfg.get('USE_TRAJ_EMPTY_MASK',None):
+
+        if self.model_cfg.get('USE_TRAJ_EMPTY_MASK', None):
             src[empty_mask.view(-1)] = 0
 
         if self.model_cfg.Transformer.use_grid_pos.init_type == 'index':
-            pos = self.grid_pos_embeded(self.grid_index.to(device))[None,:,:]
-            pos = torch.cat([torch.zeros(1,1,self.hidden_dim).to(device),pos],1)
+            pos = self.grid_pos_embeded(self.grid_index.to(device))[None, :, :]
+            pos = torch.cat([torch.zeros(1, 1, self.hidden_dim).to(device), pos], 1)
         else:
-            pos=None
+            pos = None
 
-        hs, tokens = self.transformer(src,pos=pos)
+        hs, tokens = self.transformer(src, pos=pos)
         point_cls_list = []
         point_reg_list = []
 
@@ -736,19 +769,19 @@ class VelocityHead(RoIHeadTemplate):
             for j in range(self.num_enc_layer):
                 point_reg_list.append(self.bbox_embed[i](tokens[j][i]))
 
-        point_cls = torch.cat(point_cls_list,0)
+        point_cls = torch.cat(point_cls_list, 0)
 
-        point_reg = torch.cat(point_reg_list,0)
-        hs = hs.permute(1,0,2).reshape(hs.shape[1],-1)
+        point_reg = torch.cat(point_reg_list, 0)
+        hs = hs.permute(1, 0, 2).reshape(hs.shape[1], -1)
 
-        joint_reg = self.jointembed(torch.cat([hs,feat_box],-1))
+        joint_reg = self.jointembed(torch.cat([hs, feat_box], -1))
 
         rcnn_cls = point_cls
         rcnn_reg = joint_reg
 
         if not self.training:
-            batch_dict['rois'] = batch_dict['rois'][:,:,0].contiguous()
-            rcnn_cls = rcnn_cls[-rcnn_cls.shape[0]//self.num_enc_layer:]
+            batch_dict['rois'] = batch_dict['rois'][:, :, 0].contiguous()
+            rcnn_cls = rcnn_cls[-rcnn_cls.shape[0] // self.num_enc_layer:]
             batch_cls_preds, batch_box_preds = self.generate_predicted_boxes(
                 batch_size=batch_dict['batch_size'], rois=batch_dict['rois'], cls_preds=rcnn_cls, box_preds=rcnn_reg
             )
@@ -757,38 +790,38 @@ class VelocityHead(RoIHeadTemplate):
 
             batch_dict['cls_preds_normalized'] = False
             if self.avg_stage1_score:
-                stage1_score = batch_dict['roi_scores'][:,:,:1]
+                stage1_score = batch_dict['roi_scores'][:, :, :1]
                 batch_cls_preds = F.sigmoid(batch_cls_preds)
                 if self.model_cfg.get('IOU_WEIGHT', None):
                     batch_box_preds_list = []
                     roi_labels_list = []
                     batch_cls_preds_list = []
                     for bs_idx in range(batch_size):
-                        car_mask = batch_dict['roi_labels'][bs_idx] ==1
-                        batch_cls_preds_car = batch_cls_preds[bs_idx].pow(self.model_cfg.IOU_WEIGHT[0])* \
-                                              stage1_score[bs_idx].pow(1-self.model_cfg.IOU_WEIGHT[0])
+                        car_mask = batch_dict['roi_labels'][bs_idx] == 1
+                        batch_cls_preds_car = batch_cls_preds[bs_idx].pow(self.model_cfg.IOU_WEIGHT[0]) * \
+                                              stage1_score[bs_idx].pow(1 - self.model_cfg.IOU_WEIGHT[0])
                         batch_cls_preds_car = batch_cls_preds_car[car_mask][None]
-                        batch_cls_preds_pedcyc = batch_cls_preds[bs_idx].pow(self.model_cfg.IOU_WEIGHT[1])* \
-                                                 stage1_score[bs_idx].pow(1-self.model_cfg.IOU_WEIGHT[1])
+                        batch_cls_preds_pedcyc = batch_cls_preds[bs_idx].pow(self.model_cfg.IOU_WEIGHT[1]) * \
+                                                 stage1_score[bs_idx].pow(1 - self.model_cfg.IOU_WEIGHT[1])
                         batch_cls_preds_pedcyc = batch_cls_preds_pedcyc[~car_mask][None]
-                        cls_preds = torch.cat([batch_cls_preds_car,batch_cls_preds_pedcyc],1)
+                        cls_preds = torch.cat([batch_cls_preds_car, batch_cls_preds_pedcyc], 1)
                         box_preds = torch.cat([batch_dict['batch_box_preds'][bs_idx][car_mask],
-                                                     batch_dict['batch_box_preds'][bs_idx][~car_mask]],0)[None]
+                                               batch_dict['batch_box_preds'][bs_idx][~car_mask]], 0)[None]
                         roi_labels = torch.cat([batch_dict['roi_labels'][bs_idx][car_mask],
-                                                batch_dict['roi_labels'][bs_idx][~car_mask]],0)[None]
+                                                batch_dict['roi_labels'][bs_idx][~car_mask]], 0)[None]
                         batch_box_preds_list.append(box_preds)
                         roi_labels_list.append(roi_labels)
                         batch_cls_preds_list.append(cls_preds)
-                    batch_dict['batch_box_preds'] = torch.cat(batch_box_preds_list,0)
-                    batch_dict['roi_labels'] = torch.cat(roi_labels_list,0)
-                    batch_cls_preds = torch.cat(batch_cls_preds_list,0)
-                    
+                    batch_dict['batch_box_preds'] = torch.cat(batch_box_preds_list, 0)
+                    batch_dict['roi_labels'] = torch.cat(roi_labels_list, 0)
+                    batch_cls_preds = torch.cat(batch_cls_preds_list, 0)
+
                 else:
-                    batch_cls_preds = torch.sqrt(batch_cls_preds*stage1_score)
-                batch_dict['cls_preds_normalized']  = True
+                    batch_cls_preds = torch.sqrt(batch_cls_preds * stage1_score)
+                batch_dict['cls_preds_normalized'] = True
 
             batch_dict['batch_cls_preds'] = batch_cls_preds
-                
+
 
         else:
             targets_dict['batch_size'] = batch_size
@@ -823,7 +856,7 @@ class VelocityHead(RoIHeadTemplate):
         gt_boxes3d_ct = forward_ret_dict['gt_of_rois'][..., 0:code_size]
         gt_of_rois_src = forward_ret_dict['gt_of_rois_src'][..., 0:code_size].view(-1, code_size)
 
-        rcnn_reg = forward_ret_dict['rcnn_reg'] 
+        rcnn_reg = forward_ret_dict['rcnn_reg']
 
         roi_boxes3d = forward_ret_dict['rois']
 
@@ -836,57 +869,67 @@ class VelocityHead(RoIHeadTemplate):
 
         if loss_cfgs.REG_LOSS == 'smooth-l1':
 
-            rois_anchor = roi_boxes3d.clone().detach()[:,:,:7].contiguous().view(-1, code_size)
+            rois_anchor = roi_boxes3d.clone().detach()[:, :, :7].contiguous().view(-1, code_size)
             rois_anchor[:, 0:3] = 0
             rois_anchor[:, 6] = 0
             reg_targets = self.box_coder.encode_torch(
                 gt_boxes3d_ct.view(rcnn_batch_size, code_size), rois_anchor
-                )
+            )
             rcnn_loss_reg = self.reg_loss_func(
                 rcnn_reg.view(rcnn_batch_size, -1).unsqueeze(dim=0),
                 reg_targets.unsqueeze(dim=0),
             )  # [B, M, 7]
-            rcnn_loss_reg = (rcnn_loss_reg.view(rcnn_batch_size, -1) * fg_mask.unsqueeze(dim=-1).float()).sum() / max(fg_sum, 1)
-            rcnn_loss_reg = rcnn_loss_reg * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight']*loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][0]
+            rcnn_loss_reg = (rcnn_loss_reg.view(rcnn_batch_size, -1) * fg_mask.unsqueeze(dim=-1).float()).sum() / max(
+                fg_sum, 1)
+            rcnn_loss_reg = rcnn_loss_reg * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight'] * \
+                            loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][0]
 
             tb_dict['rcnn_loss_reg'] = rcnn_loss_reg.item()
-  
+
             if self.model_cfg.USE_AUX_LOSS:
                 point_reg = forward_ret_dict['point_reg']
 
-                groups = point_reg.shape[0]//reg_targets.shape[0]
-                if groups != 1 :
+                groups = point_reg.shape[0] // reg_targets.shape[0]
+                if groups != 1:
                     point_loss_regs = 0
                     slice = reg_targets.shape[0]
                     for i in range(groups):
                         point_loss_reg = self.reg_loss_func(
-                        point_reg[i*slice:(i+1)*slice].view(slice, -1).unsqueeze(dim=0),reg_targets.unsqueeze(dim=0),) 
-                        point_loss_reg = (point_loss_reg.view(slice, -1) * fg_mask.unsqueeze(dim=-1).float()).sum() / max(fg_sum, 1)
-                        point_loss_reg = point_loss_reg * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight']*loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][2]
-                        
+                            point_reg[i * slice:(i + 1) * slice].view(slice, -1).unsqueeze(dim=0),
+                            reg_targets.unsqueeze(dim=0), )
+                        point_loss_reg = (point_loss_reg.view(slice, -1) * fg_mask.unsqueeze(
+                            dim=-1).float()).sum() / max(fg_sum, 1)
+                        point_loss_reg = point_loss_reg * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight'] * \
+                                         loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][2]
+
                         point_loss_regs += point_loss_reg
                     point_loss_regs = point_loss_regs / groups
                     tb_dict['point_loss_reg'] = point_loss_regs.item()
-                    rcnn_loss_reg += point_loss_regs 
+                    rcnn_loss_reg += point_loss_regs
 
                 else:
-                    point_loss_reg = self.reg_loss_func(point_reg.view(rcnn_batch_size, -1).unsqueeze(dim=0),reg_targets.unsqueeze(dim=0),)  
-                    point_loss_reg = (point_loss_reg.view(rcnn_batch_size, -1) * fg_mask.unsqueeze(dim=-1).float()).sum() / max(fg_sum, 1)
-                    point_loss_reg = point_loss_reg * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight']*loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][2]
+                    point_loss_reg = self.reg_loss_func(point_reg.view(rcnn_batch_size, -1).unsqueeze(dim=0),
+                                                        reg_targets.unsqueeze(dim=0), )
+                    point_loss_reg = (point_loss_reg.view(rcnn_batch_size, -1) * fg_mask.unsqueeze(
+                        dim=-1).float()).sum() / max(fg_sum, 1)
+                    point_loss_reg = point_loss_reg * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight'] * \
+                                     loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][2]
                     tb_dict['point_loss_reg'] = point_loss_reg.item()
                     rcnn_loss_reg += point_loss_reg
 
-                seqbox_reg = forward_ret_dict['box_reg']  
-                seqbox_loss_reg = self.reg_loss_func(seqbox_reg.view(rcnn_batch_size, -1).unsqueeze(dim=0),reg_targets.unsqueeze(dim=0),)
-                seqbox_loss_reg = (seqbox_loss_reg.view(rcnn_batch_size, -1) * fg_mask.unsqueeze(dim=-1).float()).sum() / max(fg_sum, 1)
-                seqbox_loss_reg = seqbox_loss_reg * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight']*loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][1]
+                seqbox_reg = forward_ret_dict['box_reg']
+                seqbox_loss_reg = self.reg_loss_func(seqbox_reg.view(rcnn_batch_size, -1).unsqueeze(dim=0),
+                                                     reg_targets.unsqueeze(dim=0), )
+                seqbox_loss_reg = (seqbox_loss_reg.view(rcnn_batch_size, -1) * fg_mask.unsqueeze(
+                    dim=-1).float()).sum() / max(fg_sum, 1)
+                seqbox_loss_reg = seqbox_loss_reg * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight'] * \
+                                  loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][1]
                 tb_dict['seqbox_loss_reg'] = seqbox_loss_reg.item()
                 rcnn_loss_reg += seqbox_loss_reg
 
             if loss_cfgs.CORNER_LOSS_REGULARIZATION and fg_sum > 0:
-
                 fg_rcnn_reg = rcnn_reg.view(rcnn_batch_size, -1)[fg_mask]
-                fg_roi_boxes3d = roi_boxes3d[:,:,:7].contiguous().view(-1, code_size)[fg_mask]
+                fg_roi_boxes3d = roi_boxes3d[:, :, :7].contiguous().view(-1, code_size)[fg_mask]
 
                 fg_roi_boxes3d = fg_roi_boxes3d.view(1, -1, code_size)
                 batch_anchors = fg_roi_boxes3d.clone().detach()
@@ -933,18 +976,20 @@ class VelocityHead(RoIHeadTemplate):
                 rcnn_loss_cls = 0
                 slice = rcnn_cls_labels.shape[0]
                 for i in range(groups):
-                    batch_loss_cls = F.binary_cross_entropy(torch.sigmoid(rcnn_cls_flat[i*slice:(i+1)*slice]), 
-                                     rcnn_cls_labels.float(), reduction='none')
+                    batch_loss_cls = F.binary_cross_entropy(torch.sigmoid(rcnn_cls_flat[i * slice:(i + 1) * slice]),
+                                                            rcnn_cls_labels.float(), reduction='none')
 
-                    cls_valid_mask = (rcnn_cls_labels >= 0).float() 
-                    rcnn_loss_cls = rcnn_loss_cls + (batch_loss_cls * cls_valid_mask).sum() / torch.clamp(cls_valid_mask.sum(), min=1.0)
+                    cls_valid_mask = (rcnn_cls_labels >= 0).float()
+                    rcnn_loss_cls = rcnn_loss_cls + (batch_loss_cls * cls_valid_mask).sum() / torch.clamp(
+                        cls_valid_mask.sum(), min=1.0)
 
                 rcnn_loss_cls = rcnn_loss_cls / groups
-            
+
             else:
 
-                batch_loss_cls = F.binary_cross_entropy(torch.sigmoid(rcnn_cls_flat), rcnn_cls_labels.float(), reduction='none')
-                cls_valid_mask = (rcnn_cls_labels >= 0).float() 
+                batch_loss_cls = F.binary_cross_entropy(torch.sigmoid(rcnn_cls_flat), rcnn_cls_labels.float(),
+                                                        reduction='none')
+                cls_valid_mask = (rcnn_cls_labels >= 0).float()
                 rcnn_loss_cls = (batch_loss_cls * cls_valid_mask).sum() / torch.clamp(cls_valid_mask.sum(), min=1.0)
 
 
@@ -956,11 +1001,10 @@ class VelocityHead(RoIHeadTemplate):
         else:
             raise NotImplementedError
 
-        rcnn_loss_cls = rcnn_loss_cls * loss_cfgs.LOSS_WEIGHTS['rcnn_cls_weight'] 
+        rcnn_loss_cls = rcnn_loss_cls * loss_cfgs.LOSS_WEIGHTS['rcnn_cls_weight']
 
         tb_dict = {'rcnn_loss_cls': rcnn_loss_cls.item()}
         return rcnn_loss_cls, tb_dict
-
 
     def generate_predicted_boxes(self, batch_size, rois, cls_preds=None, box_preds=None):
         """
@@ -991,5 +1035,5 @@ class VelocityHead(RoIHeadTemplate):
 
         batch_box_preds[:, 0:3] += roi_xyz
         batch_box_preds = batch_box_preds.view(batch_size, -1, code_size)
-        batch_box_preds = torch.cat([batch_box_preds,rois[:,:,7:]],-1) 
+        batch_box_preds = torch.cat([batch_box_preds, rois[:, :, 7:]], -1)
         return batch_cls_preds, batch_box_preds
