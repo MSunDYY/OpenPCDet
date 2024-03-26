@@ -314,8 +314,34 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
             return aug_box3d
         else:
             raise NotImplementedError
+class Cross_attention_layer(nn.Module):
+    def __init__(self,d_model,dropout=0.1,dim_feedforward = 2048,activation='relu'):
+        super().__init__()
+        self.linear_attn_v = nn.Linear(d_model,d_model)
+        self.linear_attn_out = nn.Linear(d_model,d_model)
+        def get_activation_fn(activation):
+            if activation == 'relu':
+                return F.relu
+        self.activation = get_activation_fn(activation)
+        self.linear1 = nn.Linear(d_model,dim_feedforward)
+        self.linear2 = nn.Linear(dim_feedforward,d_model)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
+        self.dropout3 = nn.Dropout(dropout)
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+    def forward(self,query,key,atten_map):
+        value = self.linear_attn_v(key.permute(0,2,1))
+        pre_feature = torch.bmm(atten_map,value)
+        pre_feature = self.linear_attn_out(pre_feature)
 
+        query = query.permute(0,2,1) + self.dropout1(pre_feature)
+        query = self.norm1(query)
 
+        query2 = self.linear2(self.dropout2(self.activation(self.linear1(query))))
+        query = query+self.dropout3(query2)
+        query = self.norm2(query)
+        return query.permute(0,2,1)
 class VelocityHead(RoIHeadTemplate):
     def __init__(self, model_cfg, num_class=1, **kwargs):
         super().__init__(num_class=num_class, model_cfg=model_cfg)
@@ -340,6 +366,9 @@ class VelocityHead(RoIHeadTemplate):
         num_radius = len(self.model_cfg.ROI_GRID_POOL.POOL_RADIUS)
         self.up_dimension_geometry = MLP(input_dim=29, hidden_dim=64, output_dim=hidden_dim // num_radius, num_layers=3)
         self.up_dimension_motion = MLP(input_dim=30, hidden_dim=64, output_dim=hidden_dim, num_layers=3)
+        self.box_cls = MLP(input_dim = 256,output_dim=3,hidden_dim=256,num_layers=3)
+        self.box_reg = MLP(input_dim=256,output_dim=7,hidden_dim=256,num_layers=3)
+
 
         self.transformer = build_transformer(model_cfg.Transformer)
 
@@ -351,12 +380,16 @@ class VelocityHead(RoIHeadTemplate):
             pool_method=self.model_cfg.ROI_GRID_POOL.POOL_METHOD,
         )
 
+        self.cross_atten_decode_layer = nn.ModuleList()
+        for i in range(3):
+            self.cross_atten_decode_layer.append(Cross_attention_layer(d_model=256))
+
         self.class_embed = nn.ModuleList()
         self.class_embed.append(nn.Linear(model_cfg.Transformer.hidden_dim, 1))
 
         self.bbox_embed = nn.ModuleList()
-        for _ in range(self.num_groups):
-            self.bbox_embed.append(MLP(model_cfg.Transformer.hidden_dim, model_cfg.Transformer.hidden_dim,
+
+        self.bbox_embed.append(MLP(model_cfg.Transformer.hidden_dim, model_cfg.Transformer.hidden_dim,
                                        self.box_coder.code_size * self.num_class, 4))
 
         if self.model_cfg.Transformer.use_grid_pos.enabled:
@@ -663,6 +696,14 @@ class VelocityHead(RoIHeadTemplate):
 
         return box_reg, box_feat
 
+    def attention_weight_map_cal(self,pre_boxes,cur_boxes):
+        iou3d = iou3d_nms_utils.boxes_iou3d_gpu(pre_boxes,cur_boxes)
+        velocity_diff = ((pre_boxes[:,-2:][:,:,None]-cur_boxes[:,-2:][:,None,:])**2).sum(dim=-1)
+
+        attention3d = iou3d.zeros(pre_boxes.shape[0],cur_boxes.shape[0])
+        attention3d = iou3d/torch.max(velocity_diff,1)[0]
+
+
     def generate_trajectory(self, cur_batch_boxes, proposals_list, batch_dict):
 
         trajectory_rois = cur_batch_boxes[:, None, :, :].repeat(1, batch_dict['rois'].shape[-2], 1, 1)
@@ -765,19 +806,31 @@ class VelocityHead(RoIHeadTemplate):
         for i in range(self.num_enc_layer):
             point_cls_list.append(self.class_embed[0](tokens[i][0]))
 
-        for i in range(hs.shape[0]):
-            for j in range(self.num_enc_layer):
-                point_reg_list.append(self.bbox_embed[i](tokens[j][i]))
+        for j in range(self.num_enc_layer):
+            point_reg_list.append(self.bbox_embed[i](tokens[j][i]))
 
         point_cls = torch.cat(point_cls_list, 0)
 
         point_reg = torch.cat(point_reg_list, 0)
+
         hs = hs.permute(1, 0, 2).reshape(hs.shape[1], -1)
 
-        joint_reg = self.jointembed(torch.cat([hs, feat_box], -1))
+        # joint_reg = self.jointembed(torch.cat([hs, feat_box], -1))
+        features = hs
+        for i in range(self.num_frames+1):
+            cur_features = features[:-1]
+            pre_features = features[1:]
+            box_pre = roi[1:-i-1]
+            box_cur = roi[:-i]
+            atten_weight_map = self.atten_weight_map_cal(box_pre,box_cur)
+            features = self.cross_atten_decode_layer[i][pre_feature,cur_feature,atten_weight_map]
 
-        rcnn_cls = point_cls
-        rcnn_reg = joint_reg
+
+        # rcnn_cls = point_cls
+        # rcnn_reg = joint_reg
+        rcnn_cls = self.box_cls(features)
+        rcnn_reg = self.box_reg(features)
+
 
         if not self.training:
             batch_dict['rois'] = batch_dict['rois'][:, :, 0].contiguous()
