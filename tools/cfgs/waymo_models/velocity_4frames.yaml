@@ -8,7 +8,7 @@ DATA_CONFIG:
         'train': 1,
         'test': 1
     }
-
+    REMOVE_FIRST_FRAME: 3
     FILTER_EMPTY_BOXES_FOR_TRAIN: False
     DISABLE_NLZ_FLAG_ON_POINTS: True
     TRAIN_WITH_SPEED: True
@@ -18,8 +18,8 @@ DATA_CONFIG:
 
     USE_PREDBOX: True
     ROI_BOXES_PATH: {
-        'train': '../output/waymo_models/centerspeed/default/eval/epoch_30/train/default/result.pkl',  # example: predicted boxes of RPN in training set
-        'test': '../output/waymo_models/centerspeed/default/eval/epoch_30/val/default/result.pkl',  # example: predicted boxes of RPN in evalulation set
+        'train': '../output/waymo_models/centerspeed/default/eval/epoch_30/train/without_velo_adjust/result.pkl',  # example: predicted boxes of RPN in training set
+        'test': '../output/waymo_models/centerspeed/default/eval/epoch_30/val/without_velo_adjust/result.pkl',  # example: predicted boxes of RPN in evalulation set
     }
     CONCAT: False
     DATA_AUGMENTOR:
@@ -56,6 +56,7 @@ MODEL:
     NAME: VelocityNet
 
     ROI_HEAD:
+        NUM_FRAMES: 4
         NAME: VelocityHead
         TRANS_INPUT: 256
         CLASS_AGNOSTIC: True

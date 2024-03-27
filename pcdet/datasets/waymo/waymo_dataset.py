@@ -291,7 +291,7 @@ class WaymoDataset(DatasetTemplate):
             """
             sequence_name = sequence_name.replace('training_', '').replace('validation_', '')
             load_boxes = self.pred_boxes_dict[sequence_name][sample_idx]
-            assert load_boxes.shape[-1] == 11
+            # assert load_boxes.shape[-1] == 11
             load_boxes[:, 7:9] = -0.1 * load_boxes[:, 7:9]  # transfer speed to negtive motion from t to t-1
             return load_boxes
 
@@ -396,10 +396,14 @@ class WaymoDataset(DatasetTemplate):
             pose_all.append(pose_pre)
 
             if load_pred_boxes:
-                pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
-                pred_boxes = load_pred_boxes_from_dict(sequence_name, sample_idx_pre)
-                pred_boxes = self.transform_prebox_to_current(pred_boxes, pose_pre, pose_cur)
-                pred_boxes_all.append(pred_boxes)
+                if pred_boxes_all[0].shape[0]==11:
+
+                    pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
+                    pred_boxes = load_pred_boxes_from_dict(sequence_name, sample_idx_pre)
+                    pred_boxes = self.transform_prebox_to_current(pred_boxes, pose_pre, pose_cur)
+                    pred_boxes_all.append(pred_boxes)
+                else:
+                    pred_boxes_all.append(pred_boxes_all[0][pred_boxes_all[0][:,-3]==idx+1])
 
         if get_gt:
             points_gt_all.append(points_gt_cur[:, :5])
@@ -410,6 +414,10 @@ class WaymoDataset(DatasetTemplate):
         poses = np.concatenate(pose_all, axis=0).astype(np.float32)
 
         if load_pred_boxes:
+            if pred_boxes_all[0].shape[1]==12:
+                pred_boxes_all[0] = pred_boxes_all[0][pred_boxes_all[0][:,-3]==0]
+                for i,pred_boxes in enumerate(pred_boxes_all):
+                    pred_boxes_all[i] = np.concatenate([pred_boxes[:,:9],pred_boxes[:,-2:]],axis=-1)
             temp_pred_boxes = self.reorder_rois_for_refining(pred_boxes_all)
             pred_boxes = temp_pred_boxes[:, :, 0:9]
             pred_scores = temp_pred_boxes[:, :, 9]
