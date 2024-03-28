@@ -38,7 +38,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
         """
 
         batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_scores, batch_roi_labels, \
-            batch_trajectory_rois, batch_valid_length = self.sample_rois_for_mppnet(batch_dict=batch_dict)
+             = self.sample_rois_for_mppnet(batch_dict=batch_dict)
 
         # regression valid mask
         reg_valid_mask = (batch_roi_ious > self.roi_sampler_cfg.REG_FG_THRESH).long()
@@ -65,8 +65,9 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
         targets_dict = {'rois': batch_rois, 'gt_of_rois': batch_gt_of_rois,
                         'gt_iou_of_rois': batch_roi_ious, 'roi_scores': batch_roi_scores,
                         'roi_labels': batch_roi_labels, 'reg_valid_mask': reg_valid_mask,
-                        'rcnn_cls_labels': batch_cls_labels, 'trajectory_rois': batch_trajectory_rois,
-                        'valid_length': batch_valid_length,
+                        'rcnn_cls_labels': batch_cls_labels,
+                        # 'trajectory_rois': batch_trajectory_rois,
+                        # 'valid_length': batch_valid_length,
                         }
 
         return targets_dict
@@ -85,13 +86,15 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
         FRAME = batch_dict['num_points_all'].shape[1]
         batch_size = batch_dict['batch_size']
 
-        trajectory_rois = batch_dict['trajectory_rois']
-        batch_trajectory_rois = trajectory_rois.new_zeros(batch_size, trajectory_rois.shape[1],
-                                                          self.roi_sampler_cfg.ROI_PER_IMAGE, trajectory_rois.shape[-1])
+        # trajectory_rois = batch_dict['trajectory_rois']
+        proposals_list = batch_dict['proposals_list']
+        
+        batch_trajectory_rois = proposals_list.new_zeros(batch_size, proposals_list.shape[1],
+                                                          self.roi_sampler_cfg.ROI_PER_IMAGE, proposals_list.shape[-1])
 
-        valid_length = batch_dict['valid_length']
-        batch_valid_length = trajectory_rois.new_zeros(
-            (batch_size, batch_dict['trajectory_rois'].shape[1], self.roi_sampler_cfg.ROI_PER_IMAGE))
+        # valid_length = batch_dict['valid_length']
+        # batch_valid_length = trajectory_rois.new_zeros(
+        #     (batch_size, batch_dict['trajectory_rois'].shape[1], self.roi_sampler_cfg.ROI_PER_IMAGE))
         batch_rois_list = []
         batch_gt_of_rois_list = []
         batch_roi_ious_list = []
@@ -101,9 +104,9 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
         for cur_frame_idx in range(FRAME):
             # cur_frame_idx = 0
 
-            rois = batch_dict['trajectory_rois'][:, cur_frame_idx, :, :]
-            roi_scores = batch_dict['roi_scores'][:, :, cur_frame_idx]
-            roi_labels = batch_dict['roi_labels']
+            rois = batch_dict['proposals_list'][:, cur_frame_idx, :, :]
+            roi_scores = batch_dict['roi_scores'][:, cur_frame_idx]
+            roi_labels = batch_dict['roi_labels'][:, cur_frame_idx]
             gt_boxes = batch_dict['gt_boxes'][batch_dict['gt_boxes'][:, :, -2] == cur_frame_idx + 1].unsqueeze(0)
 
             code_size = rois.shape[-1]
@@ -115,7 +118,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
 
             for index in range(batch_size):
 
-                cur_trajectory_rois = trajectory_rois[index]
+                # cur_trajectory_rois = proposals_list[index]
 
                 cur_roi, cur_gt, cur_roi_labels, cur_roi_scores = rois[index], gt_boxes[index], roi_labels[index], \
                     roi_scores[index]
@@ -132,7 +135,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
 
                 if self.roi_sampler_cfg.get('SAMPLE_ROI_BY_EACH_CLASS', False):
                     max_overlaps, gt_assignment = self.get_max_iou_with_same_class(
-                        rois=cur_roi, roi_labels=cur_roi_labels,
+                        rois=cur_roi, roi_labels=cur_roi_labels.long(),
                         gt_boxes=cur_gt[:, 0:7], gt_labels=cur_gt[:, -1].long()
                     )
 
@@ -185,14 +188,15 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
                                                           pos_thresh=self.roi_sampler_cfg.USE_TRAJ_AUG.THRESHOD)
                 bg_trajs = cur_trajectory_rois[idx, bg_inds]
                 batch_trajectory_rois_list.append(torch.cat([fg_trajs, bg_trajs], 0)[None, :, :])
-            batch_trajectory_rois[index] = torch.cat(batch_trajectory_rois_list, 0)
+            # batch_trajectory_rois[index] = torch.cat(batch_trajectory_rois_list, 0)
         else:
-            batch_trajectory_rois[index] = cur_trajectory_rois[:, sampled_inds]
+            pass
+            # batch_trajectory_rois[index] = cur_trajectory_rois[:, sampled_inds]
 
         return torch.concat(batch_rois_list, 1), torch.concat(batch_gt_of_rois_list, 1), torch.concat(
             batch_roi_ious_list,
             1), torch.concat(batch_roi_scores_list, 1), torch.concat(batch_roi_labels_list,
-                                                                     1), batch_trajectory_rois, batch_valid_length
+                                                                     1)
 
     def subsample_rois(self, max_overlaps):
         # sample fg, easy_bg, hard_bg
@@ -279,7 +283,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
 
         if self.roi_sampler_cfg.REG_AUG_METHOD == 'single':
             pos_shift = (torch.rand(3, device=box3d.device) - 0.5)  # [-0.5 ~ 0.5]
-            hwl_scale = (torch.rand(3, device=box3d.device) - 0.5) / (0.5 / 0.15) + 1.0  #
+            hwl_scale = (torch.rand(3, device=box3d.device) - 0.5) / (0.5 / 0.01) + 1.0  #
             angle_rot = (torch.rand(1, device=box3d.device) - 0.5) / (0.5 / (np.pi / 12))  # [-pi/12 ~ pi/12]
             aug_box3d = torch.cat([box3d[0:3] + pos_shift, box3d[3:6] * hwl_scale, box3d[6:7] + angle_rot, box3d[7:]],
                                   dim=0)
@@ -794,28 +798,28 @@ class VelocityHead(RoIHeadTemplate):
         batch_dict['rois'] = batch_dict['proposals_list'].permute(0, 2, 1, 3)
         num_rois = batch_dict['rois'].shape[1]
         batch_dict['num_frames'] = batch_dict['rois'].shape[2]
-        batch_dict['roi_scores'] = batch_dict['roi_scores'].permute(0, 2, 1)
-        batch_dict['roi_labels'] = batch_dict['roi_labels'][:, 0, :].long()
+        # batch_dict['roi_scores'] = batch_dict['roi_scores'].permute(0, 2, 1)
+        batch_dict['roi_labels'] = batch_dict['roi_labels'].long()
         proposals_list = batch_dict['proposals_list']
         batch_size = batch_dict['batch_size']
         cur_batch_boxes = copy.deepcopy(batch_dict['rois'].detach())[:, :, 0]
         batch_dict['cur_frame_idx'] = 0
 
-        trajectory_rois, valid_length = self.generate_trajectory(cur_batch_boxes, proposals_list, batch_dict)
+        # trajectory_rois, valid_length = self.generate_trajectory(cur_batch_boxes, proposals_list, batch_dict)
 
-        batch_dict['traj_memory'] = trajectory_rois
+        # batch_dict['traj_memory'] = trajectory_rois
         batch_dict['has_class_labels'] = True
-        batch_dict['trajectory_rois'] = trajectory_rois
+        # batch_dict['trajectory_rois'] = trajectory_rois
 
         if self.training:
             targets_dict = self.assign_targets(batch_dict)
             batch_dict['rois'] = targets_dict['rois']
             batch_dict['roi_scores'] = targets_dict['roi_scores']
             batch_dict['roi_labels'] = targets_dict['roi_labels']
-            targets_dict['trajectory_rois'][:, :, :, :] = batch_dict['rois'].reshape(
-                batch_size, batch_dict['num_frames'], -1, batch_dict['rois'].shape[-1])
-            trajectory_rois = targets_dict['trajectory_rois']
-            valid_length = targets_dict['valid_length']
+            # targets_dict['trajectory_rois'][:, :, :, :] = batch_dict['rois'].reshape(
+            #     batch_size, batch_dict['num_frames'], -1, batch_dict['rois'].shape[-1])
+            # trajectory_rois = targets_dict['trajectory_rois']
+            # valid_length = targets_dict['valid_length']
             empty_mask = batch_dict['rois'][:, :, :6].sum(-1) == 0
 
         else:
@@ -831,7 +835,7 @@ class VelocityHead(RoIHeadTemplate):
         if self.voxel_sampler is None:
             self.voxel_sampler = build_voxel_sampler(device)
 
-        src = self.voxel_sampler(batch_size, trajectory_rois, num_sample, batch_dict)
+        src = self.voxel_sampler(batch_size, proposals_list, num_sample, batch_dict)
         # src = self.crop_previous_frame_points(src, batch_size, trajectory_rois, num_rois, valid_length, batch_dict)
 
         src = src.view(batch_size * num_rois, -1, src.shape[-1])
@@ -844,7 +848,7 @@ class VelocityHead(RoIHeadTemplate):
 
         src = src_geometry_feature
 
-        box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
+        box_reg, feat_box = self.trajectories_auxiliary_branch(proposals_list)
 
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK', None):
             src[empty_mask.view(-1)] = 0

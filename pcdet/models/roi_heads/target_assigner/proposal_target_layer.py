@@ -98,7 +98,7 @@ class ProposalTargetLayer(nn.Module):
 
             if self.roi_sampler_cfg.get('SAMPLE_ROI_BY_EACH_CLASS', False):
                 max_overlaps, gt_assignment = self.get_max_iou_with_same_class(
-                    rois=cur_roi, roi_labels=cur_roi_labels,
+                    rois=cur_roi, roi_labels=cur_roi_labels.long(),
                     gt_boxes=cur_gt[:, 0:7], gt_labels=cur_gt[:, -1].long()
                 )
             else:
