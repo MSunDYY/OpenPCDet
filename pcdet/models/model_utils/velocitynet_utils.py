@@ -41,24 +41,26 @@ class PointNetfeat(nn.Module):
 class PointNet2(nn.Module):
     def __init__(self, input_dim,model_cfg=None):
         super(PointNet2, self).__init__()
+        num_dim = model_cfg.POINT_DIM
         self.sampler = QueryAndGroup(radius=1, nsample=4,use_xyz=False)
-        self.conv1 = nn.Conv1d(in_channels=input_dim,out_channels=256,kernel_size=1)
-        self.bn1 = nn.BatchNorm1d(256)
-        self.fc1 = nn.Linear(256,256)
-        self.fc_ce = nn.Linear(256,3)
-        self.fc2 = nn.Linear(256,256)
-        self.fc_lwh = nn.Linear(256,3)
-        self.fc3 = nn.Linear(256,256)
-        self.fc_theta = nn.Linear(256,1)
+        self.conv1 = nn.Conv1d(in_channels=input_dim,out_channels=num_dim,kernel_size=1)
+        self.bn1 = nn.BatchNorm1d(num_dim)
+        self.fc1 = nn.Linear(num_dim,num_dim)
+        self.fc_ce = nn.Linear(num_dim,3)
+        self.fc2 = nn.Linear(num_dim,num_dim)
+        self.fc_lwh = nn.Linear(num_dim,3)
+        self.fc3 = nn.Linear(num_dim,num_dim)
+        self.fc_theta = nn.Linear(num_dim,1)
         self.out_dim=3+3+1
     def forward(self, x):
-        num_batch_cnt = (torch.ones(x.shape[0]) * x.shape[1]).to(device)
-        num_batch_new_cnt = (torch.ones(x.shape[0]) * x.shape[1]).to(device)
+        num_batch_cnt = (torch.ones(x.shape[0]) * x.shape[1]*x.shape[2]).to(device)
+        num_batch_new_cnt = (torch.ones(x.shape[0]) * x.shape[2]).to(device)
         B = x.shape[0]
-        x = x.reshape(-1,x.shape[-1])
+        new_xyz = x[:,0,:,:3].reshape(-1,3)
+        xyz = x[:,:,:,:3].reshape(-1,3)
         
-        x,_ = self.sampler(x[:, :3].contiguous(), num_batch_cnt.contiguous().int(), x[:, :3].contiguous(),
-                                            num_batch_new_cnt.contiguous().int(),x)
+        x,_ = self.sampler(xyz.contiguous(), num_batch_cnt.contiguous().int(),new_xyz.contiguous(),
+                                            num_batch_new_cnt.contiguous().int(),x.reshape(-1,x.shape[-1]))
         # x = x.reshape(B,-1,x.shape[-2],x.shape[-1])
         x = self.bn1(self.conv1(x))
         x = torch.max(x,dim=-1)[0]

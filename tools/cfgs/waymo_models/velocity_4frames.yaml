@@ -66,7 +66,7 @@ MODEL:
         USE_TRAJ_EMPTY_MASK: False
         USE_AUX_LOSS: True
         IOU_WEIGHT: [0.5,0.4]
-
+        POINT_DIM: 128
 
 
         ROI_GRID_POOL:
