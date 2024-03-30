@@ -13,10 +13,22 @@ def statistics_info(cfg, ret_dict, metric, disp_dict):
     for cur_thresh in cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST:
         metric['recall_roi_%s' % str(cur_thresh)] += ret_dict.get('roi_%s' % str(cur_thresh), 0)
         metric['recall_rcnn_%s' % str(cur_thresh)] += ret_dict.get('rcnn_%s' % str(cur_thresh), 0)
+
+        metric['velocity_diff_%s' % str(cur_thresh)] += ret_dict.get('velocity_diff_%s' % str(cur_thresh), 0)
+        metric['velocity_diff_num_%s'%str(cur_thresh)]+=ret_dict.get('velocity_diff_num_%s' %str(cur_thresh),0)
     metric['gt_num'] += ret_dict.get('gt', 0)
     min_thresh = cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST[0]
-    disp_dict['recall_%s' % str(min_thresh)] = \
-        '(%d, %d) / %d' % (metric['recall_roi_%s' % str(min_thresh)], metric['recall_rcnn_%s' % str(min_thresh)], metric['gt_num'])
+
+    if ret_dict.get('velocity_diff_0.3', 0) != 0:
+        disp_dict['recall_%s' % str(min_thresh)] = \
+            '(%d, %d) / %d  diff: %f' % (
+                metric['recall_roi_%s' % str(min_thresh)], metric['recall_rcnn_%s' % str(min_thresh)], metric['gt_num'],
+                metric['velocity_diff_%s' % str(min_thresh)].item() / metric['velocity_diff_num_%s' % str(min_thresh)])
+    else:
+        disp_dict['recall_%s' % str(min_thresh)] = \
+            '(%d, %d) / %d' % (
+                metric['recall_roi_%s' % str(min_thresh)], metric['recall_rcnn_%s' % str(min_thresh)],
+                metric['gt_num'],)
 
 
 def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=False, result_dir=None):
@@ -32,7 +44,8 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
     for cur_thresh in cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST:
         metric['recall_roi_%s' % str(cur_thresh)] = 0
         metric['recall_rcnn_%s' % str(cur_thresh)] = 0
-
+        metric['velocity_diff_%s' % str(cur_thresh)] = 0
+        metric['velocity_diff_num_%s'%str(cur_thresh)] = 0
     dataset = dataloader.dataset
     class_names = dataset.class_names
     det_annos = []
@@ -46,9 +59,9 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
         num_gpus = torch.cuda.device_count()
         local_rank = cfg.LOCAL_RANK % num_gpus
         model = torch.nn.parallel.DistributedDataParallel(
-                model,
-                device_ids=[local_rank],
-                broadcast_buffers=False
+            model,
+            device_ids=[local_rank],
+            broadcast_buffers=False
         )
     model.eval()
 

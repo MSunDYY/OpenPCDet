@@ -214,11 +214,12 @@ class CenterSpeed(Detector3DTemplate):
                     pred_speed_pre*=is_moving_pred_mask[:,None]
                     # pred_boxes_pre[:, :2] += pred_speed_pre*0.1*f
                     pred_boxes_pre = torch.concat([pred_boxes_pre,pred_speed_pre,(torch.ones(pred_speed_pre.shape[0],1)*f).to(device)],dim=-1)
-                    
-                    pred_dict_temp['pred_boxes'].append(pred_boxes_pre)
-                    pred_dict_temp['pred_labels'].append(final_pred_dict[index * F + f]['pred_labels'])
-                    pred_dict_temp['pred_scores'].append(final_pred_dict[index * F + f]['pred_scores'])
-                    pred_dict_temp['num_pred_gt'][f] = pred_boxes_pre.shape[0]
+                    mask = final_pred_dict[index*F+f]['pred_scores']>0.2
+
+                    pred_dict_temp['pred_boxes'].append(pred_boxes_pre[mask])
+                    pred_dict_temp['pred_labels'].append(final_pred_dict[index * F + f]['pred_labels'][mask])
+                    pred_dict_temp['pred_scores'].append(final_pred_dict[index * F + f]['pred_scores'][mask])
+                    pred_dict_temp['num_pred_gt'][f] = pred_boxes_pre[mask].shape[0]
                     
                     # speed_map_gt = torch.zeros(self.pillar_spatial_shape + [2]).to(device)
                     # speed_map_pred = batch_dict['speed_map_pred']
