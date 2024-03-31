@@ -7,6 +7,7 @@ import time
 from ...utils import common_utils
 from ..model_utils import model_nms_utils
 from pcdet.datasets.augmentor import augmentor_utils, database_sampler
+from pcdet import device
 
 
 class MPPNet(Detector3DTemplate):
@@ -16,9 +17,38 @@ class MPPNet(Detector3DTemplate):
 
     def forward(self, batch_dict):
         batch_dict['proposals_list'] = batch_dict['roi_boxes']
-        for cur_module in self.module_list[:]:
-            batch_dict = cur_module(batch_dict)
-        
+        signal = True
+
+        if signal:
+            B = batch_dict['batch_size']
+            rois = batch_dict['roi_boxes']
+            roi_labels = batch_dict['roi_labels']
+            roi_scores = batch_dict['roi_scores']
+            roi_list = []
+            roi_labels_list = []
+            roi_scores_list = []
+            pred_dict = []
+            recall_dict = []
+            for b in range(roi_labels.shape[0]):
+                roi_mask_batch = roi_scores[b][1:] > 0.1
+                dv = torch.arange(3).to(device)+1
+                rois[b,1:,:,:2]-=rois[b,1:,:,-2:]*dv[:,None,None]
+                roi_batch = torch.concat([rois[b,0], rois[b,1:][roi_mask_batch]], dim=0)
+                roi_labels_batch = torch.concat([roi_labels[b,0], roi_labels[b,1:][roi_mask_batch]], dim=0)
+                roi_scores_batch = torch.concat([roi_scores[b,0], roi_scores[b,1:][roi_mask_batch]], dim=0)
+                roi_list.append(roi_batch)
+                roi_labels_list.append(roi_labels_batch)
+                roi_scores_list.append(roi_scores_batch)
+                pred_dict.append({'pred_boxes':roi_batch,'pred_scores':roi_scores_batch,'pred_labels':roi_labels_batch.int()})
+                recall_dict = self.generate_recall_record(box_preds=roi_batch, recall_dict=recall_dict, batch_index=b,
+                                                          data_dict=batch_dict, thresh_list=[0.3, 0.5, 0.7])
+
+            return pred_dict,recall_dict
+
+        else:
+            for cur_module in self.module_list[:]:
+                batch_dict = cur_module(batch_dict)
+
         if self.training:
             loss, tb_dict, disp_dict = self.get_training_loss()
 
@@ -34,8 +64,8 @@ class MPPNet(Detector3DTemplate):
             return pred_dicts, recall_dicts
 
     def get_training_loss(self):
-        disp_dict = {}  
-        tb_dict ={}
+        disp_dict = {}
+        tb_dict = {}
         loss_rcnn, tb_dict = self.roi_head.get_loss(tb_dict)
         loss = loss_rcnn
 
@@ -129,7 +159,7 @@ class MPPNet(Detector3DTemplate):
                     label_preds = batch_dict[label_key][index]
                 else:
                     label_preds = label_preds + 1
-                
+
                 selected, selected_scores = model_nms_utils.class_agnostic_nms(
                     box_scores=cls_preds, box_preds=box_preds,
                     nms_config=post_process_cfg.NMS_CONFIG,
@@ -145,40 +175,37 @@ class MPPNet(Detector3DTemplate):
                 final_boxes = box_preds[selected]
 
                 #########  Car DONOT Using NMS ###### 
-                if post_process_cfg.get('NOT_APPLY_NMS_FOR_VEL',False):
-                    
-                    pedcyc_mask = final_labels !=1 
+                if post_process_cfg.get('NOT_APPLY_NMS_FOR_VEL', False):
+                    pedcyc_mask = final_labels != 1
                     final_scores_pedcyc = final_scores[pedcyc_mask]
                     final_labels_pedcyc = final_labels[pedcyc_mask]
                     final_boxes_pedcyc = final_boxes[pedcyc_mask]
 
-                    car_mask = (label_preds==1) & (cls_preds > post_process_cfg.SCORE_THRESH)
+                    car_mask = (label_preds == 1) & (cls_preds > post_process_cfg.SCORE_THRESH)
                     final_scores_car = cls_preds[car_mask]
                     final_labels_car = label_preds[car_mask]
                     final_boxes_car = box_preds[car_mask]
 
-                    final_scores  = torch.cat([final_scores_car,final_scores_pedcyc],0)
-                    final_labels  = torch.cat([final_labels_car,final_labels_pedcyc],0)
-                    final_boxes  = torch.cat([final_boxes_car,final_boxes_pedcyc],0)
+                    final_scores = torch.cat([final_scores_car, final_scores_pedcyc], 0)
+                    final_labels = torch.cat([final_labels_car, final_labels_pedcyc], 0)
+                    final_boxes = torch.cat([final_boxes_car, final_boxes_pedcyc], 0)
 
                 #########  Car DONOT Using NMS ###### 
 
             record_dict = {
-                'pred_boxes': final_boxes[:,:7],
+                'pred_boxes': final_boxes[:, :7],
                 'pred_scores': final_scores,
                 'pred_labels': final_labels
             }
             pred_dicts.append(record_dict)
         batch_dict['final_box_dicts'] = pred_dicts
 
-
         for index in range(batch_size):
             pred_boxes = pred_dicts[index]['pred_boxes']
             recall_dict = self.generate_recall_record(
-                box_preds=final_boxes ,
+                box_preds=final_boxes,
                 recall_dict=recall_dict, batch_index=index, data_dict=batch_dict,
                 thresh_list=post_process_cfg.RECALL_THRESH_LIST
-        )
+            )
 
         return pred_dicts, recall_dict
-

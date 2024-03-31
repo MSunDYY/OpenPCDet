@@ -368,7 +368,7 @@ class Detector3DTemplate(nn.Module):
                     roi_recalled = iou3d_rcnn.max(dim=0)[1]
                     roi_recalled_ind = roi_recalled[gt_recalled_mask]
                     roi_of_gt = box_preds[roi_recalled_ind]
-                    v_mask = (gt_recalled[:,7]**2+gt_recalled[:,8]**2)>1
+                    v_mask = (gt_recalled[:,7]**2+gt_recalled[:,8]**2)>3
                     v_diff = ((roi_of_gt[:,-2:][v_mask]-gt_recalled[:,7:9][v_mask]).abs().sum(-1)/gt_recalled[:,7:9][v_mask].abs().sum(-1)).sum()
                     # recall_boxes['roi_%s' % (str(cur_thresh))] = box_preds[iou3d_rcnn.max(dim=1)[0] > cur_thresh]
                     # #

@@ -396,7 +396,7 @@ class WaymoDataset(DatasetTemplate):
             pose_all.append(pose_pre)
 
             if load_pred_boxes:
-                if pred_boxes_all[0].shape[0]==11:
+                if pred_boxes_all[0].shape[-1]==11:
 
                     pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
                     pred_boxes = load_pred_boxes_from_dict(sequence_name, sample_idx_pre)
