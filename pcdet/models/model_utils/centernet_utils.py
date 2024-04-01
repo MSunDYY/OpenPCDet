@@ -257,7 +257,7 @@ def decode_bbox_from_heatmap_(heatmap, center, center_z, dim,pro_l,
     pro_l = _transpose_and_gather_feat(pro_l, inds).view(batch_size, K, 2)
 
     center_z = _transpose_and_gather_feat(center_z, inds).view(batch_size, K, 1)
-    dim = _transpose_and_gather_feat(dim, inds).view(batch_size, K, 1)
+    dim = _transpose_and_gather_feat(dim, inds).view(batch_size, K, 2)
     l = torch.sqrt((pro_l**2).sum(dim=-1)).unsqueeze(-1)
 
     angle = torch.atan2(pro_l[:,:,1], pro_l[:,:,0])
