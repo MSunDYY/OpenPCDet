@@ -78,10 +78,11 @@ MODEL:
             
 
         Transformer:
-            num_lidar_points: 128
+
+            num_lidar_points: [128,192,288]
             num_proxy_points: 64  # GRID_SIZE*GRID_SIZE*GRID_SIZE
             pos_hidden_dim: 64
-            enc_layers: 3
+            enc_layers: 1
             dim_feedforward: 512
             hidden_dim: 256 #equal to ROI_HEAD.TRANS_INPUT
             dropout: 0.1
@@ -99,7 +100,7 @@ MODEL:
 
         TARGET_CONFIG:
             BOX_CODER: ResidualCoder
-            ROI_PER_IMAGE: 128
+            ROI_PER_IMAGE: 96
             FG_RATIO: 0.5
             REG_AUG_METHOD: single
             ROI_FG_AUG_TIMES: 10

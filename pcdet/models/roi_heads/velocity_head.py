@@ -61,11 +61,11 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
                 (batch_roi_ious[interval_mask] - iou_bg_thresh) / (iou_fg_thresh - iou_bg_thresh)
         else:
             raise NotImplementedError
-        num_roi = 128 
-        targets_dict = {'rois': batch_rois[:,:num_roi,:], 'gt_of_rois': batch_gt_of_rois[:,:num_roi,:],
+        num_roi = 128
+        targets_dict = {'rois': batch_rois[:, :num_roi, :], 'gt_of_rois': batch_gt_of_rois[:, :num_roi, :],
                         'gt_iou_of_rois': batch_roi_ious, 'roi_scores': batch_roi_scores,
-                        'roi_labels': batch_roi_labels, 'reg_valid_mask': reg_valid_mask[:,:num_roi],
-                        'rcnn_cls_labels': batch_cls_labels[:,:num_roi],'trajectory_rois': batch_rois,
+                        'roi_labels': batch_roi_labels, 'reg_valid_mask': reg_valid_mask[:, :num_roi],
+                        'rcnn_cls_labels': batch_cls_labels[:, :num_roi], 'trajectory_rois': batch_rois,
                         # 'trajectory_rois': batch_trajectory_rois,
                         # 'valid_length': batch_valid_length,
                         }
@@ -386,7 +386,7 @@ class VelocityHead(RoIHeadTemplate):
                               self.box_coder.code_size * self.num_class, 4)
 
         num_radius = len(self.model_cfg.ROI_GRID_POOL.POOL_RADIUS)
-        self.up_dimension_geometry = MLP(input_dim=29, hidden_dim=64, output_dim=hidden_dim // num_radius, num_layers=3)
+        self.up_dimension_geometry = MLP(input_dim=29, hidden_dim=256, output_dim=hidden_dim, num_layers=3)
         self.up_dimension_motion = MLP(input_dim=30, hidden_dim=64, output_dim=hidden_dim, num_layers=3)
         self.box_cls = MLP(input_dim=384, output_dim=1, hidden_dim=256, num_layers=3)
         self.box_reg = MLP(input_dim=384, output_dim=7, hidden_dim=256, num_layers=3)
@@ -419,7 +419,7 @@ class VelocityHead(RoIHeadTemplate):
                 self.grid_index = torch.cat([i.reshape(-1, 1) for i in
                                              torch.meshgrid(torch.arange(self.grid_size), torch.arange(self.grid_size),
                                                             torch.arange(self.grid_size))], 1).float().cuda()
-                self.grid_pos_embeded = MLP(input_dim=3, hidden_dim=256, output_dim=hidden_dim, num_layers=2)
+                self.grid_pos_embeded = MLP(input_dim=4, hidden_dim=128, output_dim=hidden_dim, num_layers=2)
             else:
                 self.pos = nn.Parameter(torch.zeros(1, self.num_grid_points, 256))
 
@@ -633,32 +633,30 @@ class VelocityHead(RoIHeadTemplate):
 
         return src
 
-    def get_proposal_aware_geometry_feature(self, src, batch_size, trajectory_rois, num_rois, batch_dict):
+    def get_proposal_aware_geometry_feature(self, src, batch_size, trajectory_rois, num_rois,t=0):
         proposal_aware_feat_list = []
-        for i in range(trajectory_rois.shape[1]):
-            corner_points, _ = self.get_corner_points_of_roi(trajectory_rois[:, i, :, :].contiguous())
 
-            corner_points = corner_points.view(batch_size, num_rois, -1, corner_points.shape[-1])
-            corner_points = corner_points.view(batch_size * num_rois, -1)
-            trajectory_roi_center = trajectory_rois[:, i, :, :].contiguous().reshape(batch_size * num_rois, -1)[:, :3]
-            corner_add_center_points = torch.cat([corner_points, trajectory_roi_center], dim=-1)
-            proposal_aware_feat = src[:, i * self.num_lidar_points:(i + 1) * self.num_lidar_points, :3].repeat(1, 1,
-                                                                                                               9) - \
-                                  corner_add_center_points.unsqueeze(1).repeat(1, self.num_lidar_points, 1)
 
-            lwh = trajectory_rois[:, i, :, :].reshape(batch_size * num_rois, -1)[:, 3:6].unsqueeze(1).repeat(1,
-                                                                                                             proposal_aware_feat.shape[
-                                                                                                                 1], 1)
-            diag_dist = (lwh[:, :, 0] ** 2 + lwh[:, :, 1] ** 2 + lwh[:, :, 2] ** 2) ** 0.5
-            proposal_aware_feat = self.spherical_coordinate(proposal_aware_feat, diag_dist=diag_dist.unsqueeze(-1))
-            proposal_aware_feat_list.append(proposal_aware_feat)
+        corner_points, _ = self.get_corner_points_of_roi(trajectory_rois)
 
-        proposal_aware_feat = torch.cat(proposal_aware_feat_list, dim=1)
+        # corner_points = corner_points.view(batch_size, num_rois, -1, corner_points.shape[-1])
+        corner_points = corner_points.view(batch_size * num_rois, -1)
+        trajectory_roi_center = trajectory_rois[:, :3]
+        corner_add_center_points = torch.cat([corner_points, trajectory_roi_center], dim=-1)
+        proposal_aware_feat = src[:, :, :3].repeat(1, 1,9) - \
+                              corner_add_center_points.unsqueeze(1).repeat(1, src.shape[1], 1)
+
+        lwh = trajectory_rois[:,  :][:, 3:6].unsqueeze(1)
+        diag_dist = ((lwh[:, :, 0] ** 2 + lwh[:, :, 1] ** 2 + lwh[:, :, 2] ** 2) ** 0.5).repeat(1,proposal_aware_feat.shape[1])
+        proposal_aware_feat = self.spherical_coordinate(proposal_aware_feat, diag_dist=diag_dist.unsqueeze(-1))
+        pos = (src[:,:,:3] - trajectory_roi_center[:,None,:])/diag_dist.unsqueeze(-1)
+        pos = common_utils.rotate_points_along_z(points=pos,angle=-trajectory_rois[:,6])
+        pos = torch.concat([pos,torch.full((pos.shape[0],pos.shape[1],1),t).to(device)],dim=-1)
+
         proposal_aware_feat = torch.cat([proposal_aware_feat, src[:, :, 3:]], dim=-1)
         src_gemoetry = self.up_dimension_geometry(proposal_aware_feat)
-        proxy_point_geometry, proxy_points = self.roi_grid_pool(batch_size, trajectory_rois, src, src_gemoetry,
-                                                                batch_dict, batch_cnt=None)
-        return proxy_point_geometry, proxy_points
+
+        return src_gemoetry,pos
 
     def get_proposal_aware_motion_feature(self, proxy_point, batch_size, trajectory_rois, num_rois, batch_dict):
 
@@ -729,12 +727,11 @@ class VelocityHead(RoIHeadTemplate):
             # velocity_diff = ((cur_boxes[b][:, -2:][:, None, :] - cur_boxes[b][:, -2:][None, :, :]) ** 2).sum(dim=-1)
             iou3d_list.append(iou3d[None, :, :])
         iou3d = torch.concat(iou3d_list, dim=0)
-        iou3d *= scores_pre[:,None, :]
-        labels_mask = labels_cur[:,:,None] == labels_pre[:,None,:]
-        iou3d*= labels_mask
-        
-        attention = iou3d / torch.clamp(iou3d.sum(dim=-1), min=1)[:, :,None]
-        
+        iou3d *= scores_pre[:, None, :]
+        labels_mask = labels_cur[:, :, None] == labels_pre[:, None, :]
+        iou3d *= labels_mask
+
+        attention = iou3d / torch.clamp(iou3d.sum(dim=-1), min=1)[:, :, None]
 
         return attention
 
@@ -844,39 +841,38 @@ class VelocityHead(RoIHeadTemplate):
             batch_dict['valid_traj_mask'] = ~empty_mask
 
         rois = batch_dict['rois']
+        rois = rois.reshape(batch_size, self.model_cfg.NUM_FRAMES, -1, rois.shape[-1])
         num_rois = batch_dict['rois'].shape[1] // batch_dict['num_frames']
         num_sample = self.num_lidar_points
         # src = rois.new_zeros(batch_size, num_rois, num_sample, 5)
 
-        # src = self.crop_current_frame_points(src, batch_size, trajectory_rois, num_rois, batch_dict)
         if self.voxel_sampler is None:
             self.voxel_sampler = build_voxel_sampler(device)
-
-        src = self.voxel_sampler(batch_size, rois.reshape([batch_size, -1, num_sample, rois.shape[-1]]), num_sample,
+        src = self.voxel_sampler(batch_size, rois, num_sample[0],
                                  batch_dict)
-        # src = self.crop_previous_frame_points(src, batch_size, trajectory_rois, num_rois, valid_length, batch_dict)
+        rois_batch = rois
+        num_frames = self.model_cfg.NUM_FRAMES
+        for f in range(self.model_cfg.NUM_FRAMES):
+            # src = self.crop_current_frame_points(src, batch_size, trajectory_rois, num_rois, batch_dict)
 
-        src = src.view(batch_size * num_rois, -1, src.shape[-1])
-        rois = rois.reshape([batch_size, -1, num_rois, rois.shape[-1]])
-        src_geometry_feature, proxy_points = self.get_proposal_aware_geometry_feature(src, batch_size, rois.reshape(
-            [batch_size, -1, num_rois, rois.shape[-1]]),
-                                                                                      num_rois, batch_dict)
+            # src = self.crop_previous_frame_points(src, batch_size, trajectory_rois, num_rois, valid_length, batch_dict)
 
-        # src_motion_feature = self.get_proposal_aware_motion_feature(proxy_points, batch_size, trajectory_rois, num_rois,
-        #                                                             batch_dict)
+            src_geometry_feature ,pos= self.get_proposal_aware_geometry_feature(src.reshape(-1,self.num_lidar_points[f],src.shape[-1]), batch_size, rois_batch.reshape(-1,rois_batch.shape[-1]),
+                                                                                          num_rois*num_frames)
+            # src_motion_feature = self.get_proposal_aware_motion_feature(src, batch_size, rois_batch, num_rois)
 
-        src = src_geometry_feature
+            # src_motion_feature = self.get_proposal_aware_motion_feature(proxy_points, batch_size, trajectory_rois, num_rois,
+            #                                                             batch_dict)
+            src = src_geometry_feature
+            if self.model_cfg.get('USE_TRAJ_EMPTY_MASK', None):
+                src[empty_mask.view(-1)] = 0
 
-        if self.model_cfg.get('USE_TRAJ_EMPTY_MASK', None):
-            src[empty_mask.view(-1)] = 0
+            if self.model_cfg.Transformer.use_grid_pos.init_type == 'index':
+                pos = self.grid_pos_embeded(pos)
 
-        if self.model_cfg.Transformer.use_grid_pos.init_type == 'index':
-            pos = self.grid_pos_embeded(self.grid_index.to(device))[None, :, :]
-            pos = torch.cat([torch.zeros(1, 1, self.hidden_dim).to(device), pos], 1)
-        else:
-            pos = None
-
-        hs, tokens = self.transformer(src, pos=pos)
+            else:
+                pos = None
+            hs, tokens = self.transformer[f](src, pos=pos)
         point_cls_list = []
         point_reg_list = []
 
@@ -905,18 +901,19 @@ class VelocityHead(RoIHeadTemplate):
             pre_features = features[:, 1:]
             boxes_pre = rois[:, 1:-i] if i > 0 else rois[:, 1:]
             boxes_pre[:, :, :, :2] -= boxes_pre[:, :, :, -2:]
-            scores_pre = roi_scores[:, 1:] if i == 0 else roi_scores[:,1:-i]
-            labels_pre = roi_labels[:, 1:] if i == 0 else roi_labels[:,1:-i]
+            scores_pre = roi_scores[:, 1:] if i == 0 else roi_scores[:, 1:-i]
+            labels_pre = roi_labels[:, 1:] if i == 0 else roi_labels[:, 1:-i]
 
             boxes_cur = rois[:, :-i - 1]
-            scores_cur = roi_scores[:,-i - 1]
-            labels_cur = roi_labels[:,:-i - 1]
+            scores_cur = roi_scores[:, -i - 1]
+            labels_cur = roi_labels[:, :-i - 1]
 
             atten_weight_map = self.attention_weight_map_cal(
                 boxes_pre.reshape(-1, boxes_pre.shape[-2], boxes_pre.shape[-1]),
                 boxes_cur.reshape(-1, boxes_cur.shape[-2],
-                                  boxes_cur.shape[-1]), scores_pre.reshape(-1, scores_pre.shape[-1]), labels_pre.reshape(-1,labels_pre.shape[-1]),
-                labels_cur.reshape(-1,labels_cur.shape[-1])).reshape(
+                                  boxes_cur.shape[-1]), scores_pre.reshape(-1, scores_pre.shape[-1]),
+                labels_pre.reshape(-1, labels_pre.shape[-1]),
+                labels_cur.reshape(-1, labels_cur.shape[-1])).reshape(
                 batch_size, -1, boxes_pre.shape[-2], boxes_cur.shape[-2])
             if not self.training:
                 if i < self.model_cfg.NUM_FRAMES - 2:
@@ -940,7 +937,7 @@ class VelocityHead(RoIHeadTemplate):
 
         features = torch.concat(features_list, dim=1)
         box_reg, feat_box = self.trajectories_auxiliary_branch(rois)
-        features = torch.concat([features, feat_box.repeat(1,self.model_cfg.NUM_FRAMES-1,1)], dim=-1)
+        features = torch.concat([features, feat_box.repeat(1, self.model_cfg.NUM_FRAMES - 1, 1)], dim=-1)
 
         # rcnn_cls = point_cls
         # rcnn_reg = joint_reg
@@ -1042,7 +1039,7 @@ class VelocityHead(RoIHeadTemplate):
         tb_dict = {}
 
         if loss_cfgs.REG_LOSS == 'smooth-l1':
-            
+
             rois_anchor = roi_boxes3d.clone().detach()[:, :, :7].contiguous().view(-1, code_size)
             rois_anchor[:, 0:3] = 0
             rois_anchor[:, 6] = 0
@@ -1055,13 +1052,14 @@ class VelocityHead(RoIHeadTemplate):
             rcnn_loss_reg = 0
             for i in range(num_groups):
                 rcnn_loss_reg_ = self.reg_loss_func(
-                rcnn_reg[:,num_features*i:num_features*(i+1)].view(rcnn_batch_size, -1).unsqueeze(dim=0),
-                reg_targets.unsqueeze(dim=0),
+                    rcnn_reg[:, num_features * i:num_features * (i + 1)].view(rcnn_batch_size, -1).unsqueeze(dim=0),
+                    reg_targets.unsqueeze(dim=0),
                 )  # [B, M, 7]
-                rcnn_loss_reg += (rcnn_loss_reg_.view(rcnn_batch_size, -1) * fg_mask.unsqueeze(dim=-1).float()).sum() / max(
-                fg_sum, 1)
-            rcnn_loss_reg/=num_groups
-            
+                rcnn_loss_reg += (rcnn_loss_reg_.view(rcnn_batch_size, -1) * fg_mask.unsqueeze(
+                    dim=-1).float()).sum() / max(
+                    fg_sum, 1)
+            rcnn_loss_reg /= num_groups
+
             rcnn_loss_reg = rcnn_loss_reg * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight'] * \
                             loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][0]
 
@@ -1076,7 +1074,7 @@ class VelocityHead(RoIHeadTemplate):
                     slice = reg_targets.shape[0]
                     for i in range(groups):
                         point_loss_reg = self.reg_loss_func(
-                            point_reg[:,i].view(slice, -1).unsqueeze(dim=0),
+                            point_reg[:, i].view(slice, -1).unsqueeze(dim=0),
                             reg_targets.unsqueeze(dim=0), )
                         point_loss_reg = (point_loss_reg.view(slice, -1) * fg_mask.unsqueeze(
                             dim=-1).float()).sum() / max(fg_sum, 1)
@@ -1110,9 +1108,10 @@ class VelocityHead(RoIHeadTemplate):
 
             if loss_cfgs.CORNER_LOSS_REGULARIZATION and fg_sum > 0:
                 for i in range(num_groups):
-                    fg_rcnn_reg = rcnn_reg[:,i*num_features:(i+1)*num_features].view(rcnn_batch_size,-1)[fg_mask]
+                    fg_rcnn_reg = rcnn_reg[:, i * num_features:(i + 1) * num_features].view(rcnn_batch_size, -1)[
+                        fg_mask]
                     fg_roi_boxes3d = roi_boxes3d[:, :, :7].contiguous().view(-1, code_size)[fg_mask]
-    
+
                     fg_roi_boxes3d = fg_roi_boxes3d.view(1, -1, code_size)
                     batch_anchors = fg_roi_boxes3d.clone().detach()
                     roi_ry = fg_roi_boxes3d[:, :, 6].view(-1)
@@ -1121,21 +1120,21 @@ class VelocityHead(RoIHeadTemplate):
                     rcnn_boxes3d = self.box_coder.decode_torch(
                         fg_rcnn_reg.view(batch_anchors.shape[0], -1, code_size), batch_anchors
                     ).view(-1, code_size)
-    
+
                     rcnn_boxes3d = common_utils.rotate_points_along_z(
                         rcnn_boxes3d.unsqueeze(dim=1), roi_ry
                     ).squeeze(dim=1)
                     rcnn_boxes3d[:, 0:3] += roi_xyz
-    
+
                     corner_loss_func = loss_utils.get_corner_loss_lidar
-    
+
                     loss_corner = corner_loss_func(
                         rcnn_boxes3d[:, 0:7],
                         gt_of_rois_src[fg_mask][:, 0:7])
-    
+
                     loss_corner = loss_corner.mean()
                     loss_corner = loss_corner * loss_cfgs.LOSS_WEIGHTS['rcnn_corner_weight']
-    
+
                     rcnn_loss_reg += loss_corner
                     tb_dict['rcnn_loss_corner'] = loss_corner.item()
 

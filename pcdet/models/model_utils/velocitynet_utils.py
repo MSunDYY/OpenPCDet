@@ -196,36 +196,36 @@ class Transformer(nn.Module):
 
     def __init__(self, config, d_model=512, nhead=8, num_encoder_layers=6,
                  dim_feedforward=2048, dropout=0.1, activation="relu", normalize_before=False,
-                 num_lidar_points=None, num_proxy_points=None, share_head=True, num_groups=None,
+                 num_lidar_points=None,  share_head=True, num_groups=None,
                  sequence_stride=None, num_frames=None):
         super().__init__()
 
         self.config = config
         self.share_head = share_head
-        self.num_frames = num_frames
+
         self.nhead = nhead
         self.sequence_stride = sequence_stride
-        self.num_groups = num_groups
-        self.num_proxy_points = num_proxy_points
+
+
         self.num_lidar_points = num_lidar_points
         self.d_model = d_model
         self.nhead = nhead
         encoder_layer = [TransformerEncoderLayer(self.config, d_model, nhead, dim_feedforward, dropout, activation,
-                                                 normalize_before, num_lidar_points, num_groups=num_groups) for i in
+                                                 normalize_before, num_lidar_points, num_groups=2) for i in
                          range(num_encoder_layers)]
 
         encoder_norm = nn.LayerNorm(d_model) if normalize_before else None
         self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers, encoder_norm, self.config)
 
-        self.token = nn.Parameter(torch.zeros(self.num_groups, 1, d_model))
+        self.token = nn.Parameter(torch.zeros(1, 1, d_model))
 
-        if self.num_frames > 4:
-            self.group_length = self.num_frames // self.num_groups
-            self.fusion_all_group = MLP(input_dim=self.config.hidden_dim * self.group_length,
-                                        hidden_dim=self.config.hidden_dim, output_dim=self.config.hidden_dim,
-                                        num_layers=4)
-
-            self.fusion_norm = FFN(d_model, dim_feedforward)
+        # if self.num_frames > 4:
+        #     self.group_length = self.num_frames // self.num_groups
+        #     self.fusion_all_group = MLP(input_dim=self.config.hidden_dim * self.group_length,
+        #                                 hidden_dim=self.config.hidden_dim, output_dim=self.config.hidden_dim,
+        #                                 num_layers=4)
+        #
+        #     self.fusion_norm = FFN(d_model, dim_feedforward)
 
         self._reset_parameters()
 
@@ -240,38 +240,38 @@ class Transformer(nn.Module):
         if not pos is None:
             pos = pos.permute(1, 0, 2)
 
-        if self.num_frames == 16:
-            token_list = [self.token[i:(i + 1)].repeat(BS, 1, 1) for i in range(self.num_groups)]
-            if self.sequence_stride == 1:
-                src_groups = src.view(src.shape[0], src.shape[1] // self.num_groups, -1).chunk(4, dim=1)
+        # if self.num_frames == 16:
+        #     token_list = [self.token[i:(i + 1)].repeat(BS, 1, 1) for i in range(self.num_groups)]
+        #     if self.sequence_stride == 1:
+        #         src_groups = src.view(src.shape[0], src.shape[1] // self.num_groups, -1).chunk(4, dim=1)
+        #
+        #     elif self.sequence_stride == 4:
+        #         src_groups = []
+        #
+        #         for i in range(self.num_groups):
+        #             groups = []
+        #             for j in range(self.group_length):
+        #                 points_index_start = (i + j * self.sequence_stride) * self.num_proxy_points
+        #                 points_index_end = points_index_start + self.num_proxy_points
+        #                 groups.append(src[:, points_index_start:points_index_end])
+        #
+        #             groups = torch.cat(groups, -1)
+        #             src_groups.append(groups)
+        #
+        #     else:
+        #         raise NotImplementedError
+        #
+        #     src_merge = torch.cat(src_groups, 1)
+        #     src = self.fusion_norm(src[:, :self.num_groups * self.num_proxy_points], self.fusion_all_group(src_merge))
+        #     src = [torch.cat([token_list[i], src[:, i * self.num_proxy_points:(i + 1) * self.num_proxy_points]], dim=1)
+        #            for i in range(self.num_groups)]
+        #     src = torch.cat(src, dim=0)
+        #
+        # else:
+        token_list = self.token.to(device)
 
-            elif self.sequence_stride == 4:
-                src_groups = []
 
-                for i in range(self.num_groups):
-                    groups = []
-                    for j in range(self.group_length):
-                        points_index_start = (i + j * self.sequence_stride) * self.num_proxy_points
-                        points_index_end = points_index_start + self.num_proxy_points
-                        groups.append(src[:, points_index_start:points_index_end])
-
-                    groups = torch.cat(groups, -1)
-                    src_groups.append(groups)
-
-            else:
-                raise NotImplementedError
-
-            src_merge = torch.cat(src_groups, 1)
-            src = self.fusion_norm(src[:, :self.num_groups * self.num_proxy_points], self.fusion_all_group(src_merge))
-            src = [torch.cat([token_list[i], src[:, i * self.num_proxy_points:(i + 1) * self.num_proxy_points]], dim=1)
-                   for i in range(self.num_groups)]
-            src = torch.cat(src, dim=0)
-
-        else:
-            token_list = [self.token[i:(i + 1)].repeat(BS, 1, 1) for i in range(self.num_groups)]
-            src = [torch.cat([token_list[i], src[:, i * self.num_proxy_points:(i + 1) * self.num_proxy_points]], dim=1)
-                   for i in range(self.num_groups)]
-            src = torch.cat(src, dim=0)
+        src = torch.cat([token_list.repeat(src.shape[0],1,1),src],dim=1)
 
         src = src.permute(1, 0, 2)
         memory, tokens = self.encoder(src, pos=pos)
@@ -447,7 +447,7 @@ class FFN(nn.Module):
 
 
 def build_transformer(args):
-    return Transformer(
+    return [Transformer(
         config=args,
         d_model=args.hidden_dim,
         dropout=args.dropout,
@@ -455,12 +455,12 @@ def build_transformer(args):
         dim_feedforward=args.dim_feedforward,
         num_encoder_layers=args.enc_layers,
         normalize_before=args.pre_norm,
-        num_lidar_points=args.num_lidar_points,
-        num_proxy_points=args.num_proxy_points,
+        num_lidar_points=args.num_lidar_points[i],
+
         num_frames=args.num_frames,
         sequence_stride=args.get('sequence_stride', 1),
         num_groups=args.num_groups,
-    )
+    ) for i in range(args.num_frames-1)]
 
 
 class VoxelSampler(nn.Module):
@@ -583,7 +583,7 @@ class VoxelSampler(nn.Module):
 
             src.append(torch.stack(src_points))
 
-        return torch.stack(src).permute(0, 2, 1, 3, 4).flatten(2, 3)
+        return torch.stack(src)
 
 
 def build_voxel_sampler(device):
