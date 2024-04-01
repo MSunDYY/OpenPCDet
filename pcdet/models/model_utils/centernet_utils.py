@@ -260,7 +260,7 @@ def decode_bbox_from_heatmap_(heatmap, center, center_z, dim,pro_l,
     dim = _transpose_and_gather_feat(dim, inds).view(batch_size, K, 2)
     l = torch.sqrt((pro_l**2).sum(dim=-1)).unsqueeze(-1)
 
-    angle = torch.atan2(pro_l[:,:,1], pro_l[:,:,0])
+    angle = torch.atan2(pro_l[:,:,1], pro_l[:,:,0]).unsqueeze(-1)
 
 
     xs = xs.view(batch_size, K, 1) + center[:, :, 0:1]
@@ -269,7 +269,7 @@ def decode_bbox_from_heatmap_(heatmap, center, center_z, dim,pro_l,
     xs = xs * feature_map_stride * voxel_size[0] + point_cloud_range[0]
     ys = ys * feature_map_stride * voxel_size[1] + point_cloud_range[1]
 
-    box_part_list = [xs, ys, center_z, l,w,dim, angle]
+    box_part_list = [xs, ys, center_z,l,dim, angle]
     if vel is not None:
         vel = _transpose_and_gather_feat(vel, inds).view(batch_size, K, 2)
         box_part_list.append(vel)
