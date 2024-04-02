@@ -71,11 +71,13 @@ class CenterSpeed(Detector3DTemplate):
                     batch_dict = cur_module(batch_dict)
 
             for pred_dict in self.dense_head.forward_ret_dict['pred_dicts']:
-                pred_dict['is_moving_pred'] = batch_dict['is_moving_pred']
-                pred_dict['coordinate_all'] = batch_dict['pillar_coords']
-                pred_dict['speed_1st'] = batch_dict['speed_1st']
-                pred_dict['speed_compressed_pred'] = batch_dict['speed_map_pred']
-
+                # pred_dict['is_moving_pred'] = batch_dict['is_moving_pred']
+                # pred_dict['coordinate_all'] = batch_dict['pillar_coords']
+                # pred_dict['speed_1st'] = batch_dict['speed_1st']
+                # pred_dict['speed_compressed_pred'] = batch_dict['speed_map_pred']
+                pred_dict['is_gt_pred'] = batch_dict['is_gt_pred']
+                pred_dict['speed_pred'] = batch_dict['speed_pred']
+                pred_dict['coords_pred'] = batch_dict['coords_pred']
             useless_para = ['multi_scale_3d_features', 'multi_scale_3d_strides', 'spatial_features',
                             'spatial_features_stride', 'voxel_features']
             for para in useless_para:

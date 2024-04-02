@@ -421,8 +421,8 @@ class CenterSpeedHead(nn.Module):
 
 
         else:
-            B = pred_dicts[0]['coordinate_all'][:, 0].max() + 1
-            FRAME = pred_dicts[0]['coordinate_all'][:, 1].max() + 1
+            B = pred_dicts[0]['coords_pred'][:, 0].max() + 1
+            FRAME = pred_dicts[0]['coords_pred'][:, 1].max() + 1
             for idx, pred_dict in enumerate(pred_dicts):
                 if pred_dict['speed_1st'] is not None:
                     speed_map = target_dicts['speed_map'][idx]

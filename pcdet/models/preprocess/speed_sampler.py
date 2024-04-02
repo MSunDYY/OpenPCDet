@@ -420,9 +420,9 @@ class SpeedSampler(nn.Module):
             pfn.append(PFNLayer(in_channels, out_channels, use_norm=self.use_norm,
                                 last_layer=True if i == len(self.num_features_layers) - 2 else False))
         self.pfn = nn.ModuleList(pfn)
-        self.pool1 = spconv.SparseMaxPool2d(kernel_size=3,stride=1,padding=1,indice_key='conv2d_3')
+        # self.pool1 = spconv.SparseMaxPool2d(kernel_size=3,stride=1,padding=1,indice_key='conv2d_3')
         # self.pool2 = spconv.SparseMaxPool3d()
-        self.pool = spconv.SparseGlobalMaxPool()
+        # self.pool = spconv.SparseGlobalMaxPool()
         cur_num_features = self.num_features_layers[-1]
         out_num_features = [int(cur_num_features / 2), int(cur_num_features / 4), int(cur_num_features / 4)]
         # self.motion_conv = nn.Conv2d(in_channels=self.num_features * 2, out_channels=2, kernel_size=3)
@@ -470,20 +470,20 @@ class SpeedSampler(nn.Module):
         #     nn.ReLU()
         # )
 
-        self.dense_conv2d = nn.Sequential(
-            nn.Conv2d(in_channels=16, out_channels=16, stride=1, kernel_size=3, padding=1),
-            nn.BatchNorm2d(16),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=16, out_channels=16, stride=1, kernel_size=3, padding=1),
-            nn.BatchNorm2d(16),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=16, out_channels=16, stride=1, kernel_size=3, padding=1),
-            nn.BatchNorm2d(16),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=16, out_channels=16, stride=1, kernel_size=3, padding=1),
-            nn.BatchNorm2d(16),
-            nn.ReLU()
-        )
+        # self.dense_conv2d = nn.Sequential(
+        #     nn.Conv2d(in_channels=16, out_channels=16, stride=1, kernel_size=3, padding=1),
+        #     nn.BatchNorm2d(16),
+        #     nn.ReLU(),
+        #     nn.Conv2d(in_channels=16, out_channels=16, stride=1, kernel_size=3, padding=1),
+        #     nn.BatchNorm2d(16),
+        #     nn.ReLU(),
+        #     nn.Conv2d(in_channels=16, out_channels=16, stride=1, kernel_size=3, padding=1),
+        #     nn.BatchNorm2d(16),
+        #     nn.ReLU(),
+        #     nn.Conv2d(in_channels=16, out_channels=16, stride=1, kernel_size=3, padding=1),
+        #     nn.BatchNorm2d(16),
+        #     nn.ReLU()
+        # )
 
         # self.regression_2d = spconv.SparseSequential(
         #
@@ -741,9 +741,9 @@ class SpeedSampler(nn.Module):
         # spconv.SparseGlobalMaxPool
         is_gt = self.classfier(sp_feature)
         velocity_pred = self.regression(sp_feature)
-        batch_dict['is_gt'] = is_gt.features
+        batch_dict['is_gt_pred'] = is_gt.features
         batch_dict['speed_pred'] = velocity_pred.features
-        batch_dict['coords'] = is_gt.indices
+        batch_dict['coords_pred'] = is_gt.indices
 
         batch_dict['points'][:, 0] = batch_dict['points'][:, 0] * F + batch_dict['points'][:, -1] * 10
         batch_dict['batch_size'] *= F
