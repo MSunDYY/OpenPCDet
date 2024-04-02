@@ -316,7 +316,7 @@ class CenterHead(nn.Module):
                 pred_boxes, target_dicts['masks'][idx], target_dicts['inds'][idx], target_boxes
             )
             if 'pro_l' in self.separate_head_cfg.HEAD_ORDER:
-                reg_loss[6:8] /= torch.sqrt(reg_loss[6]**2+reg_loss[7]**2)
+                reg_loss[6:8] =reg_loss[6:8]/torch.sqrt(reg_loss[6]**2+reg_loss[7]**2)
 
             loc_loss = (reg_loss * reg_loss.new_tensor(self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['code_weights'])).sum()
             loc_loss = loc_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['loc_weight']

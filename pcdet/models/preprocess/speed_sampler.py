@@ -13,8 +13,9 @@ from pcdet.ops.pointnet2.pointnet2_stack.pointnet2_utils import ball_query, grou
 from spconv.pytorch.functional import sparse_add
 from spconv.pytorch.core import SparseConvTensor
 from spconv.pytorch.utils import PointToVoxel
-
-
+from pcdet.models.backbones_3d.spconv_backbone import post_act_block,SparseBasicBlock
+from pcdet.utils.spconv_utils import replace_feature
+from ...models.model_utils.mppnet_utils import MLP
 class DeformableTransformerCrossAttention(nn.Module):
     def __init__(self, d_model, d_head, dropout=0.2, n_heads=1, n_points=2, n_levels=1, out_sample_loc=False):
         super().__init__()
@@ -124,6 +125,75 @@ class AttentionAggregation(nn.Module):
                 cur_features[cur_mask] = cur_features_dense[b * F + f][:cur_mask.sum()]
         speed_est = torch.concat([speed_est[b * F + f][:num_cur[b][f]] for f in range(F) for b in range(B)])
         return cur_features, speed_est
+class SEDBlock(spconv.SparseModule):
+
+    def __init__(self, dim, kernel_size, stride, num_SBB, norm_fn, indice_key):
+        super(SEDBlock, self).__init__()
+
+        first_block = post_act_block(
+            dim, dim, kernel_size=kernel_size, stride=stride, padding=kernel_size // 2,
+            norm_fn=norm_fn, indice_key=f'spconv_{indice_key}', conv_type='spconv')
+
+        block_list = [first_block if stride > 1 else nn.Identity()]
+        for _ in range(num_SBB):
+            block_list.append(
+                SparseBasicBlock(dim, dim, norm_fn=norm_fn, indice_key=indice_key))
+
+        self.blocks = spconv.SparseSequential(*block_list)
+
+    def forward(self, x):
+        return self.blocks(x)
+
+
+class SEDLayer(spconv.SparseModule):
+
+    def __init__(self, dim: int, down_kernel_size: list, down_stride: list, num_SBB: list, norm_fn, indice_key):
+        super().__init__()
+
+        assert down_stride[0] == 1 # hard code
+        assert len(down_kernel_size) == len(down_stride) == len(num_SBB)
+
+        self.encoder = nn.ModuleList()
+        self.pool = nn.ModuleList()
+        self.pool_inv = nn.ModuleList()
+        for idx in range(len(down_stride)):
+            self.encoder.append(
+                SEDBlock(dim, down_kernel_size[idx], down_stride[idx], num_SBB[idx], norm_fn, f"{indice_key}_{idx}"))
+
+        downsample_times = len(down_stride[1:])
+        self.decoder = nn.ModuleList()
+        self.decoder_norm = nn.ModuleList()
+        for idx, kernel_size in enumerate(down_kernel_size[1:]):
+            self.decoder.append(
+                post_act_block(
+                    dim, dim, kernel_size, norm_fn=norm_fn, conv_type='inverseconv',
+                    indice_key=f'spconv_{indice_key}_{downsample_times - idx}'))
+            self.decoder_norm.append(norm_fn(dim))
+            self.pool.append(
+                spconv.SparseMaxPool3d(kernel_size=3, stride=1, padding=1, indice_key=f'{indice_key}_pool_{downsample_times-idx}'))
+            self.pool_inv.append(
+                spconv.SparseInverseConv3d(dim, dim, 3, indice_key = f'{indice_key}_pool_{downsample_times-idx}',bias=False)
+            )
+    def forward(self, x):
+        features = []
+        for idx,conv in enumerate(self.encoder):
+            x = conv(x)
+
+            features.append(x)
+
+        x = features[-1]
+        idx=0
+        for deconv, norm, up_x in zip(self.decoder, self.decoder_norm, features[:-1][::-1]):
+
+            x = deconv(x)
+
+            x = replace_feature(x, x.features + up_x.features)
+            x = replace_feature(x, norm(x.features))
+            idx+=1
+        return x
+
+
+
 
 
 class TemperalUpConv(spconv.SparseModule):
@@ -165,38 +235,24 @@ class TemperalUpConv(spconv.SparseModule):
 
 
 class TemperalDownConv(spconv.SparseModule):
-    def __init__(self, inplaces, planes, stride=(2, 2), bias=None, norm_fn=None, downsample=None, indice_key=None):
+    def __init__(self, inplanes, planes, stride=(2, 2), bias=None, norm_fn=None, downsample=None, indice_key=None):
         super().__init__()
         assert norm_fn is not None
         if bias is None:
             bias = norm_fn is not None
 
         self.conv1 = spconv.SparseSequential(
-            spconv.SparseConv3d(inplaces, planes, kernel_size=(3, 3, 3,), padding=(0, 1, 1), bias=False,
-                                stride=(1, 1, 1), indice_key='spconv1'),
-            norm_fn(planes),
-            nn.ReLU(),
-            spconv.SubMConv3d(planes, planes, kernel_size=(3, 3, 3), padding=(1, 1, 1), bias=False,
-                              stride=(1, 1, 1), indice_key='subm1'),
-            norm_fn(planes),
-            nn.ReLU()
+            post_act_block(inplanes,planes,kernel_size=3,norm_fn=norm_fn,padding=1,indice_key='subm1',conv_type='subm'),
+
+            SparseBasicBlock(planes,planes,norm_fn=norm_fn,indice_key='stem'),
+            SparseBasicBlock(planes, planes, norm_fn=norm_fn, indice_key='stem'),
         )
 
-        self.conv2 = spconv.SparseSequential(
-            spconv.SparseConv3d(planes, planes, kernel_size=(3, 3, 3), stride=(1, stride[0], stride[0]),
-                                padding=(1, 1, 1),
-                                bias=False,
-                                indice_key='spconv2'),
-            norm_fn(planes),
-            nn.ReLU(),
-            spconv.SubMConv3d(planes, planes, kernel_size=(3, 3, 3), padding=(1, 1, 1), bias=False,
-                              stride=(1, 1, 1), indice_key='subm2'),
-            norm_fn(planes),
-            nn.ReLU()
-        )
-
-        self.conv3 = spconv.SparseSequential(
-            spconv.SparseConv3d(planes, planes, kernel_size=(3, 3, 3), stride=(1, stride[1], stride[1]),
+        self.sed_layers = nn.ModuleList()
+        for i in range(2):
+            self.sed_layers.append(SEDLayer(32,[3,3,3],[1,2,2],[2,1,1],norm_fn=norm_fn,indice_key=f'sedlayer{i}'))
+        self.conv_out = spconv.SparseSequential(
+            spconv.SubMConv3d(planes, planes, kernel_size=(3, 3, 3), stride=(1, stride[1], stride[1]),
                                 padding=(1, 1, 1),
                                 bias=False,
                                 indice_key='spconv3'),
@@ -210,11 +266,13 @@ class TemperalDownConv(spconv.SparseModule):
 
     def forward(self, input):
         x = input
-        x_conv1 = self.conv1(x)
-        x_conv2 = self.conv2(x_conv1)
-        x_conv3 = self.conv3(x_conv2)
-        output = [x_conv1, x_conv2, x_conv3]
-        return output
+        x = self.conv1(x)
+        for conv in self.sed_layers:
+            x = conv(x)
+
+        x = self.conv_out(x)
+
+        return x
 
 
 class PFNLayer(nn.Module):
@@ -301,9 +359,9 @@ class SpeedSampler(nn.Module):
                                     for i in range(2)]
         self.use_norm = model_cfg.USE_NORM
         self.use_absoluto_xyz = self.model_cfg.get('USE_ABSOLUTE_XYZ', False)
-        self.num_point_features = 6
-        self.num_voxel_features = 6
-        self.num_out_voxel_features = 8
+        self.num_point_features = 11
+        self.num_voxel_features = 36
+        self.num_out_voxel_features = 32
         self.num_features_layers = [self.num_point_features] + list(model_cfg.NUM_FILTERS)
         self.num_features = self.num_out_voxel_features + self.num_features_layers[-1]
 
@@ -324,10 +382,37 @@ class SpeedSampler(nn.Module):
             device=device
         )
         norm_fn = partial(nn.BatchNorm1d, momentum=0.01, eps=1e-3)
-        self.sp_conv = TemperalDownConv(self.num_out_voxel_features + self.num_features_layers[-1], 32, stride=[2, 2],
+        self.sp_conv = TemperalDownConv(self.num_out_voxel_features , 32, stride=[2, 2],
                                         norm_fn=norm_fn,
                                         )
-        self.sp_up_conv = TemperalUpConv(32, 16, stride=[2, 2], norm_fn=norm_fn)
+
+        self.compressed_conv = spconv.SparseSequential(
+            spconv.SparseConv3d(32,64,(3,1,1),padding=(0,1,1),stride=1,indice_key = 'spconv'),
+            norm_fn(64),
+            nn.ReLU(),
+        )
+        self.max_pool = spconv.SparseSequential(
+            spconv.SparseMaxPool3d(kernel_size=3,stride=1,padding=1,indice_key='pool_1'),
+            post_act_block(64, 64, kernel_size=3, norm_fn=norm_fn, padding=1, indice_key='pool_1',
+                           conv_type='inverseconv'),
+
+        )
+
+        self.pool_3d_ = spconv.SparseMaxPool3d(kernel_size=3, stride=1, padding=1, indice_key='spconv')
+        self.compressed_conv_1 = spconv.SparseSequential(
+            spconv.SparseConv3d(64,64,(3,1,1),padding=(0,1,1),stride=1),
+            norm_fn(64),
+            nn.ReLU(),
+        )
+        self.conv2d = spconv.SparseSequential(
+            spconv.SubMConv2d(64,64,kernel_size=(3,3),padding=1,stride=1,indice_key='conv2d_1'),
+            norm_fn(64),
+            nn.ReLU(),
+            spconv.SubMConv2d(64,64,kernel_size=(3,3),padding=1,stride=1,indice_key='conv2d_2'),
+            norm_fn(64),
+            nn.ReLU()
+        )
+        # self.sp_up_conv = TemperalUpConv(32, 16, stride=[2, 2], norm_fn=norm_fn)
         pfn = []
         for i in range(len(self.num_features_layers) - 1):
             in_channels = self.num_features_layers[i]
@@ -335,7 +420,9 @@ class SpeedSampler(nn.Module):
             pfn.append(PFNLayer(in_channels, out_channels, use_norm=self.use_norm,
                                 last_layer=True if i == len(self.num_features_layers) - 2 else False))
         self.pfn = nn.ModuleList(pfn)
-
+        self.pool1 = spconv.SparseMaxPool2d(kernel_size=3,stride=1,padding=1,indice_key='conv2d_3')
+        # self.pool2 = spconv.SparseMaxPool3d()
+        self.pool = spconv.SparseGlobalMaxPool()
         cur_num_features = self.num_features_layers[-1]
         out_num_features = [int(cur_num_features / 2), int(cur_num_features / 4), int(cur_num_features / 4)]
         # self.motion_conv = nn.Conv2d(in_channels=self.num_features * 2, out_channels=2, kernel_size=3)
@@ -369,19 +456,19 @@ class SpeedSampler(nn.Module):
         #     ) for i in range(3)])
         # ])
 
-        self.conv2d = spconv.SparseSequential(
-            spconv.SparseConv2d(in_channels=16 * 3 * 2, out_channels=32, kernel_size=3, padding=1),
-            norm_fn(32),
-            nn.ReLU(),
-
-            spconv.SparseConv2d(in_channels=32, out_channels=32, kernel_size=3, padding=1),
-            norm_fn(32),
-            nn.ReLU(),
-
-            spconv.SparseConv2d(in_channels=32, out_channels=16, kernel_size=3, padding=1),
-            norm_fn(16),
-            nn.ReLU()
-        )
+        # self.conv2d = spconv.SparseSequential(
+        #     spconv.SparseConv2d(in_channels=16 * 3 * 2, out_channels=32, kernel_size=3, padding=1),
+        #     norm_fn(32),
+        #     nn.ReLU(),
+        #
+        #     spconv.SparseConv2d(in_channels=32, out_channels=32, kernel_size=3, padding=1),
+        #     norm_fn(32),
+        #     nn.ReLU(),
+        #
+        #     spconv.SparseConv2d(in_channels=32, out_channels=16, kernel_size=3, padding=1),
+        #     norm_fn(16),
+        #     nn.ReLU()
+        # )
 
         self.dense_conv2d = nn.Sequential(
             nn.Conv2d(in_channels=16, out_channels=16, stride=1, kernel_size=3, padding=1),
@@ -419,23 +506,36 @@ class SpeedSampler(nn.Module):
             nn.Conv2d(8, 1, kernel_size=1, padding=0)
         )
         self.classfier = spconv.SparseSequential(
-            spconv.SubMConv2d(in_channels=16 * 3 * 2, out_channels=48, kernel_size=(3, 3), padding=(1, 1)),
-            norm_fn(48),
+            spconv.SparseMaxPool2d(kernel_size=3,stride=1,padding=1,indice_key='pool_classifier'),
+            spconv.SparseInverseConv2d(in_channels=64,out_channels=64,kernel_size=3,indice_key='pool_classifier'),
+            norm_fn(64),
             nn.ReLU(),
-            spconv.SubMConv2d(in_channels=48, out_channels=16, kernel_size=1),
-            norm_fn(16),
+            spconv.SubMConv2d(in_channels=64,out_channels=32,kernel_size=3,stride=1,padding=1,indice_key='classifier'),
+            norm_fn(32),
             nn.ReLU(),
-            spconv.SubMConv2d(in_channels=16, out_channels=1, kernel_size=1)
+            spconv.SubMConv1d(in_channels=32,out_channels=1,kernel_size=1,stride=1,padding=0)
         )
         self.regression = spconv.SparseSequential(
-            spconv.SubMConv2d(in_channels=16 * 3 * 2, out_channels=48, kernel_size=3, padding=1),
-            norm_fn(48),
+            spconv.SparseMaxPool2d(kernel_size=3, stride=1, padding=1, indice_key='pool_classifier'),
+            spconv.SparseInverseConv2d(in_channels=64, out_channels=64, kernel_size=3, indice_key='pool_classifier'),
+            norm_fn(64),
             nn.ReLU(),
-            spconv.SubMConv2d(in_channels=48, out_channels=16, kernel_size=1),
-            norm_fn(16),
+            spconv.SubMConv2d(in_channels=64, out_channels=32, kernel_size=3, stride=1, padding=1,
+                              indice_key='classifier'),
+            norm_fn(32),
             nn.ReLU(),
-            spconv.SubMConv2d(in_channels=16, out_channels=2, kernel_size=1)
+            spconv.SubMConv1d(in_channels=32, out_channels=2, kernel_size=1, stride=1, padding=0)
         )
+
+        # self.regression = spconv.SparseSequential(
+        #     spconv.SubMConv2d(in_channels=16 * 3 * 2, out_channels=48, kernel_size=3, padding=1),
+        #     norm_fn(48),
+        #     nn.ReLU(),
+        #     spconv.SubMConv2d(in_channels=48, out_channels=16, kernel_size=1),
+        #     norm_fn(16),
+        #     nn.ReLU(),
+        #     spconv.SubMConv2d(in_channels=16, out_channels=2, kernel_size=1)
+        # )
         self.sigmoid = nn.Sigmoid()
 
         self.pillar_x = self.pillar_size[0]
@@ -539,8 +639,7 @@ class SpeedSampler(nn.Module):
         num_points = torch.cumsum(num_points.flatten(), dim=0)
         time_stamp = torch.zeros((points.shape[0])).to(device)
         points_all = batch_dict['points']
-        if self.model_cfg.get('FILTER_GROUND', False) is not False:
-            points_all = points_all[points_all[:, 3] > self.model_cfg.get('FILTER_GROUND'), :]
+
 
         # voxel_generator = VoxelGeneratorWrapper(
         #     vsize_xyz=self.voxel_size,
@@ -575,41 +674,40 @@ class SpeedSampler(nn.Module):
         # voxel_num_points = torch.concat(nums_points_voxels)
 
         batch_dict = self.transform_points_to_pillars(batch_dict, self.model_cfg.transform_points_to_pillars)
-        voxels = batch_dict['pillars']
+        voxel_features = batch_dict['pillars']
         coordinates = batch_dict['pillar_coords']
         voxel_num_points = batch_dict['pillar_num_points']
-        coordinates = torch.concat([coordinates[:, 0:1], coordinates[:, 1:2], coordinates[:, 3:4], coordinates[:, 2:3]],
+        coords = torch.concat([coordinates[:, 0:1], coordinates[:, 1:2], coordinates[:, 3:4], coordinates[:, 2:3]],
                                    dim=-1)  # (b,f,z,y,x) -> (b,f,x,y)
 
-        points_mean = voxels[:, :, :].sum(dim=-2) / (voxel_num_points.reshape(-1, 1).repeat(1, voxels.shape[-1]))
-        f_cluster = voxels[:, :, :3] - points_mean[:, None, :3]
-        h_cluster = voxels[:, :, 2:3] - voxels[:, :, 2:3].min(dim=-2)[0].unsqueeze(-2)
 
-        # f_center = torch.zeros_like(voxels[:, :, :3])
-        points_mean[:, 0] = points_mean[:, 0] - (
-                coordinates[:, 2].to(voxels.dtype) * self.pillar_size[0] + self.offset_x)
-        points_mean[:, 1] = points_mean[:, 1] - (
-                coordinates[:, 3].to(voxels.dtype)* self.pillar_size[1] + self.offset_y)
-        points_mean[:, 2] = points_mean[:, 2] - (
-                torch.ones_like(coordinates[:, 2]) * self.pillar_size[2] + self.offset_z)
+        points_mean = voxel_features[:, :, :3].sum(dim=1, keepdim=True) / voxel_num_points.type_as(voxel_features).view(
+            -1, 1, 1)
+        f_cluster = voxel_features[:, :, :3] - points_mean
 
-        features = [f_cluster,
-                    voxels[:, :, 3:], h_cluster]
-        coordinates = coordinates.long()
-        features = torch.cat(features, dim=-1)
-        padding = torch.arange(voxels.shape[-2]).reshape((1, -1)).repeat(voxels.shape[0], 1).to(device)
+        f_center = torch.zeros_like(voxel_features[:, :, :3])
+        f_center[:, :, 0] = voxel_features[:, :, 0] - (
+                    coords[:, 2].to(voxel_features.dtype).unsqueeze(1) * self.pillar_x + self.offset_x)
+        f_center[:, :, 1] = voxel_features[:, :, 1] - (
+                    coords[:, 3].to(voxel_features.dtype).unsqueeze(1) * self.pillar_y + self.offset_y)
+        f_center[:, :, 2] = voxel_features[:, :, 2] - (
+                    coords[:, 1].to(voxel_features.dtype).unsqueeze(1) * self.pillar_z + self.offset_z)
+        features = [voxel_features, f_cluster, f_center]
+        features = torch.concat(features,dim=-1)
+
+        padding = torch.arange(voxel_features.shape[-2]).reshape((1, -1)).repeat(voxel_features.shape[0], 1).to(device)
         mask = padding < voxel_num_points.reshape((-1, 1))
-        features *= mask.unsqueeze(-1)
+        features[~mask] = 0
         for pfn in self.pfn:
             features = pfn(features)
         features = features.squeeze()
 
-        mean_height = voxels[:,:,2:3].mean(dim= -2)
+        # mean_height = voxels[:,:,2:3].mean(dim= -2)
         # size = voxels[:, :, :3].max(dim=-2)[0] - voxels[:, :, :3].min(dim=-2)[0]
-        max_height = voxels[:, :, 2:3].max(dim=-2)[0]
-        voxel_features = torch.concat([points_mean, max_height], dim=-1)
+
+        voxel_features = torch.concat([points_mean.squeeze(), voxel_num_points[:,None],features], dim=-1)
         voxel_features = self.linear(voxel_features)
-        features = torch.concat([features, voxel_features], dim=-1)
+        features = voxel_features
 
         B = int(coordinates[:, 0].max().item()) + 1
         # voxels[:, :, 5] *= 10
@@ -619,31 +717,57 @@ class SpeedSampler(nn.Module):
         input_sp_tensor = spconv.SparseConvTensor(
             features=features,
             indices=coordinates.to(dtype=torch.int32),
-            spatial_shape=[F, H + 1, W + 1],  # easy to implement deconv
+            spatial_shape=[F, H , W ],  # easy to implement deconv
             batch_size=B
         )
 
         sp_features_list = self.sp_conv(input_sp_tensor)
-        motion_features_list = []
+        sp_feature = self.compressed_conv(sp_features_list)
+        sp_feature = self.max_pool(sp_feature)
 
-        signal = False
+        sp_feature_padding = spconv.SparseConvTensor(
+            features = sp_feature.features,
+            indices = sp_feature.indices,
+            spatial_shape = [F-2+1,H,W],
+            batch_size = B
+        )
+        sp_feature = self.compressed_conv_1(sp_feature_padding)
+        sp_feature = spconv.SparseConvTensor(
+            features = sp_feature.features,indices = torch.concat([sp_feature.indices[:,0:1],sp_feature.indices[:,2:]],dim=-1),
+            spatial_shape=[H,W],
+            batch_size=B
+        )
+        sp_feature = self.conv2d(sp_feature)
+        # spconv.SparseGlobalMaxPool
+        is_gt = self.classfier(sp_feature)
+        velocity_pred = self.regression(sp_feature)
+        batch_dict['is_gt'] = is_gt.features
+        batch_dict['speed_pred'] = velocity_pred.features
+        batch_dict['coords'] = is_gt.indices
+
+        batch_dict['points'][:, 0] = batch_dict['points'][:, 0] * F + batch_dict['points'][:, -1] * 10
+        batch_dict['batch_size'] *= F
+        batch_dict['voxel_coords'] = torch.concat(
+            [batch_dict['voxel_coords'][:, :1] * frame_num + batch_dict['voxel_coords'][:, 1:2],
+             batch_dict['voxel_coords'][:, 2:]], dim=-1)
+        return batch_dict
         bbox = True
 
-        motion_features = self.sp_up_conv(sp_features_list)
-        motion_features = sparse_compress(motion_features, dim=0)
-        if signal:
-            motion_features = motion_features_list[0]
-            cur_motion_mask = motion_features.indices[:, 1] < 2
-            pre_motion_mask = motion_features.indices[:, 1] > 0
-            aggregated_features, est_speed = self.attention_aggre(motion_features.features[cur_motion_mask],
-                                                                  motion_features.features[pre_motion_mask],
-                                                                  motion_features.indices[cur_motion_mask],
-                                                                  motion_features.indices[pre_motion_mask],
-                                                                  spatial_shape=torch.tensor(
-                                                                      [motion_features.spatial_shape[-2],
-                                                                       motion_features.spatial_shape[-1]]).to(device))
-        else:
-            aggregated_features = motion_features
+        # motion_features = self.sp_up_conv(sp_features_list)
+        # motion_features = sparse_compress(motion_features, dim=0)
+        # if signal:
+        #     motion_features = motion_features_list[0]
+        #     cur_motion_mask = motion_features.indices[:, 1] < 2
+        #     pre_motion_mask = motion_features.indices[:, 1] > 0
+        #     aggregated_features, est_speed = self.attention_aggre(motion_features.features[cur_motion_mask],
+        #                                                           motion_features.features[pre_motion_mask],
+        #                                                           motion_features.indices[cur_motion_mask],
+        #                                                           motion_features.indices[pre_motion_mask],
+        #                                                           spatial_shape=torch.tensor(
+        #                                                               [motion_features.spatial_shape[-2],
+        #                                                                motion_features.spatial_shape[-1]]).to(device))
+        # else:
+        #     aggregated_features = motion_features
 
         if not self.training:
             # is_moving_mask = is_moving>0.5

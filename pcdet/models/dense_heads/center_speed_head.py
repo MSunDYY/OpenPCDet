@@ -499,6 +499,7 @@ class CenterSpeedHead(nn.Module):
                             loss += (batch_box_preds_for_iou * 0.).sum()
                             tb_dict['iou_reg_loss_head_%d' % idx] = (batch_box_preds_for_iou * 0.).sum()
                 else:
+
                     speed_map = target_dicts['speed_map'][idx]
                     speed_map_compressed = speed_map.reshape((B, FRAME, speed_map.shape[1], speed_map.shape[2], -1))
                     speed_map_compressed_inds = (speed_map_compressed[:, :, :, :, -1] > 0).sum(dim=1)
@@ -509,22 +510,19 @@ class CenterSpeedHead(nn.Module):
                         speed_map_compressed_mask]
                     
                     speed_map_ = speed_map_compressed.permute(0,2,3,1,4)[speed_map_compressed_mask][:,:,-1]
-                    test = (speed_map_.sum(dim=-1) / (speed_map_>0).sum(dim=-1)) == speed_map_.max(dim=-1)[0]
-                    try:
-                        assert test.sum() == test.shape[0]
-                    except:
-                        pass
+
                     speed_map_compressed = torch.sum(speed_map_compressed[:, :, :, :, :], dim=1)[
                                                speed_map_compressed_mask] / \
                                            speed_map_compressed_inds[:, :, :, None][
                                                speed_map_compressed_mask]
 
-                    is_moving_mask_gt = (torch.norm(speed_map_compressed[:, :2], dim=-1, p=2) > 0.5)
-                    is_train_mask_gt = is_moving_mask_gt + (torch.norm(speed_map_compressed[:, :2], dim=-1, p=2) < 0.2)
+                    is_gt = (speed_map_compressed[:, 2]>0)
+                    # is_train_mask_gt = is_moving_mask_gt + (torch.norm(speed_map_compressed[:, :2], dim=-1, p=2) < 0.2)
+                    target_dicts = pred_dict['coords']
 
-                    is_moving_pred = pred_dict['is_moving_pred'][speed_map_compressed_mask]
-                    speed_cls_loss = self.speed_cls_loss_func(is_moving_pred[is_train_mask_gt],
-                                                              is_moving_mask_gt.float()[is_train_mask_gt])
+                    is_gt_pred = pred_dict['is_gt_pred'][speed_map_compressed_mask]
+                    speed_cls_loss = self.speed_cls_loss_func(is_gt_pred,
+                                                              )
                     speed_temperal_loss = self.speed_temperal_loss(is_moving_pred[:, None], speed_map_compressed_ind)
                     if is_moving_mask_gt.sum():
                         speed_map_compressed_gt = speed_map_compressed[is_moving_mask_gt]
