@@ -387,7 +387,7 @@ class SpeedSampler(nn.Module):
                                         )
 
         self.compressed_conv = spconv.SparseSequential(
-            spconv.SparseConv3d(32,64,(3,1,1),padding=(0,1,1),stride=1,indice_key = 'spconv'),
+            spconv.SparseConv3d(32,64,(3,1,1),padding=0,stride=1,indice_key = 'spconv'),
             norm_fn(64),
             nn.ReLU(),
         )
@@ -400,7 +400,7 @@ class SpeedSampler(nn.Module):
 
         self.pool_3d_ = spconv.SparseMaxPool3d(kernel_size=3, stride=1, padding=1, indice_key='spconv')
         self.compressed_conv_1 = spconv.SparseSequential(
-            spconv.SparseConv3d(64,64,(3,1,1),padding=(0,1,1),stride=1),
+            spconv.SparseConv3d(64,64,(3,1,1),padding=0,stride=1),
             norm_fn(64),
             nn.ReLU(),
         )
@@ -594,22 +594,21 @@ class SpeedSampler(nn.Module):
             num_points_single_batch = []
 
             points_single_batch = points[points[:, 0] == b][:, 1:]
-            gt_boxes_single_batch = data_dict['gt_boxes'][b]
-
-            if config.get('FILTER_GROUND', False) is not False:
-                num = torch.tensor([torch.logical_and(points_single_batch[:, 2] >= bin[i],
-                                                      points_single_batch[:, 2] < bin[i + 1]).sum() for i in
-                                    range(len(bin) - 1)])
-                GROUND = bin[torch.argmax(num) + 1] + config.MARGIN
-                points_single_batch = points_single_batch[points_single_batch[:, 2] > GROUND]
-                non_gt_mask = data_dict['gt_boxes'][b][:, 2] <= GROUND
-                data_dict['gt_boxes'][b][non_gt_mask] = 0
+            # if config.get('FILTER_GROUND', False) is not False:
+            #     num = torch.tensor([torch.logical_and(points_single_batch[:, 2] >= bin[i],
+            #                                           points_single_batch[:, 2] < bin[i + 1]).sum() for i in
+            #                         range(len(bin) - 1)])
+            #     GROUND = bin[torch.argmax(num) + 1] + config.MARGIN
+            #     points_single_batch = points_single_batch[points_single_batch[:, 2] > GROUND]
+            #     non_gt_mask = data_dict['gt_boxes'][b][:, 2] <= GROUND
+            #     data_dict['gt_boxes'][b][non_gt_mask] = 0
 
             voxels_single_batch, coors_single_batch, num_points_single_batch = self.gen(
                 torch.concat([points_single_batch[:, :2],
                               points_single_batch[:, -1:] * self.gen.vsize[0] * 10 + self.gen.vsize[0] / 2 +
                               self.gen.coors_range[0], points_single_batch[:, 2:-1]], dim=-1)
             )
+            
             voxels_single_batch = torch.concat([voxels_single_batch[:, :, :2], voxels_single_batch[:, :, 3:]], dim=-1)
 
             # for f in range(F):
@@ -625,9 +624,12 @@ class SpeedSampler(nn.Module):
             voxels.append(voxels_single_batch)
             coors.append(coors_single_batch)
             nums_points.append(num_points_single_batch)
-        data_dict['pillars'] = torch.concat(voxels)
-        data_dict['pillar_coords'] = torch.concat(coors)
-        data_dict['pillar_num_points'] = torch.concat(nums_points)
+            
+        voxels = torch.concat(voxels)
+        mask = voxels[:,:,2].max(dim=1)[0]>0.15
+        data_dict['pillars'] = voxels[mask]
+        data_dict['pillar_coords'] = torch.concat(coors)[mask]
+        data_dict['pillar_num_points'] = torch.concat(nums_points)[mask]
         return data_dict
 
     def forward(self, batch_dict, **kwargs):
@@ -743,6 +745,7 @@ class SpeedSampler(nn.Module):
         velocity_pred = self.regression(sp_feature)
         batch_dict['is_gt_pred'] = is_gt.features
         batch_dict['speed_pred'] = velocity_pred.features
+        
         batch_dict['coords_pred'] = is_gt.indices
 
         batch_dict['points'][:, 0] = batch_dict['points'][:, 0] * F + batch_dict['points'][:, -1] * 10

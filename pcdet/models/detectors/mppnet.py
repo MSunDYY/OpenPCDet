@@ -17,7 +17,7 @@ class MPPNet(Detector3DTemplate):
 
     def forward(self, batch_dict):
         batch_dict['proposals_list'] = batch_dict['roi_boxes']
-        signal = True
+        signal = False
 
         if signal:
             B = batch_dict['batch_size']
