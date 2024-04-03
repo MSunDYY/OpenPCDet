@@ -233,6 +233,8 @@ __global__ void box2map_kernel(const int N ,const int C,const int H,const int W,
     {
     return;
     }
+
+
     const float * box = boxes+idx*7;
     const float * value =values+idx*C;
     float x = box[0];

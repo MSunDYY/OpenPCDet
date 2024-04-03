@@ -371,7 +371,7 @@ class WaymoDataset(DatasetTemplate):
                 pose_pre2cur = np.dot(np.linalg.inv(pose_cur), pose_pre)
                 gt_boxes_pre[:, :3] = np.dot(expand_box_xyz, pose_pre2cur.T)[:, :3]
 
-                del_theta = np.arccos(pose_pre2cur[0, 0])
+                del_theta = np.arccos(np.clip(pose_pre2cur[0, 0],a_min=-1,a_max=1))
                 gt_boxes_pre[:, 6] -= del_theta
                 gt_boxes_pre[:, 7:9] = np.dot(gt_boxes_pre[:, 7:9], pose_pre2cur[:2, :2].T)
                 gt_boxes_pre = np.concatenate([gt_boxes_pre, np.full((gt_boxes_pre.shape[0], 1), idx + 2)], axis=-1)

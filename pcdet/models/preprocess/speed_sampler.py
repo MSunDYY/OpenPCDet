@@ -264,8 +264,8 @@ class TemperalDownConv(spconv.SparseModule):
             nn.ReLU()
         )
 
-    def forward(self, input):
-        x = input
+    def forward(self, x):
+        
         x = self.conv1(x)
         for conv in self.sed_layers:
             x = conv(x)
@@ -636,11 +636,9 @@ class SpeedSampler(nn.Module):
         num_points = batch_dict['num_points_all'].int()
 
         frame_num = batch_dict['num_points_all'].shape[1]
-        points = batch_dict['points']
+       
 
-        num_points = torch.cumsum(num_points.flatten(), dim=0)
-        time_stamp = torch.zeros((points.shape[0])).to(device)
-        points_all = batch_dict['points']
+        
 
 
         # voxel_generator = VoxelGeneratorWrapper(

@@ -44,6 +44,7 @@ void box2mapLauncher(const int N,const int C,const int H,const int W,const float
 
 int box2map_gpu(at::Tensor boxes_tensor, at::Tensor map_tensor, at::Tensor values_tensor)
 {
+
     CHECK_INPUT(boxes_tensor);
     CHECK_INPUT(map_tensor);
     CHECK_INPUT(values_tensor);
@@ -55,6 +56,7 @@ int box2map_gpu(at::Tensor boxes_tensor, at::Tensor map_tensor, at::Tensor value
     const float *values=values_tensor.data<float>();
     float * map=map_tensor.data<float>();
     box2mapLauncher(N,C,H,W,boxes,values, map);
+    return 1;
 }
 
 

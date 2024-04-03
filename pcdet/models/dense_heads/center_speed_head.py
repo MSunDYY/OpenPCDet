@@ -545,16 +545,14 @@ class CenterSpeedHead(nn.Module):
                                                       train_data[is_gt_label * is_train_mask][:, :2])
                     print('num of train ',is_train_mask.sum().item(),end='   ')
                     print('num of speed ',(is_train_mask*is_gt_label).sum().item(),end='   ')
-                    if speed_loss>5:
-                        pass
+                    
                     # speed_temperal_loss += self.speed_temperal_loss(
                     #     speed_map_compressed_pred[is_train_mask_gt],
                     #     speed_map_compressed_ind[is_train_mask_gt])
 
                     loss += speed_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['speed_weight']
 
-                    loss += gt_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS[
-                        'is_gt_weight']
+                    # loss += gt_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['is_gt_weight']
 
                     tb_dict['speed_loss'] = speed_loss.item()
                     tb_dict['gt_loss'] = gt_loss
