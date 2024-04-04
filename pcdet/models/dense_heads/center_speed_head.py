@@ -517,7 +517,7 @@ class CenterSpeedHead(nn.Module):
                     speed_map_compressed_inds = (speed_map_compressed[:, :, :, :, -1] > 0).sum(dim=1)
                     coords_pred = pred_dict['coords_pred'].long()
                     # speed_map_compressed_mask = speed_map_compressed_inds > 0
-
+                    print(coords_pred.max())
                     speed_map_compressed_ind = torch.max(speed_map_compressed[:, :, :, :, -1], dim=1)[0]
 
                     # speed_map_ = speed_map_compressed.permute(0,2,3,1,4)[speed_map_compressed_mask][:,:,-1]
@@ -528,39 +528,53 @@ class CenterSpeedHead(nn.Module):
                         [temp, speed_map_compressed[:, :, :, :, -1].max(dim=1)[0].unsqueeze(-1)], dim=-1)
                     train_data = speed_map_compressed[coords_pred[:, 0], coords_pred[:, 1], coords_pred[:, 2]]
                     is_gt_label = (train_data[:, -1] > 0)
+                    is_moving_label = torch.sqrt((train_data[:,:2]**2).sum(-1))>0.5
+                    is_static_label = (torch.sqrt((train_data[:,:2]**2).sum(-1))<0.2) *is_gt_label
 
-                    is_train_mask = torch.zeros_like(is_gt_label, dtype=torch.bool)
+                    
+                    is_train_mask = []
                     for b in range(B):
                         batch_mask = coords_pred[:, 0] == b
-                        is_train_mask[batch_mask] = self.count_train_mask(train_data[batch_mask][:, -1])
 
+                            # is_train_mask[batch_mask] = self.count_train_mask(train_data[batch_mask][:, -1])
+                        is_train_mask.append(self.count_train_mask(train_data[batch_mask][:,-1]))
+
+                    is_train_mask = torch.concat(is_train_mask,dim=-1)
                     speed_pred = pred_dict['speed_pred']
                     is_gt_pred = pred_dict['is_gt_pred']
-
+                    is_moving_pred = pred_dict['is_moving_pred']
                     gt_loss = self.speed_cls_loss_func(is_gt_pred[is_train_mask].squeeze(),
                                                        is_gt_label[is_train_mask].float())
+                    
+                    is_moving_loss = self.speed_cls_loss_func(is_moving_pred[is_train_mask*(is_moving_label+is_static_label)].squeeze(),
+                                                              is_moving_label[is_train_mask*(is_moving_label+is_static_label)].float())
                     # speed_temperal_loss = self.speed_temperal_loss(is_moving_pred[:, None], speed_map_compressed_ind)
-
-                    speed_loss = self.speed_loss_func(speed_pred[is_gt_label * is_train_mask][:, :2],
-                                                      train_data[is_gt_label * is_train_mask][:, :2])
+                    if (is_gt_label * is_train_mask*(~(is_static_label))).sum()!=0:
+                        speed_loss = self.speed_loss_func(speed_pred[is_gt_label * is_train_mask*(~(is_static_label))][:, :2],
+                                                      train_data[is_gt_label * is_train_mask*(~(is_static_label))][:, :2])
+                    else:
+                        speed_loss=torch.tensor([0]).to(device)
+                    
                     print('num of train ',is_train_mask.sum().item(),end='   ')
                     print('num of speed ',(is_train_mask*is_gt_label).sum().item(),end='   ')
-                    
+                    print('num of moving',(is_train_mask*is_gt_label*(~(is_static_label))).sum().item(),end='    ')
                     # speed_temperal_loss += self.speed_temperal_loss(
                     #     speed_map_compressed_pred[is_train_mask_gt],
                     #     speed_map_compressed_ind[is_train_mask_gt])
 
                     loss += speed_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['speed_weight']
-
-                    # loss += gt_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['is_gt_weight']
+                    loss +=is_moving_loss*self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['is_moving_weight']
+                    loss += gt_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['is_gt_weight']
 
                     tb_dict['speed_loss'] = speed_loss.item()
-                    tb_dict['gt_loss'] = gt_loss
+                    tb_dict['gt_loss'] = gt_loss.item()
+                    tb_dict['moving_loss'] = is_moving_loss.item()
                     # tb_dict['speed_cls_loss'] = speed_cls_loss.item()
                     # tb_dict['speed_temperal_loss'] = speed_temperal_loss.item()
-                    print('speed_loss {:.4f}  is_gt_loss {:.4f}'.format(
-                        speed_loss.item(),
+                    print('is_moving_loss  {:.4f}   speed_loss {:.4f}  is_gt_loss {:.4f}'.format(
+                        is_moving_loss.item(),speed_loss.item(),
                         gt_loss.item(),
+                        
                     ))
             tb_dict['rpn_loss'] = loss.item()
             return loss, tb_dict

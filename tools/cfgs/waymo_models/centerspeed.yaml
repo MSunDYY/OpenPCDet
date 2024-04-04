@@ -118,7 +118,7 @@ MODEL:
 
         transform_points_to_pillars:
           PILLAR_SIZE: [ 0.2, 0.2, 6 ]
-          MAX_POINTS_PER_PILLAR: 12
+          MAX_POINTS_PER_PILLAR: 16
           MAX_NUMBER_OF_PILLARS: 30000
           WITH_TIME_STAMP: False
           CONCAT: False
@@ -181,8 +181,9 @@ MODEL:
                 'cls_weight': 1.0,
                 'loc_weight': 2.0,
                 'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 0.2],
-                'speed_weight': 0.2,
+                'speed_weight': 0.5,
                 'is_gt_weight': 1.0,
+                'is_moving_weight': 1.0,
                 'speed_temperal_weight': 0,
 
             }

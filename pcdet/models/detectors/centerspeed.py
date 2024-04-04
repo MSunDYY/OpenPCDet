@@ -77,6 +77,7 @@ class CenterSpeed(Detector3DTemplate):
                 # pred_dict['speed_compressed_pred'] = batch_dict['speed_map_pred']
                 pred_dict['is_gt_pred'] = batch_dict['is_gt_pred']
                 pred_dict['speed_pred'] = batch_dict['speed_pred']
+                pred_dict['is_moving_pred'] = batch_dict['is_moving_pred']
                 pred_dict['coords_pred'] = batch_dict['coords_pred']
             useless_para = ['multi_scale_3d_features', 'multi_scale_3d_strides', 'spatial_features',
                             'spatial_features_stride', 'voxel_features']
