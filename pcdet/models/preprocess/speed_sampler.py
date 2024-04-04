@@ -716,7 +716,7 @@ class SpeedSampler(nn.Module):
         voxel_features = batch_dict['pillars']
         coordinates = batch_dict['pillar_coords']
         voxel_num_points = batch_dict['pillar_num_points']
-        coords = torch.concat([coordinates[:, 0:1], coordinates[:, 1:2], coordinates[:, 3:4], coordinates[:, 2:3]],
+        coordinates = torch.concat([coordinates[:, 0:1], coordinates[:, 1:2], coordinates[:, 3:4], coordinates[:, 2:3]],
                               dim=-1)  # (b,f,z,y,x) -> (b,f,x,y)
 
         points_mean = voxel_features[:, :, :3].sum(dim=1, keepdim=True) / voxel_num_points.type_as(voxel_features).view(
