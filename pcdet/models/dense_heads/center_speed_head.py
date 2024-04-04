@@ -517,7 +517,7 @@ class CenterSpeedHead(nn.Module):
                     speed_map_compressed_inds = (speed_map_compressed[:, :, :, :, -1] > 0).sum(dim=1)
                     coords_pred = pred_dict['coords_pred'].long()
                     # speed_map_compressed_mask = speed_map_compressed_inds > 0
-                    print(coords_pred.max())
+                    # print(coords_pred.max())
                     speed_map_compressed_ind = torch.max(speed_map_compressed[:, :, :, :, -1], dim=1)[0]
 
                     # speed_map_ = speed_map_compressed.permute(0,2,3,1,4)[speed_map_compressed_mask][:,:,-1]
