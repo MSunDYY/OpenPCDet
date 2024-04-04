@@ -725,11 +725,11 @@ class SpeedSampler(nn.Module):
 
         f_center = torch.zeros_like(voxel_features[:, :, :3])
         f_center[:, :, 0] = voxel_features[:, :, 0] - (
-                coords[:, 2].to(voxel_features.dtype).unsqueeze(1) * self.pillar_x + self.offset_x)
+                coordinates[:, 2].to(voxel_features.dtype).unsqueeze(1) * self.pillar_x + self.offset_x)
         f_center[:, :, 1] = voxel_features[:, :, 1] - (
-                coords[:, 3].to(voxel_features.dtype).unsqueeze(1) * self.pillar_y + self.offset_y)
+                coordinates[:, 3].to(voxel_features.dtype).unsqueeze(1) * self.pillar_y + self.offset_y)
         f_center[:, :, 2] = voxel_features[:, :, 2] - (
-                coords[:, 1].to(voxel_features.dtype).unsqueeze(1) * self.pillar_z + self.offset_z)
+                coordinates[:, 1].to(voxel_features.dtype).unsqueeze(1) * self.pillar_z + self.offset_z)
         features = [voxel_features, f_cluster, f_center]
         features = torch.concat(features, dim=-1)
 
