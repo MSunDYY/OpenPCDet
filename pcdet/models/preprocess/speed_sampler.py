@@ -675,8 +675,8 @@ class SpeedSampler(nn.Module):
         data_dict['pillar_num_points'] = torch.concat(nums_points)
         return data_dict
 
-    def forward(self, batch_dict, **kwargs):
-        num_points = batch_dict['num_points_all'].int()
+    def forward(self, batch_dict, train_box=True,**kwargs):
+        # num_points = batch_dict['num_points_all'].int()
 
         frame_num = batch_dict['num_points_all'].shape[1]
 
@@ -714,6 +714,7 @@ class SpeedSampler(nn.Module):
 
         batch_dict = self.transform_points_to_pillars(batch_dict, self.model_cfg.transform_points_to_pillars)
         voxel_features = batch_dict['pillars']
+        voxels = voxel_features
         coordinates = batch_dict['pillar_coords']
         voxel_num_points = batch_dict['pillar_num_points']
         coordinates = torch.concat([coordinates[:, 0:1], coordinates[:, 1:2], coordinates[:, 3:4], coordinates[:, 2:3]],
@@ -781,16 +782,33 @@ class SpeedSampler(nn.Module):
         is_gt_pred = self.classfier(sp_feature)
         is_moving_pred = self.is_moving(sp_feature)
         velocity_pred = self.regression(sp_feature)
-        batch_dict['is_gt_pred'] = is_gt_pred.features
-        batch_dict['speed_pred'] = velocity_pred.features
-        batch_dict['is_moving_pred'] = is_moving_pred.features
-        batch_dict['coords_pred'] = is_gt_pred.indices
+        if not train_box:
 
-        batch_dict['points'][:, 0] = batch_dict['points'][:, 0] * F + batch_dict['points'][:, -1] * 10
-        batch_dict['batch_size'] *= F
-        batch_dict['voxel_coords'] = torch.concat(
+            batch_dict['is_gt_pred'] = is_gt_pred.features
+            batch_dict['speed_pred'] = velocity_pred.features
+            batch_dict['is_moving_pred'] = is_moving_pred.features
+            batch_dict['coords_pred'] = is_gt_pred.indices
+            batch_dict['points'][:, 0] = batch_dict['points'][:, 0] * F + batch_dict['points'][:, -1] * 10
+            batch_dict['batch_size'] *= F
+            batch_dict['voxel_coords'] = torch.concat(
             [batch_dict['voxel_coords'][:, :1] * frame_num + batch_dict['voxel_coords'][:, 1:2],
              batch_dict['voxel_coords'][:, 2:]], dim=-1)
+        else:
+            points = batch_dict['points']
+            is_gt_pred = is_gt_pred.dense().reshape(B,H,W)
+            is_gt_pred = self.sigmoid(is_gt_pred)>0.3
+            is_moving_pred = self.sigmoid(is_moving_pred.dense().reshape(B,H,W))>0.3
+            velocity_pred = velocity_pred.dense().reshape(B,H,W,-1)
+            points_coords = torch.concat([points[:,0:1],(points[:,1:2]-self.point_cloud_range[0])/self.pillar_x,points[:,2:3]-self.point_cloud_range[1]/self.pillar_y],dim=-1).long()
+            points_gt_mask = is_gt_pred[points_coords[:,0],points_coords[:,1],points_coords[:,2]]
+            points_gt_mask[points[:,-1]==0]=True
+            points = points[points_gt_mask]
+            points_coords = points_coords[points_gt_mask]
+            is_moving_pred = is_moving_pred[points_coords[:,0],points_coords[:,1],points_coords[:,2]]
+            velocity_pred = velocity_pred[points_coords[:,0],points_coords[:,1],points_coords[:,2]]
+            points[:,1:3][is_moving_pred] += velocity_pred[is_moving_pred]*points[is_moving_pred][:,-1][:,None]
+            batch_dict['points'] = points
+
         return batch_dict
         bbox = True
 

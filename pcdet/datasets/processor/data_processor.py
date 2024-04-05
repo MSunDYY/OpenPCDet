@@ -263,6 +263,8 @@ class DataProcessor(object):
             for i in range(FRAME - 1):
                 cur_boxes = np.concatenate(gt_boxes[:i + 1])
                 pre_boxes = gt_boxes[i + 1]
+
+
                 vel_pre_abs = abs(pre_boxes[:, 7:9])
                 dis = np.sqrt(((((cur_boxes[:, :2] - 0.1 * (i + 1 - cur_boxes[:, -2:-1]) * cur_boxes[:, 7:9])[None, :,
                                  :] - pre_boxes[:, :2][:, None, :]) / np.clip(vel_pre_abs, a_min=1, a_max=None)[:, None,
