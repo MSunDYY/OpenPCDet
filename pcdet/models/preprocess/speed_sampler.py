@@ -277,6 +277,10 @@ class TemperalDownConv(spconv.SparseModule):
             bias = norm_fn is not None
 
         self.conv1 = spconv.SparseSequential(
+            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=1, indice_key='spconv1',
+                           conv_type='spconv'),
+                post_act_block(inplanes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=1, indice_key='spconv1',
+                           conv_type='inverseconv'),
             post_act_block(inplanes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=1, indice_key='subm1',
                            conv_type='subm'),
             post_act_block(inplanes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=1, indice_key='subm1',
