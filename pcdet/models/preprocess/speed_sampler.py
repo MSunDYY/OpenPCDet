@@ -185,7 +185,8 @@ class SEDLayer(spconv.SparseModule):
         for idx, kernel_size in enumerate(down_kernel_size):
             self.decoder.append(
                 spconv.SparseSequential(
-                    spconv.SparseConvTranspose3d(in_channels=num_features[-idx - 1], out_channels=num_features[-idx - 2],
+                    spconv.SparseConvTranspose3d(in_channels=num_features[-idx - 1],
+                                                 out_channels=num_features[-idx - 2],
                                                  kernel_size=(1, 3, 3), padding=(0, 1, 1), stride=(1, 2, 2)),
                     norm_fn(num_features[-idx - 2]),
                     nn.ReLU()
@@ -222,7 +223,8 @@ class SEDLayer(spconv.SparseModule):
             index = up_x.indices.long()
 
             x = replace_feature(up_x, torch.concat(
-                [x.dense().permute(0,2,4,3,1)[index[:, 0], index[:, 1], index[:, 2], index[:, 3]], up_x.features], dim=-1))
+                [x.dense().permute(0, 2, 4, 3, 1)[index[:, 0], index[:, 1], index[:, 2], index[:, 3]], up_x.features],
+                dim=-1))
 
             x = conv2d(x)
 
@@ -277,18 +279,31 @@ class TemperalDownConv(spconv.SparseModule):
             bias = norm_fn is not None
 
         self.conv1 = spconv.SparseSequential(
-            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=1, indice_key='spconv1',
+            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=(0,1,1), indice_key='spconv1',
                            conv_type='spconv'),
-                post_act_block(inplanes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=1, indice_key='spconv1',
+            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=(0, 1, 1),
+                           indice_key='spconv2',
+                           conv_type='spconv'),
+            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=(0, 1, 1),
+                           indice_key='spconv2',
                            conv_type='inverseconv'),
-            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=1, indice_key='subm1',
+            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=(0, 1, 1),
+                           indice_key='spconv1',
+                           conv_type='inverseconv'),
+            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=(0,1,1), indice_key='subm1',
                            conv_type='subm'),
-            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=1, indice_key='subm1',
+            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=(0,1,1), indice_key='subm1',
                            conv_type='subm'),
-
             # SparseBasicBlock(planes,planes,norm_fn=norm_fn,indice_key='stem'),
             # SparseBasicBlock(planes, planes, norm_fn=norm_fn, indice_key='stem'),
         )
+        self.diff = spconv.SparseSequential(
+
+            post_act_block(planes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=(0, 1, 1),
+                           indice_key='subm1', conv_type='subm'),
+        spconv.SparseConv3d(in_channels=planes, out_channels=2, kernel_size=(1,1,1), stride=1, padding=0))
+
+        
 
         self.sed_layers = nn.ModuleList()
         for i in range(1):
@@ -311,12 +326,13 @@ class TemperalDownConv(spconv.SparseModule):
 
         x = self.conv1(x)
 
+        diff = self.diff(x)
         for conv in self.sed_layers:
             x = conv(x)
 
         # x = self.conv_out(x)
 
-        return x
+        return x,diff
 
 
 class PFNLayer(nn.Module):
@@ -562,10 +578,11 @@ class SpeedSampler(nn.Module):
             spconv.SubMConv1d(in_channels=32, out_channels=1, kernel_size=1, stride=1, padding=0)
         )
         self.is_moving = spconv.SparseSequential(
-            spconv.SubMConv2d(in_channels=32,out_channels=32,kernel_size=3,stride=1,padding=1,indice_key='is_moving'),
+            spconv.SubMConv2d(in_channels=32, out_channels=32, kernel_size=3, stride=1, padding=1,
+                              indice_key='is_moving'),
             norm_fn(32),
             nn.ReLU(),
-            spconv.SubMConv1d(in_channels=32,out_channels=1,kernel_size=1,stride=1,padding=0)
+            spconv.SubMConv1d(in_channels=32, out_channels=1, kernel_size=1, stride=1, padding=0)
         )
         self.regression = spconv.SparseSequential(
             # spconv.SparseMaxPool2d(kernel_size=3, stride=1, padding=1, indice_key='pool_classifier'),
@@ -679,7 +696,7 @@ class SpeedSampler(nn.Module):
         data_dict['pillar_num_points'] = torch.concat(nums_points)
         return data_dict
 
-    def forward(self, batch_dict, train_box=True,**kwargs):
+    def forward(self, batch_dict, train_box=True, **kwargs):
         # num_points = batch_dict['num_points_all'].int()
 
         frame_num = batch_dict['num_points_all'].shape[1]
@@ -722,7 +739,7 @@ class SpeedSampler(nn.Module):
         coordinates = batch_dict['pillar_coords']
         voxel_num_points = batch_dict['pillar_num_points']
         coordinates = torch.concat([coordinates[:, 0:1], coordinates[:, 1:2], coordinates[:, 3:4], coordinates[:, 2:3]],
-                              dim=-1)  # (b,f,z,y,x) -> (b,f,x,y)
+                                   dim=-1)  # (b,f,z,y,x) -> (b,f,x,y)
 
         points_mean = voxel_features[:, :, :3].sum(dim=1, keepdim=True) / voxel_num_points.type_as(voxel_features).view(
             -1, 1, 1)
@@ -760,11 +777,11 @@ class SpeedSampler(nn.Module):
         input_sp_tensor = spconv.SparseConvTensor(
             features=features,
             indices=coordinates.to(dtype=torch.int32),
-            spatial_shape=[F, H+1, W+1],  # easy to implement deconv
+            spatial_shape=[F, H + 1, W + 1],  # easy to implement deconv
             batch_size=B
         )
 
-        sp_feature = self.sp_conv(input_sp_tensor)
+        sp_feature,diff = self.sp_conv(input_sp_tensor)
         # sp_feature = self.compressed_conv(sp_features_list)
         # sp_feature = self.max_pool(sp_features_list)
 
@@ -787,30 +804,32 @@ class SpeedSampler(nn.Module):
         is_moving_pred = self.is_moving(sp_feature)
         velocity_pred = self.regression(sp_feature)
         if not train_box:
-
+            batch_dict['diff_pred'] = diff.features
             batch_dict['is_gt_pred'] = is_gt_pred.features
             batch_dict['speed_pred'] = velocity_pred.features
             batch_dict['is_moving_pred'] = is_moving_pred.features
             batch_dict['coords_pred'] = is_gt_pred.indices
+            batch_dict['coords_4frames_pred'] = input_sp_tensor.indices
             batch_dict['points'][:, 0] = batch_dict['points'][:, 0] * F + batch_dict['points'][:, -1] * 10
             batch_dict['batch_size'] *= F
             batch_dict['voxel_coords'] = torch.concat(
-            [batch_dict['voxel_coords'][:, :1] * frame_num + batch_dict['voxel_coords'][:, 1:2],
-             batch_dict['voxel_coords'][:, 2:]], dim=-1)
+                [batch_dict['voxel_coords'][:, :1] * frame_num + batch_dict['voxel_coords'][:, 1:2],
+                 batch_dict['voxel_coords'][:, 2:]], dim=-1)
         else:
             points = batch_dict['points']
-            is_gt_pred = is_gt_pred.dense().reshape(B,H,W)
-            is_gt_pred = self.sigmoid(is_gt_pred)>0.3
-            is_moving_pred = self.sigmoid(is_moving_pred.dense().reshape(B,H,W))>0.3
-            velocity_pred = velocity_pred.dense().reshape(B,H,W,-1)
-            points_coords = torch.concat([points[:,0:1],(points[:,1:2]-self.point_cloud_range[0])/self.pillar_x,points[:,2:3]-self.point_cloud_range[1]/self.pillar_y],dim=-1).long()
-            points_gt_mask = is_gt_pred[points_coords[:,0],points_coords[:,1],points_coords[:,2]]
-            points_gt_mask[points[:,-1]==0]=True
+            is_gt_pred = is_gt_pred.dense().reshape(B, H, W)
+            is_gt_pred = self.sigmoid(is_gt_pred) > 0.3
+            is_moving_pred = self.sigmoid(is_moving_pred.dense().reshape(B, H, W)) > 0.3
+            velocity_pred = velocity_pred.dense().reshape(B, H, W, -1)
+            points_coords = torch.concat([points[:, 0:1], (points[:, 1:2] - self.point_cloud_range[0]) / self.pillar_x,
+                                          points[:, 2:3] - self.point_cloud_range[1] / self.pillar_y], dim=-1).long()
+            points_gt_mask = is_gt_pred[points_coords[:, 0], points_coords[:, 1], points_coords[:, 2]]
+            points_gt_mask[points[:, -1] == 0] = True
             points = points[points_gt_mask]
             points_coords = points_coords[points_gt_mask]
-            is_moving_pred = is_moving_pred[points_coords[:,0],points_coords[:,1],points_coords[:,2]]
-            velocity_pred = velocity_pred[points_coords[:,0],points_coords[:,1],points_coords[:,2]]
-            points[:,1:3][is_moving_pred] += velocity_pred[is_moving_pred]*points[is_moving_pred][:,-1][:,None]
+            is_moving_pred = is_moving_pred[points_coords[:, 0], points_coords[:, 1], points_coords[:, 2]]
+            velocity_pred = velocity_pred[points_coords[:, 0], points_coords[:, 1], points_coords[:, 2]]
+            points[:, 1:3][is_moving_pred] += velocity_pred[is_moving_pred] * points[is_moving_pred][:, -1][:, None]
             batch_dict['points'] = points
 
         return batch_dict
