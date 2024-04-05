@@ -520,6 +520,7 @@ class CenterSpeedHead(nn.Module):
                     train_data = speed_map_compressed[coords_pred[:, 0], coords_pred[:, 1], coords_pred[:, 2]]
                     is_gt_label = (train_data[:, -1] > 0)
                     is_moving_label = torch.sqrt((train_data[:, :2] ** 2).sum(-1)) > 0.5
+                    is_medium_label = (torch.sqrt((train_data[:,:2]**2).sum(-1))<=0.5)*(torch.sqrt((train_data[:,:2]**2).sum(-1))>=0.2)
                     is_static_label = (torch.sqrt((train_data[:, :2] ** 2).sum(-1)) < 0.2) * is_gt_label
 
                     is_train_mask_list = []
@@ -540,17 +541,18 @@ class CenterSpeedHead(nn.Module):
                     spatial_gt_loss = self.spatial_consistency_loss(is_gt_pred[is_train_mask],
                                                                     train_data[:, -1][is_train_mask],
                                                                     coords_pred[:, 0][is_train_mask])
-
+                    is_moving_train_label = is_moving_label.float()
+                    is_moving_train_label[is_medium_label] = (torch.sqrt((train_data[is_medium_label]**2).sum(-1))-0.2)/0.3
                     is_moving_loss = self.speed_cls_loss_func(
-                        is_moving_pred[is_train_mask * (is_moving_label + is_static_label)].squeeze(),
-                        is_moving_label[is_train_mask * (is_moving_label + is_static_label)].float())
+                        is_moving_pred[is_train_mask*is_gt_label].squeeze(),
+                        is_moving_train_label[is_train_mask*is_gt_label].float())
                     # speed_temperal_loss = self.speed_temperal_loss(is_moving_pred[:, None], speed_map_compressed_ind)
                     if (is_gt_label * is_train_mask * (~(is_static_label))).sum() != 0:
                         speed_loss = self.speed_loss_func(
                             speed_pred[is_gt_label * is_train_mask * (~(is_static_label))][:, :2],
                             train_data[is_gt_label * is_train_mask * (~is_static_label)][:, :2])
                         spatial_speed_loss = self.spatial_consistency_loss(
-                            speed_pred[is_gt_label * is_train_mask * (~(is_static_label))][:, :2],
+                            speed_pred[is_gt_label * is_train_mask * (~is_static_label)][:, :2],
                             train_data[:, -1][is_train_mask*is_gt_label * (~is_static_label)],
                             coords_pred[:, 0][is_train_mask * is_gt_label * (~is_static_label)])
                     else:
