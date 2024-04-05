@@ -26,9 +26,7 @@ class CenterSpeed(Detector3DTemplate):
         #     dataset.dataset_cfg.DATA_PROCESSOR[-1].MAX_NUMBER_OF_PILLARS['train'] *= 1000
         #     dataset.dataset_cfg.DATA_PROCESSOR[-1].MAX_NUMBER_OF_PILLARS['test'] *= 1000
         if not model_cfg.DENSE_HEAD.TRAIN_BOX:
-            for model in self.module_list[1:]:
-                for param in model.parameters():
-                    param.requires_grad=False
+
             
             if dataset.training:
                 for obj in dataset.data_augmentor.data_augmentor_queue:
@@ -41,18 +39,14 @@ class CenterSpeed(Detector3DTemplate):
 
         else:
 
+            for param in self.module_list[0].parameters():
+                param.requires_grad=False
+
             dataset.dataset_cfg['SEQUENCE_CONFIG'].ENABLED = False
             if dataset.training:
                 dataset.dataset_cfg.DATA_AUGMENTOR.AUG_CONFIG_LIST[0].NUM_POINT_FEATURES -= 1
 
             dataset.CONCAT = True
-
-            for obj in dataset.data_processor.data_processor_queue:
-                if hasattr(obj, 'keywords'):
-                    if obj.keywords['config'].NAME == 'transform_points_to_pillars':
-                        dataset.data_processor.data_processor_queue.remove(obj)
-                    if obj.keywords['config'].NAME == 'select_trajectory_boxes':
-                        dataset.data_processor.data_processor_queue.remove(obj)
                 
             for obj in dataset.dataset_cfg.DATA_PROCESSOR:
                 if hasattr(obj, 'CONCAT'):
@@ -61,15 +55,14 @@ class CenterSpeed(Detector3DTemplate):
     def forward(self, batch_dict):
 
         if self.train_box:
+            with torch.no_grad():
+                batch_dict = self.module_list[0](batch_dict)
             for cur_module in self.module_list[1:]:
-                batch_dict = cur_module(batch_dict)
+                batch_dict = cur_module(batch_dict,self.train_box)
         else:
 
-            batch_dict = self.module_list[0](batch_dict)
-            with torch.no_grad():
-                for cur_module in self.module_list[1:]:
-                    batch_dict = cur_module(batch_dict)
-
+            batch_dict = self.module_list[0](batch_dict,self.train_box)
+            batch_dict = self.module_list[-1](batch_dict)
             for pred_dict in self.dense_head.forward_ret_dict['pred_dicts']:
                 # pred_dict['is_moving_pred'] = batch_dict['is_moving_pred']
                 # pred_dict['coordinate_all'] = batch_dict['pillar_coords']
@@ -79,11 +72,8 @@ class CenterSpeed(Detector3DTemplate):
                 pred_dict['speed_pred'] = batch_dict['speed_pred']
                 pred_dict['is_moving_pred'] = batch_dict['is_moving_pred']
                 pred_dict['coords_pred'] = batch_dict['coords_pred']
-            useless_para = ['multi_scale_3d_features', 'multi_scale_3d_strides', 'spatial_features',
-                            'spatial_features_stride', 'voxel_features']
-            for para in useless_para:
-                del batch_dict[para]
-        torch.cuda.empty_cache()
+
+
 
         if self.training:
             loss, tb_dict, disp_dict = self.get_training_loss()
