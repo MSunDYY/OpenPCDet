@@ -168,10 +168,10 @@ class SEDLayer(spconv.SparseModule):
             self.encoder.append(
                 spconv.SparseSequential(
                     post_act_block(num_features[idx], num_features[idx], kernel_size=(1, 3, 3), stride=1,
-                                   padding=(0, 1, 1), norm_fn=norm_fn, indice_key=f'sumb_enc_{idx * 2}',
+                                   padding=(0, 1, 1), norm_fn=norm_fn, indice_key=f'subm_spa{idx}',
                                    conv_type='subm'),
-                    post_act_block(num_features[idx], num_features[idx], kernel_size=(1, 3, 3), stride=1,
-                                   padding=(0, 1, 1), norm_fn=norm_fn, indice_key=f'sumb_enc_{idx * 2 + 1}',
+                    post_act_block(num_features[idx], num_features[idx], kernel_size=(3, 1, 1), stride=1,
+                                   padding=(1, 0, 0), norm_fn=norm_fn, indice_key=f'subm_tem{idx}',
                                    conv_type='subm'),
                     post_act_block(
                         num_features[idx], num_features[idx + 1], kernel_size=(1, 3, 3),
@@ -279,15 +279,22 @@ class TemperalDownConv(spconv.SparseModule):
             bias = norm_fn is not None
 
         self.conv1 = spconv.SparseSequential(
-            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=(0,1,1), indice_key='spconv1',
+            post_act_block(inplanes, planes, kernel_size=(1, 3, 3),stride=(1,2,2), norm_fn=norm_fn, padding=(0,1,1), indice_key='spconv1',
                            conv_type='spconv'),
-            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=(0, 1, 1),
+            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), stride=(1,2,2),norm_fn=norm_fn, padding=(0, 1, 1),
                            indice_key='spconv2',
                            conv_type='spconv'),
-            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=(0, 1, 1),
+
+            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), stride=(1,2,2),norm_fn=norm_fn, padding=(0, 1, 1),
+                           indice_key='spconv3',
+                           conv_type='spconv'),
+            post_act_block(inplanes, planes, kernel_size=(1, 3, 3),stride=(1,2,2), norm_fn=norm_fn, padding=(0, 1, 1),
+                           indice_key='spconv3',
+                           conv_type='inverseconv'),
+            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), stride=(1,2,2),norm_fn=norm_fn, padding=(0, 1, 1),
                            indice_key='spconv2',
                            conv_type='inverseconv'),
-            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=(0, 1, 1),
+            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), stride=(1,2,2),norm_fn=norm_fn, padding=(0, 1, 1),
                            indice_key='spconv1',
                            conv_type='inverseconv'),
             post_act_block(inplanes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=(0,1,1), indice_key='subm1',
@@ -301,6 +308,8 @@ class TemperalDownConv(spconv.SparseModule):
 
             post_act_block(planes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=(0, 1, 1),
                            indice_key='subm1', conv_type='subm'),
+            spconv.SparseAvgPool3d(kernel_size=(1,3,3),stride=(1,1,1),padding=(0,1,1),indice_key='avgpool'),
+            post_act_block(inplanes,inplanes,norm_fn=norm_fn,kernel_size=(1,3,3),stride=(1,1,1),padding=(0,0,0),indice_key='avgpool',conv_type='inverseconv'),
         spconv.SparseConv3d(in_channels=planes, out_channels=2, kernel_size=(1,1,1), stride=1, padding=0))
 
         
@@ -668,7 +677,8 @@ class SpeedSampler(nn.Module):
                                                       points_single_batch[:, 2] < bin[i + 1]).sum() for i in
                                     range(len(bin) - 1)])
                 GROUND = bin[torch.argmax(num) + 1] + config.MARGIN
-
+            else:
+                GROUND = -5
             voxels_single_batch, coors_single_batch, num_points_single_batch = self.gen(
                 torch.concat([points_single_batch[:, :2],
                               points_single_batch[:, -1:] * self.gen.vsize[0] * 10 + self.gen.vsize[0] / 2 +
@@ -812,9 +822,9 @@ class SpeedSampler(nn.Module):
             batch_dict['coords_4frames_pred'] = input_sp_tensor.indices
             batch_dict['points'][:, 0] = batch_dict['points'][:, 0] * F + batch_dict['points'][:, -1] * 10
             batch_dict['batch_size'] *= F
-            batch_dict['voxel_coords'] = torch.concat(
-                [batch_dict['voxel_coords'][:, :1] * frame_num + batch_dict['voxel_coords'][:, 1:2],
-                 batch_dict['voxel_coords'][:, 2:]], dim=-1)
+            # batch_dict['voxel_coords'] = torch.concat(
+            #     [batch_dict['voxel_coords'][:, :1] * frame_num + batch_dict['voxel_coords'][:, 1:2],
+            #      batch_dict['voxel_coords'][:, 2:]], dim=-1)
         else:
             points = batch_dict['points']
             is_gt_pred = is_gt_pred.dense().reshape(B, H, W)

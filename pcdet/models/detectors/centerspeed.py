@@ -32,12 +32,14 @@ class CenterSpeed(Detector3DTemplate):
                 for obj in dataset.data_augmentor.data_augmentor_queue:
                     if isinstance(obj, DataBaseSampler):
                         dataset.data_augmentor.data_augmentor_queue.remove(obj)
+                for obj in dataset.data_processor.data_processor_queue:
+                    if obj.keywords['config'].NAME == 'transform_points_to_voxels':
+                        dataset.data_processor.data_processor_queue.remove(obj)
             else:
                 for obj in dataset.data_processor.data_processor_queue:
                     if obj.keywords['config'].NAME == 'select_trajectory_boxes':
                         dataset.data_processor.data_processor_queue.remove(obj)
-                    if obj.keywords['config'].NAME == 'transform_points_to_voxels':
-                        dataset.data_processor.data_processor_queue.remove(obj)
+
 
         else:
 
