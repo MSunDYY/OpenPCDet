@@ -553,9 +553,9 @@ class CenterSpeedHead(nn.Module):
                         batch_diff_mask = coords_4frames_pred[:, 0] == b
                         # is_train_mask[batch_mask] = self.count_train_mask(train_data[batch_mask][:, -1])
                         is_train_mask_list.append(
-                            self.count_train_mask(train_data[batch_mask][:, -1], 5, get_negetive=True))
+                            self.count_train_mask(train_data[batch_mask][:, -1], 8, get_negetive=True))
                         is_train_diff_list.append(
-                            self.count_train_mask(diff_gt[batch_diff_mask][:, -1], 20, get_negetive=False))
+                            self.count_train_mask(diff_gt[batch_diff_mask][:, -1], 30, get_negetive=False))
                     is_train_diff_mask = torch.concat(is_train_diff_list, dim=-1)
                     is_train_mask = torch.concat(is_train_mask_list, dim=-1)
                     speed_pred = pred_dict['speed_pred']

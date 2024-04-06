@@ -4,7 +4,7 @@ DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/waymo_dataset_multiframe.yaml
     GET_FLOW_VOXELS: True
     SAMPLED_INTERVAL: {
-        'train': 1,
+        'train': 5,
         'test': 1
     }
     CONCAT: False
@@ -124,7 +124,7 @@ MODEL:
           CONCAT: False
           GET_FLOW_VOXELS: 0.2
           MARGIN: 0.05
-          FILTER_GROUND: False
+          FILTER_GROUND: True
           RM_BK_RATIO: {
             'train': 0.3,
             'test': 0
