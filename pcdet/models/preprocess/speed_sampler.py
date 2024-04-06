@@ -286,24 +286,24 @@ class TemperalDownConv(spconv.SparseModule):
                            conv_type='spconv'),
 
             post_act_block(inplanes, planes, kernel_size=(1, 3, 3), stride=(1,2,2),norm_fn=norm_fn, padding=(0, 1, 1),
-                           indice_key='spconv3',
-                           conv_type='spconv'),
-            post_act_block(inplanes, planes, kernel_size=(1, 3, 3),stride=(1,2,2), norm_fn=norm_fn, padding=(0, 1, 1),
-                           indice_key='spconv3',
-                           conv_type='inverseconv'),
-            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), stride=(1,2,2),norm_fn=norm_fn, padding=(0, 1, 1),
                            indice_key='spconv2',
                            conv_type='inverseconv'),
             post_act_block(inplanes, planes, kernel_size=(1, 3, 3), stride=(1,2,2),norm_fn=norm_fn, padding=(0, 1, 1),
                            indice_key='spconv1',
                            conv_type='inverseconv'),
-            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=(0,1,1), indice_key='subm1',
-                           conv_type='subm'),
-            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=(0,1,1), indice_key='subm1',
-                           conv_type='subm'),
             # SparseBasicBlock(planes,planes,norm_fn=norm_fn,indice_key='stem'),
             # SparseBasicBlock(planes, planes, norm_fn=norm_fn, indice_key='stem'),
         )
+
+        self.conv2 = spconv.SparseSequential(
+            post_act_block(inplanes, planes, kernel_size=(1, 3, 3),stride=(1,2,2), norm_fn=norm_fn, padding=(0,1,1), indice_key='subm1',
+                           conv_type='subm'),
+            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), stride=(1,2,2),norm_fn=norm_fn, padding=(0, 1, 1),
+                           indice_key='subm1',
+                           conv_type='subm'),
+            )
+
+
         self.diff = spconv.SparseSequential(
 
             post_act_block(planes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=(0, 1, 1),
@@ -333,7 +333,10 @@ class TemperalDownConv(spconv.SparseModule):
 
     def forward(self, x):
 
-        x = self.conv1(x)
+        x_expanded = self.conv1(x)
+        x = self.conv2(x)
+        x_augument = replace_feature(x,x.features+x_expanded.features)
+        x = replace_feature(x,x_expanded.features-x.features)
 
         diff = self.diff(x)
         for conv in self.sed_layers:
