@@ -286,9 +286,10 @@ class CenterSpeedHead(nn.Module):
                     heatmap_list.append(heatmap.to(gt_boxes_single_head.device))
                     inds_list.append(inds.to(gt_boxes_single_head.device))
 
-                ret_dict['inds'].append(torch.stack(inds_list, dim=0).to(device))
+
                 ret_dict['heatmaps'].append(torch.stack(heatmap_list, dim=0).to(device))
                 ret_dict['masks'].append(torch.stack(masks_list, dim=0).to(device))
+                ret_dict['inds'].append(torch.stack(inds_list, dim=0).to(device))
                 ret_dict['target_boxes_src'].append(torch.stack(target_boxes_src_list, dim=0).to(device))
             if not self.train_box:
                 ret_dict['speed_map'].append(torch.stack(speed_map_list, dim=0).to(device))
@@ -616,13 +617,10 @@ class CenterSpeedHead(nn.Module):
                     for loss_name in loss_list:
                         if self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS[loss_name+'_weight']>0:
                             tb_dict[loss_name] =eval(loss_name+'_loss').item()
-
+                            print(loss_name+'_ls:',eval(loss_name+'_loss').item(),'  ',end='')
+                    print(' ')
                     # tb_dict['speed_cls_loss'] = speed_cls_loss.item()
                     # tb_dict['speed_temperal_loss'] = speed_temperal_loss.item()
-                    print(
-                        'moving_ls:{:.4f}   speed_ls:{:.4f}  gt_ls:{:.4f}  spt_gt_ls:{:.4f}  spt_speed_ls:{:.4f}  diff_ls:{:.4f}'.format(
-                            is_moving_loss.item(), speed_loss.item(),
-                            is_gt_loss.item(), spatial_gt_loss.item(), spatial_speed_loss.item(), diff_loss.item()))
             # tb_dict['rpn_loss'] = loss.item()
             return loss, tb_dict
 

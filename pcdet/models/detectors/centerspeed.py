@@ -36,6 +36,8 @@ class CenterSpeed(Detector3DTemplate):
                 for obj in dataset.data_processor.data_processor_queue:
                     if obj.keywords['config'].NAME == 'select_trajectory_boxes':
                         dataset.data_processor.data_processor_queue.remove(obj)
+                    if obj.keywords['config'].NAME == 'transform_points_to_voxels':
+                        dataset.data_processor.data_processor_queue.remove(obj)
 
         else:
 
