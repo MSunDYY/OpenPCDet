@@ -159,10 +159,10 @@ class CenterSpeedHead(nn.Module):
         boxes[:, 3:5] = (boxes[:, 3:5]) / torch.tensor(self.voxel_size[:2])[None, :]
         boxes[:, 6][boxes[:, 6] < 0] += torch.pi
         if not self.train_box:
-            speed = torch.zeros((gt_boxes.shape[0],5)).to(device).contiguous()
-            speed[:,:2] = gt_boxes[:, 7:9]
-            speed[:,2:4] = boxes[:,:2]
-            speed[:,4] = gt_boxes[:,9]
+            speed = torch.zeros((gt_boxes.shape[0], 5)).to(device).contiguous()
+            speed[:, :2] = gt_boxes[:, 7:9]
+            speed[:, 2:4] = boxes[:, :2]
+            speed[:, 4] = gt_boxes[:, 9]
             # speed[:, 2] = torch.arange(speed.shape[0]) + 1
             speed_map_shape = (round((self.point_cloud_range[3] - self.point_cloud_range[0]) / self.pillar_size[0]),
                                round((self.point_cloud_range[4] - self.point_cloud_range[1]) / self.pillar_size[1]),
@@ -296,7 +296,7 @@ class CenterSpeedHead(nn.Module):
             return ret_dict
 
     def spatial_consistency_loss(self, gt_pred, gt_ind, batch_label):
-        sc_loss = torch.tensor([0])
+        sc_loss = torch.zeros(1, gt_pred.shape[1]).to(device)
         sc_loss_func = nn.L1Loss()
         B = batch_label.max().item() + 1
         count = 0
@@ -307,7 +307,7 @@ class CenterSpeedHead(nn.Module):
             for n in ind_single_batch:  # 0 denotes bg
 
                 sc_loss += torch.std(gt_pred_single_batch[gt_label_single_batch == n], dim=0) if (
-                                                                                                             gt_label_single_batch == n).sum().item() != 1 else 0
+                                                                                                         gt_label_single_batch == n).sum().item() != 1 else 0
             count += ind_single_batch.shape[0]
         return sc_loss.sum() / (count * gt_pred_single_batch.shape[1])
 
@@ -335,8 +335,9 @@ class CenterSpeedHead(nn.Module):
         loss += self.speed_loss_func(sp_pred[:, :, :, 2, :][mask3], sp_pred[:, :, :, 3, :][mask3])
 
         return loss
-    def speed_balance_loss(self,speed_pred,speed_gt):
-        return torch.sqrt((speed_pred-speed_gt).abs()).sum()
+
+    def speed_balance_loss(self, speed_pred, speed_gt):
+        return torch.sqrt((speed_pred - speed_gt).abs()).sum()
 
     def speed_temperal_loss(self, preds, ind):
         loss = 0
@@ -352,7 +353,7 @@ class CenterSpeedHead(nn.Module):
         y = torch.clamp(x.sigmoid(), min=1e-4, max=1 - 1e-4)
         return y
 
-    def count_train_mask(self, object_idx,max_num_obj=5,get_negetive=True):
+    def count_train_mask(self, object_idx, max_num_obj=5, get_negetive=True):
         unique_values, counts = torch.unique(object_idx[object_idx != 0], return_counts=True)
 
         is_train_mask = torch.zeros_like(object_idx, dtype=torch.bool)
@@ -513,14 +514,17 @@ class CenterSpeedHead(nn.Module):
                     speed_map = target_dicts['speed_map'][idx]
                     speed_map = speed_map.reshape((B, FRAME, speed_map.shape[1], speed_map.shape[2], -1))
 
-                    diff_map = speed_map[:,:,:,:,2:]
+                    diff_map = speed_map[:, :, :, :, 2:]
                     diff_pred = pred_dict['diff_pred']
                     coords_4frames_pred = pred_dict['coords_4frames_pred'].long()
-                    diff_gt = diff_map[coords_4frames_pred[:,0],coords_4frames_pred[:,1],coords_4frames_pred[:,2],coords_4frames_pred[:,3]]
-                    diff_gt[:,:2] = (diff_gt[:,:2] - coords_4frames_pred[:,2:]) * torch.tensor(self.pillar_size[:2])[None,:].to(device)
-                    diff_gt[diff_gt[:,-1]==0]=0
+                    diff_gt = diff_map[coords_4frames_pred[:, 0], coords_4frames_pred[:, 1], coords_4frames_pred[:,
+                                                                                             2], coords_4frames_pred[:,
+                                                                                                 3]]
+                    diff_gt[:, :2] = (diff_gt[:, :2] - coords_4frames_pred[:, 2:]) * torch.tensor(self.pillar_size[:2])[
+                                                                                     None, :].to(device)
+                    diff_gt[diff_gt[:, -1] == 0] = 0
 
-                    speed_map_compressed = torch.concat([speed_map[:,:,:,:,:2],speed_map[:,:,:,:,-1:]],dim=-1)
+                    speed_map_compressed = torch.concat([speed_map[:, :, :, :, :2], speed_map[:, :, :, :, -1:]], dim=-1)
                     speed_map_compressed_inds = (speed_map_compressed[:, :, :, :, -1] > 0).sum(dim=1)
                     coords_pred = pred_dict['coords_pred'].long()
                     # speed_map_compressed_mask = speed_map_compressed_inds > 0
@@ -535,30 +539,31 @@ class CenterSpeedHead(nn.Module):
                         [temp, speed_map_compressed[:, :, :, :, -1].max(dim=1)[0].unsqueeze(-1)], dim=-1)
                     train_data = speed_map_compressed[coords_pred[:, 0], coords_pred[:, 1], coords_pred[:, 2]]
 
-
                     is_gt_label = (train_data[:, -1] > 0)
                     is_moving_label = torch.sqrt((train_data[:, :2] ** 2).sum(-1)) > 0.5
                     is_medium_label = (torch.sqrt((train_data[:, :2] ** 2).sum(-1)) <= 0.5) * (
-                                torch.sqrt((train_data[:, :2] ** 2).sum(-1)) >= 0.2)
+                            torch.sqrt((train_data[:, :2] ** 2).sum(-1)) >= 0.2)
                     is_static_label = (torch.sqrt((train_data[:, :2] ** 2).sum(-1)) < 0.2) * is_gt_label
 
                     is_train_mask_list = []
                     is_train_diff_list = []
                     for b in range(B):
                         batch_mask = coords_pred[:, 0] == b
-                        batch_diff_mask = coords_4frames_pred[:,0]==b
+                        batch_diff_mask = coords_4frames_pred[:, 0] == b
                         # is_train_mask[batch_mask] = self.count_train_mask(train_data[batch_mask][:, -1])
-                        is_train_mask_list.append(self.count_train_mask(train_data[batch_mask][:, -1],5,get_negetive=True))
-                        is_train_diff_list.append(self.count_train_mask(diff_gt[batch_diff_mask][:,-1],20,get_negetive=False))
-                    is_train_diff_mask = torch.concat(is_train_diff_list,dim=-1)
+                        is_train_mask_list.append(
+                            self.count_train_mask(train_data[batch_mask][:, -1], 5, get_negetive=True))
+                        is_train_diff_list.append(
+                            self.count_train_mask(diff_gt[batch_diff_mask][:, -1], 20, get_negetive=False))
+                    is_train_diff_mask = torch.concat(is_train_diff_list, dim=-1)
                     is_train_mask = torch.concat(is_train_mask_list, dim=-1)
                     speed_pred = pred_dict['speed_pred']
                     is_gt_pred = pred_dict['is_gt_pred']
                     is_moving_pred = pred_dict['is_moving_pred']
                     diff_pred = pred_dict['diff_pred']
 
-                    diff_loss = self.speed_loss_func(diff_pred[is_train_diff_mask],diff_gt[:,:2][is_train_diff_mask])
-                    gt_loss = self.speed_cls_loss_func(is_gt_pred[is_train_mask].squeeze(),
+                    diff_loss = self.speed_loss_func(diff_pred[is_train_diff_mask], diff_gt[:, :2][is_train_diff_mask])
+                    is_gt_loss = self.speed_cls_loss_func(is_gt_pred[is_train_mask].squeeze(),
                                                        is_gt_label[is_train_mask].float())
 
                     spatial_gt_loss = self.spatial_consistency_loss(is_gt_pred[is_train_mask],
@@ -566,7 +571,7 @@ class CenterSpeedHead(nn.Module):
                                                                     coords_pred[:, 0][is_train_mask])
                     is_moving_train_label = is_moving_label.float()
                     is_moving_train_label[is_medium_label] = (torch.sqrt(
-                        (train_data[:,:2][is_medium_label] ** 2).sum(-1)) - 0.2) / (0.3+0.0001)
+                        (train_data[:, :2][is_medium_label] ** 2).sum(-1)) - 0.2) / (0.3)
                     is_moving_loss = self.speed_cls_loss_func(
                         is_moving_pred[is_train_mask * is_gt_label].squeeze(),
                         is_moving_train_label[is_train_mask * is_gt_label])
@@ -601,22 +606,23 @@ class CenterSpeedHead(nn.Module):
 
                     loss += speed_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['speed_weight']
                     loss += is_moving_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['is_moving_weight']
-                    loss += gt_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['is_gt_weight']
+                    loss += is_gt_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['is_gt_weight']
                     loss += spatial_gt_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['spatial_gt_weight']
                     loss += spatial_speed_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['spatial_speed_weight']
                     loss += diff_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['diff_weight']
-                    tb_dict['speed_loss'] = speed_loss.item()
-                    tb_dict['gt_loss'] = gt_loss.item()
-                    tb_dict['moving_loss'] = is_moving_loss.item()
-                    tb_dict['spatial_gt_loss'] = spatial_gt_loss.item()
-                    tb_dict['spatial_speed_loss'] = spatial_speed_loss.item()
-                    tb_dict['diff_loss'] = diff_loss
+
+                    loss_list = ['speed', 'is_moving', 'is_gt',
+                                 'spatial_gt', 'spatial_speed','diff']
+                    for loss_name in loss_list:
+                        if self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS[loss_name+'_weight']>0:
+                            tb_dict[loss_name] =eval(loss_name+'_loss').item()
+
                     # tb_dict['speed_cls_loss'] = speed_cls_loss.item()
                     # tb_dict['speed_temperal_loss'] = speed_temperal_loss.item()
                     print(
                         'moving_ls:{:.4f}   speed_ls:{:.4f}  gt_ls:{:.4f}  spt_gt_ls:{:.4f}  spt_speed_ls:{:.4f}  diff_ls:{:.4f}'.format(
                             is_moving_loss.item(), speed_loss.item(),
-                            gt_loss.item(), spatial_gt_loss.item(), spatial_speed_loss.item(),diff_loss.item()))
+                            is_gt_loss.item(), spatial_gt_loss.item(), spatial_speed_loss.item(), diff_loss.item()))
             # tb_dict['rpn_loss'] = loss.item()
             return loss, tb_dict
 
