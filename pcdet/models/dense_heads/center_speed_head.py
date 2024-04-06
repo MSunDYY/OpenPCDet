@@ -296,7 +296,7 @@ class CenterSpeedHead(nn.Module):
             return ret_dict
 
     def spatial_consistency_loss(self, gt_pred, gt_ind, batch_label):
-        sc_loss = 0
+        sc_loss = torch.tensor([0])
         sc_loss_func = nn.L1Loss()
         B = batch_label.max().item() + 1
         count = 0
