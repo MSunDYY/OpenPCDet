@@ -167,66 +167,90 @@ class SEDLayer(spconv.SparseModule):
         for idx in range(len(down_stride)):
             self.encoder.append(
                 spconv.SparseSequential(
-                    post_act_block(num_features[idx], num_features[idx], kernel_size=(1, 3, 3), stride=1,
-                                   padding=(0, 1, 1), norm_fn=norm_fn, indice_key=f'subm_spa{idx}',
-                                   conv_type='subm'),
-                    post_act_block(num_features[idx], num_features[idx], kernel_size=(3, 1, 1), stride=1,
-                                   padding=(1, 0, 0), norm_fn=norm_fn, indice_key=f'subm_tem{idx}',
-                                   conv_type='subm'),
                     post_act_block(
-                        num_features[idx], num_features[idx + 1], kernel_size=(1, 3, 3),
-                        stride=(1, down_stride[idx], down_stride[idx]), padding=(0, 1, 1),
-                        norm_fn=norm_fn, indice_key=f'spconv_{idx}', conv_type='spconv')))
+                        num_features[idx], num_features[idx], kernel_size=(3, 3, 3),
+                        stride=(1, down_stride[idx], down_stride[idx]), padding=(1, 1, 1),
+                        norm_fn=norm_fn, indice_key=f'spconv_{idx}', conv_type='spconv'),
+                    post_act_block(num_features[idx], num_features[idx + 1], kernel_size=(3, 3, 3), stride=1,
+                                   padding=(1, 1, 1), norm_fn=norm_fn, indice_key=f'subm_spa{idx}',
+                                   conv_type='subm'), ))
+            # post_act_block(num_features[idx], num_features[idx], kernel_size=(3, 1, 1), stride=1,
+            #                padding=(1, 0, 0), norm_fn=norm_fn, indice_key=f'subm_tem{idx}',
+            #                conv_type='subm'),
+
             # self.max_pool.append(spconv.SparseMaxPool3d(kernel_size=(5,1,1),stride=(2,1,1),padding=(1,0,0),indice_key=f'max_pool_{idx}'))
         downsample_times = len(down_stride)
         self.decoder = nn.ModuleList()
         self.decoder_norm = nn.ModuleList()
         self.conv2d = nn.ModuleList()
+        self.tranconv = nn.ModuleList()
+
         for idx, kernel_size in enumerate(down_kernel_size):
             self.decoder.append(
                 spconv.SparseSequential(
-                    spconv.SparseConvTranspose3d(in_channels=num_features[-idx - 1],
-                                                 out_channels=num_features[-idx - 2],
-                                                 kernel_size=(1, 3, 3), padding=(0, 1, 1), stride=(1, 2, 2)),
-                    norm_fn(num_features[-idx - 2]),
-                    nn.ReLU()
+
+                    post_act_block(num_features[-idx - 1], num_features[-idx - 1], kernel_size=(3, 3, 3),
+                                   stride=(1, 1, 1), padding=(0, 1, 1), norm_fn=norm_fn, indice_key=f'tem_down_{idx}',
+                                   conv_type='spconv'),
+                    post_act_block(num_features[-idx - 1], num_features[-idx - 1], kernel_size=(3, 3, 3),
+                                   norm_fn=norm_fn, stride=(2, 1, 1), padding=1, conv_type='spconv',
+                                   indice_key=f'tem_flatten_{idx}')
                 )
 
             )
+            self.tranconv.append(spconv.SparseSequential(
+                spconv.SparseConvTranspose3d(num_features[-idx - 1], num_features[-idx - 2], kernel_size=(1, 3, 3),
+                                             stride=(1, 2, 2), padding=(0, 1, 1))
+            ))
             self.conv2d.append(spconv.SparseSequential(
                 spconv.SubMConv3d(in_channels=num_features[-idx - 2] * 2, out_channels=num_features[-idx - 2], stride=1,
                                   kernel_size=(1, 3, 3), padding=(0, 1, 1)),
                 norm_fn(num_features[-idx - 2]),
                 nn.ReLU()
             ))
-            self.decoder_norm.append(norm_fn(dim))
+            self.decoder_norm.append(norm_fn(num_features[-idx - 2]))
             # self.pool.append(
             #     spconv.SparseMaxPool3d(kernel_size=3, stride=1, padding=1, indice_key=f'{indice_key}_pool_{downsample_times-idx}'))
             # self.pool_inv.append(
             #     spconv.SparseInverseConv3d(dim, dim, 3, indice_key = f'{indice_key}_pool_{downsample_times-idx}',bias=False)
             # )
+        self.decoder.append(
+            spconv.SparseSequential(
+
+                post_act_block(num_features[0], num_features[0], kernel_size=(3, 3, 3), stride=(1, 1, 1),
+                               padding=(0, 1, 1), norm_fn=norm_fn, indice_key=f'tem_down_{idx + 1}',
+                               conv_type='spconv'),
+                post_act_block(num_features[0], num_features[0], kernel_size=(3, 3, 3), norm_fn=norm_fn,
+                               stride=(2, 1, 1), padding=1, conv_type='spconv', indice_key=f'tem_flatten_{idx + 1}')
+            )
+        )
 
     def forward(self, x):
-        features = [self.max_pool(x)]
+        features = [x]
 
         for idx, conv in enumerate(self.encoder):
             x = conv(x)
 
-            features.append(self.max_pool(x))
+            features.append(x)
 
         #
 
         x = features[-1]
-        for deconv, conv2d, norm, up_x in zip(self.decoder, self.conv2d, self.decoder_norm, features[:-1][::-1]):
-            x = deconv(x)
+        x = self.decoder[0](x)
+        for idx in range(len(self.decoder) - 1):
+            # for deconv, conv2d, norm, up_x in zip(self.decoder, self.conv2d, self.decoder_norm, features[:-1][::-1]):
 
+            up_x = features[-idx - 2]
+            up_x = self.decoder[idx + 1](up_x)
             index = up_x.indices.long()
 
-            x = replace_feature(up_x, torch.concat(
-                [x.dense().permute(0, 2, 4, 3, 1)[index[:, 0], index[:, 1], index[:, 2], index[:, 3]], up_x.features],
-                dim=-1))
+            x = self.tranconv[idx](x)
+            x = replace_feature(up_x,
+                                self.decoder_norm[idx](x.dense().permute(0, 2, 4, 3, 1)[
+                                                           index[:, 0], index[:, 1], index[:, 2], index[:,
+                                                                                                  3]] + up_x.features))
 
-            x = conv2d(x)
+            # x = self.conv2d[idx](x)
 
             # up_x = replace_feature(x, norm(x.features))
             # idx+=1
@@ -279,40 +303,36 @@ class TemperalDownConv(spconv.SparseModule):
             bias = norm_fn is not None
 
         self.conv1 = spconv.SparseSequential(
-            post_act_block(inplanes, planes, kernel_size=(1, 3, 3),stride=(1,2,2), norm_fn=norm_fn, padding=(0,1,1), indice_key='spconv1',
+            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), stride=(1, 2, 2), norm_fn=norm_fn,
+                           padding=(0, 1, 1), indice_key='spconv1',
                            conv_type='spconv'),
-            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), stride=(1,2,2),norm_fn=norm_fn, padding=(0, 1, 1),
+            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), stride=(1, 2, 2), norm_fn=norm_fn,
+                           padding=(0, 1, 1),
                            indice_key='spconv2',
                            conv_type='spconv'),
 
-            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), stride=(1,2,2),norm_fn=norm_fn, padding=(0, 1, 1),
+            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), stride=(1, 2, 2), norm_fn=norm_fn,
+                           padding=(0, 1, 1),
                            indice_key='spconv2',
                            conv_type='inverseconv'),
-            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), stride=(1,2,2),norm_fn=norm_fn, padding=(0, 1, 1),
+            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), stride=(1, 2, 2), norm_fn=norm_fn,
+                           padding=(0, 1, 1),
                            indice_key='spconv1',
                            conv_type='inverseconv'),
             # SparseBasicBlock(planes,planes,norm_fn=norm_fn,indice_key='stem'),
             # SparseBasicBlock(planes, planes, norm_fn=norm_fn, indice_key='stem'),
         )
 
-        self.conv2 = spconv.SparseSequential(
-            post_act_block(inplanes, planes, kernel_size=(1, 3, 3),stride=(1,2,2), norm_fn=norm_fn, padding=(0,1,1), indice_key='subm1',
-                           conv_type='subm'),
-            post_act_block(inplanes, planes, kernel_size=(1, 3, 3), stride=(1,2,2),norm_fn=norm_fn, padding=(0, 1, 1),
-                           indice_key='subm1',
-                           conv_type='subm'),
-            )
-
+        self.max_pool = spconv.SparseMaxPool3d(kernel_size=(5, 1, 1), stride=(3, 1, 1), padding=(1,0,0))
 
         self.diff = spconv.SparseSequential(
 
             post_act_block(planes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=(0, 1, 1),
                            indice_key='subm1', conv_type='subm'),
-            spconv.SparseAvgPool3d(kernel_size=(1,3,3),stride=(1,1,1),padding=(0,1,1),indice_key='avgpool'),
-            post_act_block(inplanes,inplanes,norm_fn=norm_fn,kernel_size=(1,3,3),stride=(1,1,1),padding=(0,0,0),indice_key='avgpool',conv_type='inverseconv'),
-        spconv.SparseConv3d(in_channels=planes, out_channels=2, kernel_size=(1,1,1), stride=1, padding=0))
-
-        
+            spconv.SparseAvgPool3d(kernel_size=(1, 3, 3), stride=(1, 1, 1), padding=(0, 1, 1), indice_key='avgpool'),
+            post_act_block(inplanes, inplanes, norm_fn=norm_fn, kernel_size=(1, 3, 3), stride=(1, 1, 1),
+                           padding=(0, 0, 0), indice_key='avgpool', conv_type='inverseconv'),
+            spconv.SparseConv3d(in_channels=planes, out_channels=2, kernel_size=(1, 1, 1), stride=1, padding=0))
 
         self.sed_layers = nn.ModuleList()
         for i in range(1):
@@ -333,18 +353,20 @@ class TemperalDownConv(spconv.SparseModule):
 
     def forward(self, x):
 
-        x_expanded = self.conv1(x)
-        x = self.conv2(x)
-        x_augument = replace_feature(x,x.features+x_expanded.features)
-        x = replace_feature(x,x_expanded.features-x.features)
+        x = self.conv1(x)
+        temp = self.max_pool(x)
+        indices = temp.indices.long()
+        # x = replace_feature(x,x_expanded.features-x.features)
 
-        diff = self.diff(x)
+        # diff = self.diff(x)
         for conv in self.sed_layers:
             x = conv(x)
 
         # x = self.conv_out(x)
 
-        return x,diff
+        x = spconv.SparseConvTensor(features=x.dense().permute(0,2,3,4,1)[indices[:, 0], indices[:, 1], indices[:, 2], indices[:, 3]],
+                                    indices=temp.indices, spatial_shape=x.spatial_shape, batch_size=x.batch_size)
+        return x
 
 
 class PFNLayer(nn.Module):
@@ -794,7 +816,7 @@ class SpeedSampler(nn.Module):
             batch_size=B
         )
 
-        sp_feature,diff = self.sp_conv(input_sp_tensor)
+        sp_feature = self.sp_conv(input_sp_tensor)
         # sp_feature = self.compressed_conv(sp_features_list)
         # sp_feature = self.max_pool(sp_features_list)
 
@@ -817,7 +839,7 @@ class SpeedSampler(nn.Module):
         is_moving_pred = self.is_moving(sp_feature)
         velocity_pred = self.regression(sp_feature)
         if not train_box:
-            batch_dict['diff_pred'] = diff.features
+            # batch_dict['diff_pred'] = diff.features
             batch_dict['is_gt_pred'] = is_gt_pred.features
             batch_dict['speed_pred'] = velocity_pred.features
             batch_dict['is_moving_pred'] = is_moving_pred.features

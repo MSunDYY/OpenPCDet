@@ -516,14 +516,14 @@ class CenterSpeedHead(nn.Module):
                     speed_map = speed_map.reshape((B, FRAME, speed_map.shape[1], speed_map.shape[2], -1))
 
                     diff_map = speed_map[:, :, :, :, 2:]
-                    diff_pred = pred_dict['diff_pred']
-                    coords_4frames_pred = pred_dict['coords_4frames_pred'].long()
-                    diff_gt = diff_map[coords_4frames_pred[:, 0], coords_4frames_pred[:, 1], coords_4frames_pred[:,
+                    if 'diff_pred' in pred_dict:
+                        diff_pred = pred_dict['diff_pred']
+                        coords_4frames_pred = pred_dict['coords_4frames_pred'].long()
+                        diff_gt = diff_map[coords_4frames_pred[:, 0], coords_4frames_pred[:, 1], coords_4frames_pred[:,
                                                                                              2], coords_4frames_pred[:,
                                                                                                  3]]
-                    diff_gt[:, :2] = (diff_gt[:, :2] - coords_4frames_pred[:, 2:]) * torch.tensor(self.pillar_size[:2])[
-                                                                                     None, :].to(device)
-                    diff_gt[diff_gt[:, -1] == 0] = 0
+                        diff_gt[:, :2] = (diff_gt[:, :2] - coords_4frames_pred[:, 2:]) * torch.tensor(self.pillar_size[:2])[                                                             None, :].to(device)
+                        diff_gt[diff_gt[:, -1] == 0] = 0
 
                     speed_map_compressed = torch.concat([speed_map[:, :, :, :, :2], speed_map[:, :, :, :, -1:]], dim=-1)
                     speed_map_compressed_inds = (speed_map_compressed[:, :, :, :, -1] > 0).sum(dim=1)
@@ -550,20 +550,21 @@ class CenterSpeedHead(nn.Module):
                     is_train_diff_list = []
                     for b in range(B):
                         batch_mask = coords_pred[:, 0] == b
-                        batch_diff_mask = coords_4frames_pred[:, 0] == b
+                        # batch_diff_mask = coords_4frames_pred[:, 0] == b
                         # is_train_mask[batch_mask] = self.count_train_mask(train_data[batch_mask][:, -1])
                         is_train_mask_list.append(
                             self.count_train_mask(train_data[batch_mask][:, -1], 8, get_negetive=True))
-                        is_train_diff_list.append(
-                            self.count_train_mask(diff_gt[batch_diff_mask][:, -1], 30, get_negetive=False))
-                    is_train_diff_mask = torch.concat(is_train_diff_list, dim=-1)
+                    #     is_train_diff_list.append(
+                    #         self.count_train_mask(diff_gt[batch_diff_mask][:, -1], 30, get_negetive=False))
+                    # is_train_diff_mask = torch.concat(is_train_diff_list, dim=-1)
                     is_train_mask = torch.concat(is_train_mask_list, dim=-1)
                     speed_pred = pred_dict['speed_pred']
                     is_gt_pred = pred_dict['is_gt_pred']
                     is_moving_pred = pred_dict['is_moving_pred']
-                    diff_pred = pred_dict['diff_pred']
+                    if 'diff_pred' in pred_dict:
+                        diff_pred = pred_dict['diff_pred']
 
-                    diff_loss = self.speed_loss_func(diff_pred[is_train_diff_mask], diff_gt[:, :2][is_train_diff_mask])
+                        # diff_loss = self.speed_loss_func(diff_pred[is_train_diff_mask], diff_gt[:, :2][is_train_diff_mask])
                     is_gt_loss = self.speed_cls_loss_func(is_gt_pred[is_train_mask].squeeze(),
                                                        is_gt_label[is_train_mask].float())
 
@@ -610,10 +611,10 @@ class CenterSpeedHead(nn.Module):
                     loss += is_gt_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['is_gt_weight']
                     loss += spatial_gt_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['spatial_gt_weight']
                     loss += spatial_speed_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['spatial_speed_weight']
-                    loss += diff_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['diff_weight']
+                    # loss += diff_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['diff_weight']
 
                     loss_list = ['speed', 'is_moving', 'is_gt',
-                                 'spatial_gt', 'spatial_speed','diff']
+                                 'spatial_gt', 'spatial_speed']
                     for loss_name in loss_list:
                         if self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS[loss_name+'_weight']>0:
                             tb_dict[loss_name] =eval(loss_name+'_loss').item()

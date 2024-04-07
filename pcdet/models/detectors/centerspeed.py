@@ -76,8 +76,9 @@ class CenterSpeed(Detector3DTemplate):
                 pred_dict['speed_pred'] = batch_dict['speed_pred']
                 pred_dict['is_moving_pred'] = batch_dict['is_moving_pred']
                 pred_dict['coords_pred'] = batch_dict['coords_pred']
-                pred_dict['diff_pred'] = batch_dict['diff_pred']
-                pred_dict['coords_4frames_pred'] = batch_dict['coords_4frames_pred']
+                if 'diff_pred' in batch_dict:
+                    pred_dict['diff_pred'] = batch_dict['diff_pred']
+                    pred_dict['coords_4frames_pred'] = batch_dict['coords_4frames_pred']
 
 
         if self.training:
