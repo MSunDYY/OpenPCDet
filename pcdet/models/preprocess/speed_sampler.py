@@ -168,10 +168,10 @@ class SEDLayer(spconv.SparseModule):
             self.encoder.append(
                 spconv.SparseSequential(
                     post_act_block(
-                        num_features[idx], num_features[idx], kernel_size=(3, 3, 3),
+                        num_features[idx], num_features[idx+1], kernel_size=(3, 3, 3),
                         stride=(1, down_stride[idx], down_stride[idx]), padding=(1, 1, 1),
                         norm_fn=norm_fn, indice_key=f'spconv_{idx}', conv_type='spconv'),
-                    post_act_block(num_features[idx], num_features[idx + 1], kernel_size=(3, 3, 3), stride=1,
+                    post_act_block(num_features[idx+1], num_features[idx + 1], kernel_size=(3, 3, 3), stride=1,
                                    padding=(1, 1, 1), norm_fn=norm_fn, indice_key=f'subm_spa{idx}',
                                    conv_type='subm'), ))
             # post_act_block(num_features[idx], num_features[idx], kernel_size=(3, 1, 1), stride=1,
@@ -200,7 +200,9 @@ class SEDLayer(spconv.SparseModule):
             )
             self.tranconv.append(spconv.SparseSequential(
                 spconv.SparseConvTranspose3d(num_features[-idx - 1], num_features[-idx - 2], kernel_size=(1, 3, 3),
-                                             stride=(1, 2, 2), padding=(0, 1, 1))
+                                             stride=(1, 2, 2), padding=(0, 1, 1)),
+                norm_fn(num_features[-idx-2]),
+                nn.ReLU()
             ))
             self.conv2d.append(spconv.SparseSequential(
                 spconv.SubMConv3d(in_channels=num_features[-idx - 2] * 2, out_channels=num_features[-idx - 2], stride=1,
@@ -246,7 +248,7 @@ class SEDLayer(spconv.SparseModule):
 
             x = self.tranconv[idx](x)
             x = replace_feature(up_x,
-                                self.decoder_norm[idx](x.dense().permute(0, 2, 4, 3, 1)[
+                                self.decoder_norm[idx](x.dense().permute(0, 2, 3, 4, 1)[
                                                            index[:, 0], index[:, 1], index[:, 2], index[:,
                                                                                                   3]] + up_x.features))
 
