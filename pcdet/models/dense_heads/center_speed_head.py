@@ -305,10 +305,13 @@ class CenterSpeedHead(nn.Module):
             gt_pred_single_batch = gt_pred[batch_label == b]
             gt_label_single_batch = gt_ind[batch_label == b]
             ind_single_batch = torch.unique(gt_ind[batch_label == b])
-            for n in ind_single_batch:  # 0 denotes bg
+            for n in ind_single_batch:
+                if n==0:
+                    continue# 0 denotes bg
+                gt_pred_ = gt_pred_single_batch[gt_label_single_batch==n]
 
-                sc_loss += torch.std(gt_pred_single_batch[gt_label_single_batch == n], dim=0) if (
-                                                                                                         gt_label_single_batch == n).sum().item() != 1 else 0
+
+                sc_loss += (gt_pred_-torch.mean(gt_pred_)).abs().mean()
             count += ind_single_batch.shape[0]
         return sc_loss.sum() / (count * gt_pred_single_batch.shape[1])
 

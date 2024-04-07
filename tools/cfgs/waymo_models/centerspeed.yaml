@@ -186,8 +186,8 @@ MODEL:
                 'is_gt_weight': 0,
                 'is_moving_weight': 1.0,
                 'spatial_gt_weight': 0,
-                'spatial_speed_weight': 0,
-                'diff_weight': 0.5
+                'spatial_speed_weight': 1.0,
+                'diff_weight': 0
             }
             BASE_LOSS_NUM: 30
             SPEED_THRESHOLD: 0.8
