@@ -42,7 +42,7 @@ class CenterSpeed(Detector3DTemplate):
             # self.dataset.point_feature_encoder.num_point_features = 8
             for param in self.module_list[0].parameters():
                 param.requires_grad = False
-
+            self.dataset.dataset_cfg.CONCAT=True
             # dataset.dataset_cfg['SEQUENCE_CONFIG'].ENABLED = False
             if dataset.training:
                 dataset.dataset_cfg.DATA_AUGMENTOR.AUG_CONFIG_LIST[0].NUM_POINT_FEATURES -= 1

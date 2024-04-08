@@ -476,6 +476,8 @@ class DataBaseSampler(object):
         gt_names = data_dict['gt_names'].astype(str)
         if gt_boxes.shape[1]==10:
             existed_boxes = gt_boxes[:,:9]
+        else:
+            existed_boxes = gt_boxes
         total_valid_sampled_dict = []
         sampled_mv_height = []
         sampled_gt_boxes2d = []
