@@ -450,7 +450,10 @@ class DataBaseSampler(object):
         points = box_utils.remove_points_in_boxes3d(points, large_sampled_gt_boxes)
         points = np.concatenate([obj_points[:, :points.shape[-1]], points], axis=0)
         gt_names = np.concatenate([gt_names, sampled_gt_names], axis=0)
-        gt_boxes = np.concatenate([gt_boxes, sampled_gt_boxes], axis=0)
+        if gt_boxes.shape[1]==10:
+            gt_boxes = np.concatenate([gt_boxes[:,:9], sampled_gt_boxes], axis=0)
+        else:
+            gt_boxes = np.concatenate([gt_boxes, sampled_gt_boxes], axis=0)
         data_dict['gt_boxes'] = gt_boxes
         data_dict['gt_names'] = gt_names
         data_dict['points'] = points
@@ -471,7 +474,8 @@ class DataBaseSampler(object):
         """
         gt_boxes = data_dict['gt_boxes']
         gt_names = data_dict['gt_names'].astype(str)
-        existed_boxes = gt_boxes
+        if gt_boxes.shape[1]==10:
+            existed_boxes = gt_boxes[:,:9]
         total_valid_sampled_dict = []
         sampled_mv_height = []
         sampled_gt_boxes2d = []

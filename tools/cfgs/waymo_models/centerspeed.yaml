@@ -17,8 +17,8 @@ DATA_CONFIG:
 
     POINT_FEATURE_ENCODING: {
         encoding_type: absolute_coordinates_encoding,
-        used_feature_list: [ 'x', 'y', 'z', 'intensity', 'elongation' ],
-        src_feature_list: [ 'x', 'y', 'z', 'intensity', 'elongation' ],
+        used_feature_list: [ 'x', 'y', 'z', 'intensity', 'elongation','timestamp','velocity_x','velocity_y' ],
+        src_feature_list: [ 'x', 'y', 'z', 'intensity', 'elongation' ,'timestamp','velocity_x','velocity_y'],
     }
 
     DATA_AUGMENTOR:
@@ -31,7 +31,7 @@ DATA_CONFIG:
 
               USE_SHARED_MEMORY: True  # set it to True to speed up (it costs about 50GB? shared memory)
               DB_DATA_PATH:
-                  - waymo_processed_data_v0_5_0_gt_database_train_sampled_1_global.npy
+                  - waymo_processed_data_v0_5_0_gt_database_train_sampled_1_multiframe_-4_to_0_global.npy
 
               PREPARE: {
                   filter_by_min_points: [ 'Vehicle:5', 'Pedestrian:5', 'Cyclist:5' ],
@@ -69,16 +69,18 @@ DATA_CONFIG:
               'train': True,
               'test': True
           }
+        - NAME: transform_points_to_voxels_placeholder
+          VOXEL_SIZE: [0.1,0.1,0.15]
 
-        - NAME: transform_points_to_voxels
-          VOXEL_SIZE: [ 0.1, 0.1, 0.15 ]
-          MAX_POINTS_PER_VOXEL: 5
-          MAX_NUMBER_OF_VOXELS: {
-              'train': 150000,
-              'test': 150000
-          }
-          CONCAT: False
-          GET_FLOW_VOXELS: 0.2
+#        - NAME: transform_points_to_voxels
+#          VOXEL_SIZE: [ 0.1, 0.1, 0.15 ]
+#          MAX_POINTS_PER_VOXEL: 5
+#          MAX_NUMBER_OF_VOXELS: {
+#              'train': 150000,
+#              'test': 150000
+#          }
+#          CONCAT: False
+#          GET_FLOW_VOXELS: 0.2
 #
 #        - NAME: transform_points_to_pillars
 #          PILLAR_SIZE: [ 0.2, 0.2, 6 ]
@@ -130,9 +132,9 @@ MODEL:
             'test': 0
           }
           NUM_FRAMES: 4
-
     VFE:
-        NAME: MeanVFE
+        NAME:  MeanVFE
+
 
     BACKBONE_3D:
         NAME: VoxelResBackBone8x
@@ -153,7 +155,7 @@ MODEL:
     DENSE_HEAD:
         NAME: CenterSpeedHead
         CLASS_AGNOSTIC: False
-        TRAIN_BOX: False
+        TRAIN_BOX: True
         BALANCE_SPEED: True
         CLASS_NAMES_EACH_HEAD: [
             ['Vehicle', 'Pedestrian', 'Cyclist']

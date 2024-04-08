@@ -448,8 +448,9 @@ class SpeedSampler(nn.Module):
         self.ckpt = model_cfg.get('CKPT', None)
         self.stride = model_cfg.STRIDE
         self.num_point_features = num_point_features
-        self.voxel_size = [voxel_size[i] * self.stride[i] for i in range(3)]
-        self.grid_size = [round(grid_size[i] / self.stride[i]) for i in range(3)]
+        self.voxel_size = voxel_size
+        # self.voxel_size = [voxel_size[i] * self.stride[i] for i in range(3)]
+        # self.grid_size = [round(grid_size[i] / self.stride[i]) for i in range(3)]
         self.pillar_size = np.array(model_cfg.pillar_size)
         self.pillar_spatial_size = [round((point_cloud_range[3 + i] - point_cloud_range[i]) / model_cfg.pillar_size[i])
                                     for i in range(2)]
@@ -477,6 +478,14 @@ class SpeedSampler(nn.Module):
             max_num_points_per_voxel=model_cfg.transform_points_to_pillars.MAX_POINTS_PER_PILLAR,
             device=device
         )
+        self.gen_voxel = PointToVoxel(
+            vsize_xyz= voxel_size,
+            coors_range_xyz=point_cloud_range,
+            num_point_features=6+2,max_num_voxels=150000,
+            max_num_points_per_voxel = 5,
+            device=device
+        )
+
         norm_fn = partial(nn.BatchNorm1d, momentum=0.01, eps=1e-3)
         self.sp_conv = TemperalDownConv(self.num_out_voxel_features, 32, stride=[2, 2],
                                         norm_fn=norm_fn,
@@ -737,7 +746,7 @@ class SpeedSampler(nn.Module):
         # num_points = batch_dict['num_points_all'].int()
 
         frame_num = batch_dict['num_points_all'].shape[1]
-
+        # frame_num = batch_dict['']
         # voxel_generator = VoxelGeneratorWrapper(
         #     vsize_xyz=self.voxel_size,
         #     coors_range_xyz=self.point_cloud_range,
@@ -853,10 +862,20 @@ class SpeedSampler(nn.Module):
             #     [batch_dict['voxel_coords'][:, :1] * frame_num + batch_dict['voxel_coords'][:, 1:2],
             #      batch_dict['voxel_coords'][:, 2:]], dim=-1)
         else:
+
+            self.gen_voxel_full = PointToVoxel(
+                vsize_xyz=[1]+self.voxel_size,
+                coors_range_xyz=np.concatenate([np.array([0]),self.point_cloud_range[:3],np.array([B]),self.point_cloud_range[3:]],axis=0),
+                num_point_features=6 + 3, max_num_voxels=150000,
+                max_num_points_per_voxel=5,
+                device=device
+            )
             points = batch_dict['points']
-            is_gt_pred = is_gt_pred.dense().reshape(B, H, W)
-            is_gt_pred = self.sigmoid(is_gt_pred) > 0.3
-            is_moving_pred = self.sigmoid(is_moving_pred.dense().reshape(B, H, W)) > 0.3
+            is_gt_pred = replace_feature(is_gt_pred,self.sigmoid(is_gt_pred.features))
+            is_gt_pred = is_gt_pred.dense().reshape(B, H, W)>0.3
+            is_moving_pred = replace_feature(is_moving_pred,self.sigmoid(is_moving_pred.features))
+            is_moving_pred = is_moving_pred.dense().reshape(B,H,W)>0.5
+
             velocity_pred = velocity_pred.dense().reshape(B, H, W, -1)
             points_coords = torch.concat([points[:, 0:1], (points[:, 1:2] - self.point_cloud_range[0]) / self.pillar_x,
                                           points[:, 2:3] - self.point_cloud_range[1] / self.pillar_y], dim=-1).long()
@@ -867,6 +886,25 @@ class SpeedSampler(nn.Module):
             is_moving_pred = is_moving_pred[points_coords[:, 0], points_coords[:, 1], points_coords[:, 2]]
             velocity_pred = velocity_pred[points_coords[:, 0], points_coords[:, 1], points_coords[:, 2]]
             points[:, 1:3][is_moving_pred] += velocity_pred[is_moving_pred] * points[is_moving_pred][:, -1][:, None]
+            points = torch.concat([points,velocity_pred],dim=-1)
+
+
+
+
+                # voxels,voxel_coords,voxel_num_points = self.gen_voxel(points_single_batch)
+            voxels_full,voxel_coords_full,voxel_num_points_full = self.gen_voxel_full(points)
+            voxels_full = voxels_full[:,:,1:]
+            voxel_coords_full = torch.concat([voxel_coords_full[:,-1:],voxel_coords_full[:,:3]],dim=-1)
+                # voxels = torch.concat([torch.full((voxels.shape[0],1),b).to(device),voxels],dim=-1)
+
+                # voxels_list.append(voxels)
+                # voxel_coordinates_list.append(voxel_coords)
+                # voxel_num_points_list.append(voxel_num_points)
+
+            batch_dict['voxels'] = voxels_full
+            batch_dict['voxel_coords'] = voxel_coords_full
+            batch_dict['voxel_num_points'] = voxel_num_points_full
+
             batch_dict['points'] = points
 
         return batch_dict

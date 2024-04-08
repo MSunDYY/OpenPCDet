@@ -252,7 +252,6 @@ class CenterSpeedHead(nn.Module):
                     num_max_objs=target_assigner_cfg.NUM_MAX_OBJS,
                     gaussian_overlap=target_assigner_cfg.GAUSSIAN_OVERLAP,
                     min_radius=target_assigner_cfg.MIN_RADIUS,
-
                 )
                 if not self.train_box:
                     # if (bs_idx)%self.F!=0:
@@ -280,17 +279,18 @@ class CenterSpeedHead(nn.Module):
 
                     speed_map_list.append(speed_map.to(gt_boxes_single_head.device))
 
-                    masks_list.append(mask.to(gt_boxes_single_head.device))
-                    target_boxes_src_list.append(ret_boxes_src.to(gt_boxes_single_head.device))
-                    target_boxes_list.append(ret_boxes.to(gt_boxes_single_head.device))
-                    heatmap_list.append(heatmap.to(gt_boxes_single_head.device))
-                    inds_list.append(inds.to(gt_boxes_single_head.device))
+                masks_list.append(mask.to(gt_boxes_single_head.device))
+                target_boxes_src_list.append(ret_boxes_src.to(gt_boxes_single_head.device))
+                target_boxes_list.append(ret_boxes.to(gt_boxes_single_head.device))
+                heatmap_list.append(heatmap.to(gt_boxes_single_head.device))
+                inds_list.append(inds.to(gt_boxes_single_head.device))
 
 
                 ret_dict['heatmaps'].append(torch.stack(heatmap_list, dim=0).to(device))
                 ret_dict['masks'].append(torch.stack(masks_list, dim=0).to(device))
                 ret_dict['inds'].append(torch.stack(inds_list, dim=0).to(device))
                 ret_dict['target_boxes_src'].append(torch.stack(target_boxes_src_list, dim=0).to(device))
+                ret_dict['target_boxes'].append(torch.stack(target_boxes_src_list,dim=0))
             if not self.train_box:
                 ret_dict['speed_map'].append(torch.stack(speed_map_list, dim=0).to(device))
 

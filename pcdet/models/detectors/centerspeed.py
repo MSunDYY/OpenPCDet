@@ -11,6 +11,9 @@ from pcdet.datasets.augmentor.database_sampler import DataBaseSampler
 class CenterSpeed(Detector3DTemplate):
     def __init__(self, model_cfg, num_class, dataset):
         super().__init__(model_cfg=model_cfg, num_class=num_class, dataset=dataset)
+
+
+
         self.model_cfg.DENSE_HEAD.pillar_size = model_cfg.PREPROCESS.transform_points_to_pillars.PILLAR_SIZE
         self.model_cfg.PREPROCESS.pillar_size = model_cfg.PREPROCESS.transform_points_to_pillars.PILLAR_SIZE
         self.module_list = self.build_networks()
@@ -22,12 +25,8 @@ class CenterSpeed(Detector3DTemplate):
             round((self.dataset.point_cloud_range[4] - self.dataset.point_cloud_range[1]) / self.pillar_size[1])]
         memory_max = torch.cuda.get_device_properties(0).total_memory / 1024 / 1024
         self.sigmoid = torch.nn.Sigmoid()
-        # if memory_max > 5000:
-        #     dataset.dataset_cfg.DATA_PROCESSOR[-1].MAX_NUMBER_OF_PILLARS['train'] *= 1000
-        #     dataset.dataset_cfg.DATA_PROCESSOR[-1].MAX_NUMBER_OF_PILLARS['test'] *= 1000
-        if not model_cfg.DENSE_HEAD.TRAIN_BOX:
 
-            
+        if not model_cfg.DENSE_HEAD.TRAIN_BOX:
             if dataset.training:
                 for obj in dataset.data_augmentor.data_augmentor_queue:
                     if isinstance(obj, DataBaseSampler):
@@ -39,30 +38,36 @@ class CenterSpeed(Detector3DTemplate):
                 for obj in dataset.data_processor.data_processor_queue:
                     if obj.keywords['config'].NAME == 'select_trajectory_boxes':
                         dataset.data_processor.data_processor_queue.remove(obj)
-
-
         else:
-
+            # self.dataset.point_feature_encoder.num_point_features = 8
             for param in self.module_list[0].parameters():
-                param.requires_grad=False
+                param.requires_grad = False
 
-            dataset.dataset_cfg['SEQUENCE_CONFIG'].ENABLED = False
+            # dataset.dataset_cfg['SEQUENCE_CONFIG'].ENABLED = False
             if dataset.training:
                 dataset.dataset_cfg.DATA_AUGMENTOR.AUG_CONFIG_LIST[0].NUM_POINT_FEATURES -= 1
 
             dataset.CONCAT = True
-                
+
             for obj in dataset.dataset_cfg.DATA_PROCESSOR:
                 if hasattr(obj, 'CONCAT'):
                     obj.CONCAT = True
+            for obj in dataset.data_processor.data_processor_queue:
+                if obj.keywords['config'].NAME == 'select_trajectory_boxes':
+                    dataset.data_processor.data_processor_queue.remove(obj)
+
+        # if memory_max > 5000:
+        #     dataset.dataset_cfg.DATA_PROCESSOR[-1].MAX_NUMBER_OF_PILLARS['train'] *= 1000
+        #     dataset.dataset_cfg.DATA_PROCESSOR[-1].MAX_NUMBER_OF_PILLARS['test'] *= 1000
+
 
     def forward(self, batch_dict):
 
         if self.train_box:
             with torch.no_grad():
-                batch_dict = self.module_list[0](batch_dict)
+                batch_dict = self.module_list[0](batch_dict,self.train_box)
             for cur_module in self.module_list[1:]:
-                batch_dict = cur_module(batch_dict,self.train_box)
+                batch_dict = cur_module(batch_dict)
         else:
 
             batch_dict = self.module_list[0](batch_dict,self.train_box)
