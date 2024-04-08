@@ -683,7 +683,10 @@ class SpeedSampler(nn.Module):
         #     nn.ReLU(),
         #     nn.Conv1d(in_channels=16, out_channels=2, kernel_size=1)
         # )
-
+    def decode_velocity(self,velocity):
+        velocity[velocity>0] = velocity[velocity>0]**2
+        velocity[velocity<0] = -velocity[velocity<0]**2
+        return velocity
     def get_output_feature_dim(self):
         return self.num_point_features
 
@@ -866,19 +869,20 @@ class SpeedSampler(nn.Module):
             self.gen_voxel_full = PointToVoxel(
                 vsize_xyz=[1]+self.voxel_size,
                 coors_range_xyz=np.concatenate([np.array([-0.5]),self.point_cloud_range[:3],np.array([B-0.5]),self.point_cloud_range[3:]],axis=0),
-                num_point_features=6 + 3, max_num_voxels=150000,
+                num_point_features=6 + 3, max_num_voxels=150000*B,
                 max_num_points_per_voxel=5,
                 device=device
             )
             points = batch_dict['points']
             is_gt_pred = replace_feature(is_gt_pred,self.sigmoid(is_gt_pred.features))
-            is_gt_pred = is_gt_pred.dense().reshape(B, H, W)>0.3
+            is_gt_pred = is_gt_pred.dense().permute(0,2,3,1).squeeze(-1)>0.1
             is_moving_pred = replace_feature(is_moving_pred,self.sigmoid(is_moving_pred.features))
-            is_moving_pred = is_moving_pred.dense().reshape(B,H,W)>0.5
+            is_moving_pred = is_moving_pred.dense().permute(0,2,3,1).squeeze(-1)>0.5
 
-            velocity_pred = velocity_pred.dense().reshape(B, H, W, -1)
+            velocity_pred = velocity_pred.dense().permute(0,2,3,1)
             points_coords = torch.concat([points[:, 0:1], (points[:, 1:2] - self.point_cloud_range[0]) / self.pillar_x,
-                                          points[:, 2:3] - self.point_cloud_range[1] / self.pillar_y], dim=-1).long()
+                                          (points[:, 2:3] - self.point_cloud_range[1]) / self.pillar_y], dim=-1).long()
+            points_coords = torch.clamp((points_coords),min=0,max=H-1)
             points_gt_mask = is_gt_pred[points_coords[:, 0], points_coords[:, 1], points_coords[:, 2]]
             points_gt_mask[points[:, -1] == 0] = True
             try:
@@ -888,6 +892,8 @@ class SpeedSampler(nn.Module):
                 pass
             is_moving_pred = is_moving_pred[points_coords[:, 0], points_coords[:, 1], points_coords[:, 2]]
             velocity_pred = velocity_pred[points_coords[:, 0], points_coords[:, 1], points_coords[:, 2]]
+            velocity_pred = self.decode_velocity(velocity_pred)
+            
             points[:, 1:3][is_moving_pred] += velocity_pred[is_moving_pred] * points[is_moving_pred][:, -1][:, None]
             points = torch.concat([points,velocity_pred],dim=-1)
 
