@@ -168,10 +168,10 @@ class SEDLayer(spconv.SparseModule):
             self.encoder.append(
                 spconv.SparseSequential(
                     post_act_block(
-                        num_features[idx], num_features[idx+1], kernel_size=(3, 3, 3),
+                        num_features[idx], num_features[idx + 1], kernel_size=(3, 3, 3),
                         stride=(1, down_stride[idx], down_stride[idx]), padding=(1, 1, 1),
                         norm_fn=norm_fn, indice_key=f'spconv_{idx}', conv_type='spconv'),
-                    post_act_block(num_features[idx+1], num_features[idx + 1], kernel_size=(3, 3, 3), stride=1,
+                    post_act_block(num_features[idx + 1], num_features[idx + 1], kernel_size=(3, 3, 3), stride=1,
                                    padding=(1, 1, 1), norm_fn=norm_fn, indice_key=f'subm_spa{idx}',
                                    conv_type='subm'), ))
             # post_act_block(num_features[idx], num_features[idx], kernel_size=(3, 1, 1), stride=1,
@@ -201,7 +201,7 @@ class SEDLayer(spconv.SparseModule):
             self.tranconv.append(spconv.SparseSequential(
                 spconv.SparseConvTranspose3d(num_features[-idx - 1], num_features[-idx - 2], kernel_size=(1, 3, 3),
                                              stride=(1, 2, 2), padding=(0, 1, 1)),
-                norm_fn(num_features[-idx-2]),
+                norm_fn(num_features[-idx - 2]),
                 nn.ReLU()
             ))
             self.conv2d.append(spconv.SparseSequential(
@@ -325,7 +325,7 @@ class TemperalDownConv(spconv.SparseModule):
             # SparseBasicBlock(planes, planes, norm_fn=norm_fn, indice_key='stem'),
         )
 
-        self.max_pool = spconv.SparseMaxPool3d(kernel_size=(5, 1, 1), stride=(3, 1, 1), padding=(1,0,0))
+        self.max_pool = spconv.SparseMaxPool3d(kernel_size=(5, 1, 1), stride=(3, 1, 1), padding=(1, 0, 0))
 
         self.diff = spconv.SparseSequential(
 
@@ -366,8 +366,9 @@ class TemperalDownConv(spconv.SparseModule):
 
         # x = self.conv_out(x)
 
-        x = spconv.SparseConvTensor(features=x.dense().permute(0,2,3,4,1)[indices[:, 0], indices[:, 1], indices[:, 2], indices[:, 3]],
-                                    indices=temp.indices, spatial_shape=x.spatial_shape, batch_size=x.batch_size)
+        x = spconv.SparseConvTensor(
+            features=x.dense().permute(0, 2, 3, 4, 1)[indices[:, 0], indices[:, 1], indices[:, 2], indices[:, 3]],
+            indices=temp.indices, spatial_shape=x.spatial_shape, batch_size=x.batch_size)
         return x
 
 
@@ -479,10 +480,10 @@ class SpeedSampler(nn.Module):
             device=device
         )
         self.gen_voxel = PointToVoxel(
-            vsize_xyz= voxel_size,
+            vsize_xyz=voxel_size,
             coors_range_xyz=point_cloud_range,
-            num_point_features=6+2,max_num_voxels=150000,
-            max_num_points_per_voxel = 5,
+            num_point_features=6 + 2, max_num_voxels=150000,
+            max_num_points_per_voxel=5,
             device=device
         )
 
@@ -683,10 +684,12 @@ class SpeedSampler(nn.Module):
         #     nn.ReLU(),
         #     nn.Conv1d(in_channels=16, out_channels=2, kernel_size=1)
         # )
-    def decode_velocity(self,velocity):
-        velocity[velocity>0] = velocity[velocity>0]**2
-        velocity[velocity<0] = -velocity[velocity<0]**2
+
+    def decode_velocity(self, velocity):
+        velocity[velocity > 0] = velocity[velocity > 0] ** 2
+        velocity[velocity < 0] = -velocity[velocity < 0] ** 2
         return velocity
+
     def get_output_feature_dim(self):
         return self.num_point_features
 
@@ -867,48 +870,51 @@ class SpeedSampler(nn.Module):
         else:
 
             self.gen_voxel_full = PointToVoxel(
-                vsize_xyz=[1]+self.voxel_size,
-                coors_range_xyz=np.concatenate([np.array([-0.5]),self.point_cloud_range[:3],np.array([B-0.5]),self.point_cloud_range[3:]],axis=0),
-                num_point_features=6 + (3 if self.model_cfg.TRAIN_WITH_VEL else 1), max_num_voxels=150000*B,
+                vsize_xyz=[1] + self.voxel_size,
+                coors_range_xyz=np.concatenate(
+                    [np.array([-0.5]), self.point_cloud_range[:3], np.array([B - 0.5]), self.point_cloud_range[3:]],
+                    axis=0),
+                num_point_features=6 + (3 if self.model_cfg.TRAIN_WITH_VEL else 1), max_num_voxels=150000 * B,
                 max_num_points_per_voxel=5,
                 device=device
             )
             points = batch_dict['points']
-            is_gt_pred = replace_feature(is_gt_pred,self.sigmoid(is_gt_pred.features))
-            is_gt_pred = is_gt_pred.dense().permute(0,2,3,1).squeeze(-1)>0.1
-            is_moving_pred = replace_feature(is_moving_pred,self.sigmoid(is_moving_pred.features))
-            is_moving_pred = is_moving_pred.dense().permute(0,2,3,1).squeeze(-1)>0.5
+            is_gt_pred = replace_feature(is_gt_pred, self.sigmoid(is_gt_pred.features))
+            is_gt_pred = is_gt_pred.dense().permute(0, 2, 3, 1).squeeze(-1) > 0.1
+            is_moving_pred = replace_feature(is_moving_pred, self.sigmoid(is_moving_pred.features))
+            is_moving_pred = is_moving_pred.dense().permute(0, 2, 3, 1).squeeze(-1) > 0.5
 
-            velocity_pred = velocity_pred.dense().permute(0,2,3,1)
+            velocity_pred = velocity_pred.dense().permute(0, 2, 3, 1)
             points_coords = torch.concat([points[:, 0:1], (points[:, 1:2] - self.point_cloud_range[0]) / self.pillar_x,
                                           (points[:, 2:3] - self.point_cloud_range[1]) / self.pillar_y], dim=-1).long()
-            points_coords = torch.clamp((points_coords),min=0,max=H-1)
+            points_coords = torch.clamp((points_coords), min=0, max=H - 1)
             points_gt_mask = is_gt_pred[points_coords[:, 0], points_coords[:, 1], points_coords[:, 2]]
             points_gt_mask[points[:, -1] == 0] = True
-
+            points_gt_mask[points[:, -1] != 0] = False
             points = points[points_gt_mask]
             points_coords = points_coords[points_gt_mask]
 
             is_moving_pred = is_moving_pred[points_coords[:, 0], points_coords[:, 1], points_coords[:, 2]]
             velocity_pred = velocity_pred[points_coords[:, 0], points_coords[:, 1], points_coords[:, 2]]
             velocity_pred = self.decode_velocity(velocity_pred)
-            
+
             points[:, 1:3][is_moving_pred] += velocity_pred[is_moving_pred] * points[is_moving_pred][:, -1][:, None]
             if self.model_cfg.TRAIN_WITH_VEL:
-                points = torch.concat([points,velocity_pred],dim=-1)
+                points = torch.concat([points, velocity_pred], dim=-1)
 
             if not self.model_cfg.TRAIN_WITH_VEL:
-                batch_dict['gt_boxes'] = torch.concat([batch_dict['gt_boxes'][:,:,:7],batch_dict['gt_boxes'][:,:,-1:]],dim=-1)
+                batch_dict['gt_boxes'] = torch.concat(
+                    [batch_dict['gt_boxes'][:, :, :7], batch_dict['gt_boxes'][:, :, -1:]], dim=-1)
 
                 # voxels,voxel_coords,voxel_num_points = self.gen_voxel(points_single_batch)
-            voxels_full,voxel_coords_full,voxel_num_points_full = self.gen_voxel_full(points)
-            voxels_full = voxels_full[:,:,1:]
-            voxel_coords_full = torch.concat([voxel_coords_full[:,-1:],voxel_coords_full[:,:3]],dim=-1)
-                # voxels = torch.concat([torch.full((voxels.shape[0],1),b).to(device),voxels],dim=-1)
+            voxels_full, voxel_coords_full, voxel_num_points_full = self.gen_voxel_full(points)
+            voxels_full = voxels_full[:, :, 1:]
+            voxel_coords_full = torch.concat([voxel_coords_full[:, -1:], voxel_coords_full[:, :3]], dim=-1)
+            # voxels = torch.concat([torch.full((voxels.shape[0],1),b).to(device),voxels],dim=-1)
 
-                # voxels_list.append(voxels)
-                # voxel_coordinates_list.append(voxel_coords)
-                # voxel_num_points_list.append(voxel_num_points)
+            # voxels_list.append(voxels)
+            # voxel_coordinates_list.append(voxel_coords)
+            # voxel_num_points_list.append(voxel_num_points)
 
             batch_dict['voxels'] = voxels_full
             batch_dict['voxel_coords'] = voxel_coords_full
