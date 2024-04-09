@@ -128,7 +128,8 @@ class CenterSpeedHead(nn.Module):
         Returns:
 
         """
-        heatmap = gt_boxes.new_zeros(num_classes, feature_map_size[0], feature_map_size[1])
+        
+        heatmap = gt_boxes.new_zeros(num_classes, feature_map_size[1], feature_map_size[0])
         ret_boxes = gt_boxes.new_zeros((num_max_objs, gt_boxes.shape[-1] -1+ 1 ))
         inds = gt_boxes.new_zeros(num_max_objs).long()
         mask = gt_boxes.new_zeros(num_max_objs).long()
@@ -152,13 +153,14 @@ class CenterSpeedHead(nn.Module):
         radius = centernet_utils.gaussian_radius(dx, dy, min_overlap=gaussian_overlap)
         radius = torch.clamp_min(radius.int(), min=min_radius)
 
-        boxes = gt_boxes[:, :7].contiguous()
-
-        boxes[:, :2] = (boxes[:, :2] - torch.from_numpy(self.point_cloud_range)[:2]) / torch.tensor(
-            self.pillar_size[:2])[None, :]
-        boxes[:, 3:5] = (boxes[:, 3:5]) / torch.tensor(self.voxel_size[:2])[None, :]
-        boxes[:, 6][boxes[:, 6] < 0] += torch.pi
+        
         if not self.train_box:
+            boxes = gt_boxes[:, :7].contiguous()
+
+            boxes[:, :2] = (boxes[:, :2] - torch.from_numpy(self.point_cloud_range)[:2]) / torch.tensor(
+                self.pillar_size[:2])[None, :]
+            boxes[:, 3:5] = (boxes[:, 3:5]) / torch.tensor(self.voxel_size[:2])[None, :]
+            boxes[:, 6][boxes[:, 6] < 0] += torch.pi
             speed = torch.zeros((gt_boxes.shape[0], 5)).to(device).contiguous()
             speed[:, :2] = gt_boxes[:, 7:9]
             speed[:, 2:4] = boxes[:, :2]
@@ -187,7 +189,7 @@ class CenterSpeedHead(nn.Module):
             cur_class_id = (gt_boxes[k, -1] - 1).long()
             centernet_utils.draw_gaussian_to_heatmap(heatmap[cur_class_id], center[k], radius[k].item())
 
-            inds[k] = center_int[k, 0] * feature_map_size[1] + center_int[k, 1]
+            inds[k] = center_int[k, 1] * feature_map_size[0] + center_int[k, 0]
             mask[k] = 1
 
             ret_boxes[k, 0:2] = center[k] - center_int_float[k].float()
@@ -211,6 +213,7 @@ class CenterSpeedHead(nn.Module):
 
         """
         # [H, W] ==> [x, y]
+        feature_map_size = feature_map_size[::-1]
         target_assigner_cfg = self.model_cfg.TARGET_ASSIGNER_CONFIG
         # feature_map_size = self.grid_size[:2] // target_assigner_cfg.FEATURE_MAP_STRIDE
 
