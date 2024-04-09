@@ -869,7 +869,7 @@ class SpeedSampler(nn.Module):
             self.gen_voxel_full = PointToVoxel(
                 vsize_xyz=[1]+self.voxel_size,
                 coors_range_xyz=np.concatenate([np.array([-0.5]),self.point_cloud_range[:3],np.array([B-0.5]),self.point_cloud_range[3:]],axis=0),
-                num_point_features=6 + 3, max_num_voxels=150000*B,
+                num_point_features=6 + (3 if self.model_cfg.TRAIN_WITH_VEL else 1), max_num_voxels=150000*B,
                 max_num_points_per_voxel=5,
                 device=device
             )
@@ -885,20 +885,20 @@ class SpeedSampler(nn.Module):
             points_coords = torch.clamp((points_coords),min=0,max=H-1)
             points_gt_mask = is_gt_pred[points_coords[:, 0], points_coords[:, 1], points_coords[:, 2]]
             points_gt_mask[points[:, -1] == 0] = True
-            try:
-                points = points[points_gt_mask]
-                points_coords = points_coords[points_gt_mask]
-            except:
-                pass
+
+            points = points[points_gt_mask]
+            points_coords = points_coords[points_gt_mask]
+
             is_moving_pred = is_moving_pred[points_coords[:, 0], points_coords[:, 1], points_coords[:, 2]]
             velocity_pred = velocity_pred[points_coords[:, 0], points_coords[:, 1], points_coords[:, 2]]
             velocity_pred = self.decode_velocity(velocity_pred)
             
             points[:, 1:3][is_moving_pred] += velocity_pred[is_moving_pred] * points[is_moving_pred][:, -1][:, None]
-            points = torch.concat([points,velocity_pred],dim=-1)
+            if self.model_cfg.TRAIN_WITH_VEL:
+                points = torch.concat([points,velocity_pred],dim=-1)
 
-
-
+            if not self.model_cfg.TRAIN_WITH_VEL:
+                batch_dict['gt_boxes'] = torch.concat([batch_dict['gt_boxes'][:,:,:7],batch_dict['gt_boxes'][:,:,-1:]],dim=-1)
 
                 # voxels,voxel_coords,voxel_num_points = self.gen_voxel(points_single_batch)
             voxels_full,voxel_coords_full,voxel_num_points_full = self.gen_voxel_full(points)

@@ -756,7 +756,7 @@ class CenterSpeedHead(nn.Module):
 
             if self.training:
                 target_dict = self.assign_targets(
-                    gt_boxes_new, feature_map_size=[188, 188],
+                    gt_boxes_new, feature_map_size=spatial_features_2d.size()[2:],
                     feature_map_stride=data_dict.get('spatial_features_2d_strides', None)
                 )
                 self.forward_ret_dict['target_dicts'] = target_dict

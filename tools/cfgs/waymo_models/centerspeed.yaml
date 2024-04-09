@@ -17,8 +17,8 @@ DATA_CONFIG:
 
     POINT_FEATURE_ENCODING: {
         encoding_type: absolute_coordinates_encoding,
-        used_feature_list: [ 'x', 'y', 'z', 'intensity', 'elongation','timestamp','velocity_x','velocity_y' ],
-        src_feature_list: [ 'x', 'y', 'z', 'intensity', 'elongation' ,'timestamp','velocity_x','velocity_y'],
+        used_feature_list: [ 'x', 'y', 'z', 'intensity', 'elongation','timestamp'],
+        src_feature_list: [ 'x', 'y', 'z', 'intensity', 'elongation' ,'timestamp'],
     }
 
     DATA_AUGMENTOR:
@@ -111,6 +111,7 @@ MODEL:
         USE_NORM: True
         NUM_FILTERS: [16, 32]
         TRAIN: True
+        TRAIN_WITH_VEL: False
         MAX_POINTS_PER_VOXEL: 2
         MAX_NUMBER_OF_VOXELS: {
             'train': 50000,
@@ -165,13 +166,13 @@ MODEL:
         USE_BIAS_BEFORE_NORM: True
         NUM_HM_CONV: 2
         SEPARATE_HEAD_CFG:
-            HEAD_ORDER: ['center', 'center_z', 'dim', 'rot','vel' ]
+            HEAD_ORDER: ['center', 'center_z', 'dim', 'rot' ]
             HEAD_DICT: {
                 'center': {'out_channels': 2, 'num_conv': 2},
                 'center_z': {'out_channels': 1, 'num_conv': 2},
                 'dim': {'out_channels': 3, 'num_conv': 2},
                 'rot': {'out_channels': 2, 'num_conv': 2},
-                'vel': {'out_channels': 2, 'num_conv': 2}
+#                'vel': {'out_channels': 2, 'num_conv': 2}
             }
 
         TARGET_ASSIGNER_CONFIG:
@@ -184,7 +185,7 @@ MODEL:
             LOSS_WEIGHTS: {
                 'cls_weight': 1.0,
                 'loc_weight': 2.0,
-                'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,1.0,0.2, 0.2],
+                'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,1.0],
                 'speed_weight': 0.5,
                 'is_gt_weight': 0,
                 'is_moving_weight': 1.0,
