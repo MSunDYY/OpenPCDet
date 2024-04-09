@@ -129,7 +129,7 @@ class CenterSpeedHead(nn.Module):
 
         """
         heatmap = gt_boxes.new_zeros(num_classes, feature_map_size[0], feature_map_size[1])
-        ret_boxes = gt_boxes.new_zeros((num_max_objs, gt_boxes.shape[-1] + 1 - (0 if self.train_box else 2)))
+        ret_boxes = gt_boxes.new_zeros((num_max_objs, gt_boxes.shape[-1] -1+ 1 ))
         inds = gt_boxes.new_zeros(num_max_objs).long()
         mask = gt_boxes.new_zeros(num_max_objs).long()
         ret_boxes_src = gt_boxes.new_zeros(num_max_objs, gt_boxes.shape[-1])
@@ -196,7 +196,7 @@ class CenterSpeedHead(nn.Module):
             ret_boxes[k, 6] = torch.cos(gt_boxes[k, 6])
             ret_boxes[k, 7] = torch.sin(gt_boxes[k, 6])
             if ret_boxes.shape[1] > 8:
-                ret_boxes[k, 8:] = gt_boxes[k, -1:]
+                ret_boxes[k, 8:] = gt_boxes[k, 7:-1]
 
         return heatmap, ret_boxes, inds, mask, ret_boxes_src, speed_map
 
@@ -290,7 +290,7 @@ class CenterSpeedHead(nn.Module):
                 ret_dict['masks'].append(torch.stack(masks_list, dim=0).to(device))
                 ret_dict['inds'].append(torch.stack(inds_list, dim=0).to(device))
                 ret_dict['target_boxes_src'].append(torch.stack(target_boxes_src_list, dim=0).to(device))
-                ret_dict['target_boxes'].append(torch.stack(target_boxes_src_list,dim=0))
+                ret_dict['target_boxes'].append(torch.stack(target_boxes_list,dim=0))
             if not self.train_box:
                 ret_dict['speed_map'].append(torch.stack(speed_map_list, dim=0).to(device))
 
@@ -391,7 +391,7 @@ class CenterSpeedHead(nn.Module):
                                        dim=1)
 
                 reg_loss = self.reg_loss_func(
-                    pred_boxes, target_dicts['masks'][idx], target_dicts['inds'][idx], target_boxes[:, :, :8]
+                    pred_boxes, target_dicts['masks'][idx], target_dicts['inds'][idx], target_boxes
                 )
                 loc_loss = (reg_loss * reg_loss.new_tensor(
                     self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['code_weights'])).sum()
