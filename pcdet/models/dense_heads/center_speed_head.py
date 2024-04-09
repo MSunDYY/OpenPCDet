@@ -286,15 +286,15 @@ class CenterSpeedHead(nn.Module):
                 inds_list.append(inds.to(gt_boxes_single_head.device))
 
 
-                ret_dict['heatmaps'].append(torch.stack(heatmap_list, dim=0).to(device))
-                ret_dict['masks'].append(torch.stack(masks_list, dim=0).to(device))
-                ret_dict['inds'].append(torch.stack(inds_list, dim=0).to(device))
-                ret_dict['target_boxes_src'].append(torch.stack(target_boxes_src_list, dim=0).to(device))
-                ret_dict['target_boxes'].append(torch.stack(target_boxes_list,dim=0))
+            ret_dict['heatmaps'].append(torch.stack(heatmap_list, dim=0).to(device))
+            ret_dict['masks'].append(torch.stack(masks_list, dim=0).to(device))
+            ret_dict['inds'].append(torch.stack(inds_list, dim=0).to(device))
+            ret_dict['target_boxes_src'].append(torch.stack(target_boxes_src_list, dim=0).to(device))
+            ret_dict['target_boxes'].append(torch.stack(target_boxes_list,dim=0))
             if not self.train_box:
                 ret_dict['speed_map'].append(torch.stack(speed_map_list, dim=0).to(device))
 
-            return ret_dict
+        return ret_dict
 
     def spatial_consistency_loss(self, gt_pred, gt_ind, batch_label):
         sc_loss = torch.zeros(1, gt_pred.shape[1]).to(device)
