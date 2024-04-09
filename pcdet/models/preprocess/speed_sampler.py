@@ -880,24 +880,24 @@ class SpeedSampler(nn.Module):
             )
             points = batch_dict['points']
             is_gt_pred = replace_feature(is_gt_pred, self.sigmoid(is_gt_pred.features))
-            is_gt_pred = is_gt_pred.dense().permute(0, 2, 3, 1).squeeze(-1) > 0.1
+            is_gt_pred = is_gt_pred.dense().permute(0, 2, 3, 1).squeeze(-1) 
             is_moving_pred = replace_feature(is_moving_pred, self.sigmoid(is_moving_pred.features))
-            is_moving_pred = is_moving_pred.dense().permute(0, 2, 3, 1).squeeze(-1) > 0.5
+            is_moving_pred = is_moving_pred.dense().permute(0, 2, 3, 1).squeeze(-1) 
 
             velocity_pred = velocity_pred.dense().permute(0, 2, 3, 1)
             points_coords = torch.concat([points[:, 0:1], (points[:, 1:2] - self.point_cloud_range[0]) / self.pillar_x,
                                           (points[:, 2:3] - self.point_cloud_range[1]) / self.pillar_y], dim=-1).long()
             points_coords = torch.clamp((points_coords), min=0, max=H - 1)
-            points_gt_mask = is_gt_pred[points_coords[:, 0], points_coords[:, 1], points_coords[:, 2]]
+            points_gt_mask = is_gt_pred[points_coords[:, 0], points_coords[:, 1], points_coords[:, 2]]>0.1
             points_gt_mask[points[:, -1] == 0] = True
-            points_gt_mask[points[:, -1] != 0] = False
+            # points_gt_mask[points[:, -1] != 0] = False
             points = points[points_gt_mask]
             points_coords = points_coords[points_gt_mask]
 
-            is_moving_pred = is_moving_pred[points_coords[:, 0], points_coords[:, 1], points_coords[:, 2]]
+            is_moving_pred = is_moving_pred[points_coords[:, 0], points_coords[:, 1], points_coords[:, 2]]>0.8
             velocity_pred = velocity_pred[points_coords[:, 0], points_coords[:, 1], points_coords[:, 2]]
             velocity_pred = self.decode_velocity(velocity_pred)
-
+            velocity_pred[~is_moving_pred] = 0
             points[:, 1:3][is_moving_pred] += velocity_pred[is_moving_pred] * points[is_moving_pred][:, -1][:, None]
             if self.model_cfg.TRAIN_WITH_VEL:
                 points = torch.concat([points, velocity_pred], dim=-1)
