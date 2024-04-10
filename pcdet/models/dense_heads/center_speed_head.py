@@ -159,9 +159,9 @@ class CenterSpeedHead(nn.Module):
         if not self.train_box:
             boxes = gt_boxes[:, :7].contiguous()
 
-            boxes[:, :2] = (boxes[:, :2] - torch.from_numpy(self.point_cloud_range)[:2]) / torch.tensor(
-                self.pillar_size[:2])[None, :]
-            boxes[:, 3:5] = (boxes[:, 3:5]) / torch.tensor(self.pillar_size[:2])[None, :]
+            boxes[:, :2] = (boxes[:, :2] - torch.from_numpy(self.point_cloud_range)[:2].to(device)) / torch.tensor(
+                self.pillar_size[:2]).to(device)[None, :]
+            boxes[:, 3:5] = (boxes[:, 3:5]) / torch.tensor(self.pillar_size[:2])[None, :].to(device)
             boxes[:, 6][boxes[:, 6] < 0] += torch.pi
             speed = gt_boxes.new_zeros((gt_boxes.shape[0], 5)).contiguous()
             speed[:, :2] = gt_boxes[:, 7:9]
@@ -176,7 +176,7 @@ class CenterSpeedHead(nn.Module):
             # box_coor = boxes[:, :2].long()
             # speed_map[box_coor[:, 0], box_coor[:, 1]] = speed.to(device)
             # if not GPUtil.getGPUs()[0].name.endswith('309'):
-            box2map.box2map_gpu(boxes.to(device), speed_map, speed.to(device))
+            box2map.box2map_gpu(boxes, speed_map, speed)
             # else:
             #     speed_map = speed_map.to('cpu')
             #     box2map.box2map(boxes,speed_map.to('cpu'),speed)
@@ -251,10 +251,10 @@ class CenterSpeedHead(nn.Module):
                 if len(gt_boxes_single_head) == 0:
                     gt_boxes_single_head = cur_gt_boxes[:0, :].to(device)
                 else:
-                    gt_boxes_single_head = torch.cat(gt_boxes_single_head, dim=0).to(device)
+                    gt_boxes_single_head = torch.cat(gt_boxes_single_head, dim=0)
 
                 heatmap, ret_boxes, inds, mask, ret_boxes_src, speed_map = self.assign_target_of_single_head(
-                    num_classes=len(cur_class_names), gt_boxes=gt_boxes_single_head.to('cpu'),
+                    num_classes=len(cur_class_names), gt_boxes=gt_boxes_single_head,
                     feature_map_size=feature_map_size, feature_map_stride=target_assigner_cfg.FEATURE_MAP_STRIDE,
                     num_max_objs=target_assigner_cfg.NUM_MAX_OBJS,
                     gaussian_overlap=target_assigner_cfg.GAUSSIAN_OVERLAP,
@@ -284,13 +284,13 @@ class CenterSpeedHead(nn.Module):
                     #     
                     #     gt_pre[:,-1] = is_gt_mask*gt_cur[:,-1]
 
-                    speed_map_list.append(speed_map.to(gt_boxes_single_head.device))
+                    speed_map_list.append(speed_map)
 
-                masks_list.append(mask.to(gt_boxes_single_head.device))
-                target_boxes_src_list.append(ret_boxes_src.to(gt_boxes_single_head.device))
-                target_boxes_list.append(ret_boxes.to(gt_boxes_single_head.device))
-                heatmap_list.append(heatmap.to(gt_boxes_single_head.device))
-                inds_list.append(inds.to(gt_boxes_single_head.device))
+                masks_list.append(mask)
+                target_boxes_src_list.append(ret_boxes_src)
+                target_boxes_list.append(ret_boxes)
+                heatmap_list.append(heatmap)
+                inds_list.append(inds)
 
 
             ret_dict['heatmaps'].append(torch.stack(heatmap_list, dim=0))
@@ -739,7 +739,7 @@ class CenterSpeedHead(nn.Module):
             num_gt_boxes = torch.tensor([(gt_box[:, -2] == i + 1).sum() for gt_box in gt_boxes for i in range(FRAME)])
             # print('num gt_boxes {:d}'.format(num_gt_boxes.sum().item()), end='  ')
             gt_boxes_new = torch.zeros(
-                (data_dict['batch_size'], num_gt_boxes.max(), gt_boxes.shape[-1] - 1))  # remove vx,vy,frame_id
+                (data_dict['batch_size'], num_gt_boxes.max(), gt_boxes.shape[-1] - 1)).to(device)  # remove vx,vy,frame_id
             for b in range(gt_boxes.shape[0]):
                 for f in range(FRAME):
                     temp = gt_boxes[b][gt_boxes[b][:, -2] == f + 1]
