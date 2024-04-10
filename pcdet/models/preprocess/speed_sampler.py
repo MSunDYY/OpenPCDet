@@ -327,14 +327,14 @@ class TemperalDownConv(spconv.SparseModule):
 
         self.max_pool = spconv.SparseMaxPool3d(kernel_size=(5, 1, 1), stride=(3, 1, 1), padding=(1, 0, 0))
 
-        self.diff = spconv.SparseSequential(
-
-            post_act_block(planes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=(0, 1, 1),
-                           indice_key='subm1', conv_type='subm'),
-            spconv.SparseAvgPool3d(kernel_size=(1, 3, 3), stride=(1, 1, 1), padding=(0, 1, 1), indice_key='avgpool'),
-            post_act_block(inplanes, inplanes, norm_fn=norm_fn, kernel_size=(1, 3, 3), stride=(1, 1, 1),
-                           padding=(0, 0, 0), indice_key='avgpool', conv_type='inverseconv'),
-            spconv.SparseConv3d(in_channels=planes, out_channels=2, kernel_size=(1, 1, 1), stride=1, padding=0))
+        # self.diff = spconv.SparseSequential(
+        #
+        #     post_act_block(planes, planes, kernel_size=(1, 3, 3), norm_fn=norm_fn, padding=(0, 1, 1),
+        #                    indice_key='subm1', conv_type='subm'),
+        #     spconv.SparseAvgPool3d(kernel_size=(1, 3, 3), stride=(1, 1, 1), padding=(0, 1, 1), indice_key='avgpool'),
+        #     post_act_block(inplanes, inplanes, norm_fn=norm_fn, kernel_size=(1, 3, 3), stride=(1, 1, 1),
+        #                    padding=(0, 0, 0), indice_key='avgpool', conv_type='inverseconv'),
+        #     spconv.SparseConv3d(in_channels=planes, out_channels=2, kernel_size=(1, 1, 1), stride=1, padding=0))
 
         self.sed_layers = nn.ModuleList()
         for i in range(1):
