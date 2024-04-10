@@ -747,13 +747,12 @@ class CenterSpeedHead(nn.Module):
                     gt_boxes_new[b * FRAME + f, :temp.shape[0]] = temp
 
             if self.training:
-                try:
-                    target_dict = self.assign_targets(
-                        gt_boxes_new, feature_map_size=[188, 188],
-                        feature_map_stride=data_dict.get('spatial_features_2d_strides', None)
-                    )
-                except:
-                    print(data_dict['metadata'])
+
+                target_dict = self.assign_targets(
+                    gt_boxes_new, feature_map_size=[188, 188],
+                    feature_map_stride=data_dict.get('spatial_features_2d_strides', None)
+                )
+
                 self.forward_ret_dict['target_dicts'] = target_dict
             pred_dicts.append({})
         else:
