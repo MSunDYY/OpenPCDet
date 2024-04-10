@@ -289,13 +289,13 @@ class CenterSpeedHead(nn.Module):
                 inds_list.append(inds.to(gt_boxes_single_head.device))
 
 
-            ret_dict['heatmaps'].append(torch.stack(heatmap_list, dim=0).to(device))
-            ret_dict['masks'].append(torch.stack(masks_list, dim=0).to(device))
-            ret_dict['inds'].append(torch.stack(inds_list, dim=0).to(device))
-            ret_dict['target_boxes_src'].append(torch.stack(target_boxes_src_list, dim=0).to(device))
+            ret_dict['heatmaps'].append(torch.stack(heatmap_list, dim=0))
+            ret_dict['masks'].append(torch.stack(masks_list, dim=0))
+            ret_dict['inds'].append(torch.stack(inds_list, dim=0))
+            ret_dict['target_boxes_src'].append(torch.stack(target_boxes_src_list, dim=0))
             ret_dict['target_boxes'].append(torch.stack(target_boxes_list,dim=0))
             if not self.train_box:
-                ret_dict['speed_map'].append(torch.stack(speed_map_list, dim=0).to(device))
+                ret_dict['speed_map'].append(torch.stack(speed_map_list, dim=0))
 
         return ret_dict
 
