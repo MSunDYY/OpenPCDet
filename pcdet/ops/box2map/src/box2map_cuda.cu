@@ -6,7 +6,7 @@ All Rights Reserved 2019-2020.
 
 
 #include <stdio.h>
-#define THREADS_PER_BLOCK 16
+#define THREADS_PER_BLOCK 4
 #define DIVUP(m, n) ((m) / (n) + ((m) % (n) > 0))
 
 // #define DEBUG

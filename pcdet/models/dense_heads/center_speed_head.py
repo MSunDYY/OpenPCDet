@@ -175,7 +175,7 @@ class CenterSpeedHead(nn.Module):
                 device)
             # box_coor = boxes[:, :2].long()
             # speed_map[box_coor[:, 0], box_coor[:, 1]] = speed.to(device)
-            if not GPUtil.getGPUs()[0].name.endswith('3090'):
+            if not GPUtil.getGPUs()[0].name.endswith('309'):
                 box2map.box2map_gpu(boxes.to(device), speed_map, speed.to(device))
             else:
                 speed_map = speed_map.to('cpu')
