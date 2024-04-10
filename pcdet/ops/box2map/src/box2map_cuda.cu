@@ -285,7 +285,7 @@ __global__ void box2map_kernel(const int N ,const int C,const int H,const int W,
 
                 float y_mid = j+0.5;
                 float x_mid =i+0.5;
-                if( ((A1*y_mid+B1*x_mid+C1)*(A3*y_mid+B3*x_mid+C3)<=0) && ((A2*y_mid+B2*x_mid+C2)*(A4*y_mid+B4*x_mid+C4)<=0))
+                if( ((A1*y_mid+B1*x_mid+C1)*(A3*y_mid+B3*x_mid+C3)<=0) && ((A2*y_mid+B2*x_mid+C2)*(A4*y_mid+B4*x_mid+C4)<=0) &&(map[(i*W+j)*C]==0))
                 {
 
                     for (int c=0;c<C;c++)

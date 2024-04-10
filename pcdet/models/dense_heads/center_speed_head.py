@@ -175,12 +175,12 @@ class CenterSpeedHead(nn.Module):
                 device)
             # box_coor = boxes[:, :2].long()
             # speed_map[box_coor[:, 0], box_coor[:, 1]] = speed.to(device)
-            if not GPUtil.getGPUs()[0].name.endswith('309'):
-                box2map.box2map_gpu(boxes.to(device), speed_map, speed.to(device))
-            else:
-                speed_map = speed_map.to('cpu')
-                box2map.box2map(boxes,speed_map.to('cpu'),speed)
-                speed_map = speed_map.to(device)
+            # if not GPUtil.getGPUs()[0].name.endswith('309'):
+            box2map.box2map_gpu(boxes.to(device), speed_map, speed.to(device))
+            # else:
+            #     speed_map = speed_map.to('cpu')
+            #     box2map.box2map(boxes,speed_map.to('cpu'),speed)
+            #     speed_map = speed_map.to(device)
         else:
             speed_map = None
         for k in range(min(num_max_objs, gt_boxes.shape[0])):
@@ -747,10 +747,13 @@ class CenterSpeedHead(nn.Module):
                     gt_boxes_new[b * FRAME + f, :temp.shape[0]] = temp
 
             if self.training:
-                target_dict = self.assign_targets(
-                    gt_boxes_new, feature_map_size=[188, 188],
-                    feature_map_stride=data_dict.get('spatial_features_2d_strides', None)
-                )
+                try:
+                    target_dict = self.assign_targets(
+                        gt_boxes_new, feature_map_size=[188, 188],
+                        feature_map_stride=data_dict.get('spatial_features_2d_strides', None)
+                    )
+                except:
+                    print(data_dict['metadata'])
                 self.forward_ret_dict['target_dicts'] = target_dict
             pred_dicts.append({})
         else:
