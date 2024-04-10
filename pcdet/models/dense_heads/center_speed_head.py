@@ -1,4 +1,6 @@
 import copy
+
+import GPUtil
 import numpy as np
 import torch
 import torch.nn as nn
@@ -173,10 +175,12 @@ class CenterSpeedHead(nn.Module):
                 device)
             # box_coor = boxes[:, :2].long()
             # speed_map[box_coor[:, 0], box_coor[:, 1]] = speed.to(device)
-
-            box2map.box2map_gpu(boxes.to(device), speed_map, speed.to(device))
-
-
+            if not GPUtil.getGPUs()[0].name.endswith('3090'):
+                box2map.box2map_gpu(boxes.to(device), speed_map, speed.to(device))
+            else:
+                speed_map = speed_map.to('cpu')
+                box2map.box2map(boxes,speed_map.to('cpu'),speed)
+                speed_map = speed_map.to(device)
         else:
             speed_map = None
         for k in range(min(num_max_objs, gt_boxes.shape[0])):

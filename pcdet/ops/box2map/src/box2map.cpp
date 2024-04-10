@@ -257,56 +257,56 @@ int box2map(at::Tensor boxes_tensor, at::Tensor map_tensor, at::Tensor values_te
         float l = box[3];
         float w = box[4];
         float theta = box[6];
-        float x_right = x+(abs(l*cos(theta)) + abs(w*sin(theta))) /2;
-        float y_top = y+(abs(l*sin(theta)) + abs(w*cos(theta))) /2;
-        float x_left = x-(abs(l*cos(theta)) + abs(w*sin(theta))) /2;
-        float y_bottom = y-(abs(l*sin(theta)) + abs(w*cos(theta))) /2;
-        float y_right,y_left,x_top,x_bottom;
+        float y_right = y+(abs(l*cos(theta)) + abs(w*sin(theta))) /2;
+        float x_top = x+(abs(l*sin(theta)) + abs(w*cos(theta))) /2;
+        float y_left = y-(abs(l*cos(theta)) + abs(w*sin(theta))) /2;
+        float x_bottom = x-(abs(l*sin(theta)) + abs(w*cos(theta))) /2;
+        float x_right,x_left,y_top,y_bottom;
 
         if(theta<=M_PI/2)
         {
-            y_right = y+(l*sin(theta)-w*cos(theta))/2;
-            y_left  = y-(l*sin(theta)-w*cos(theta))/2;
-            x_top = x+(l*cos(theta)-w*sin(theta))/2;
-            x_bottom = x-(l*cos(theta)-w*sin(theta))/2;
+            x_right = x+(l*sin(theta)-w*cos(theta))/2;
+            x_left  = x-(l*sin(theta)-w*cos(theta))/2;
+            y_top = y+(l*cos(theta)-w*sin(theta))/2;
+            y_bottom = y-(l*cos(theta)-w*sin(theta))/2;
         }
         else
         {
-            y_right = y-(l*sin(theta)-w*cos(theta))/2;
-            y_left = y+(l*cos(theta)+w*cos(theta))/2;
-            x_top = x+(l*cos(theta)+w*sin(theta))/2;
-            x_bottom = x-(l*cos(theta)+w*sin(theta))/2;
+            x_right = x-(l*sin(theta)-w*cos(theta))/2;
+            x_left = x+(l*cos(theta)+w*cos(theta))/2;
+            y_top = y+(l*cos(theta)+w*sin(theta))/2;
+            y_bottom = y-(l*cos(theta)+w*sin(theta))/2;
         }
         float A1 = y_top-y_left;
         float B1 = x_left-x_top;
         float C1 = x_top*y_left - x_left*y_top;
 
-        float A2 = y_right-y_top;
-        float B2 = x_top-x_right;
-        float C2 = x_right*y_right-x_top*y_right;
+        float A2 = x_right-x_top;
+        float B2 = y_top-y_right;
+        float C2 = y_right*x_right-y_top*x_right;
 
-        float A3 = y_right-y_bottom;
-        float B3 = x_bottom-x_right;
-        float C3 = x_right*y_bottom -x_bottom*y_right;
+        float A3 = x_right-x_bottom;
+        float B3 = y_bottom-y_right;
+        float C3 = y_right*x_bottom -y_bottom*x_right;
 
-        float A4 = y_left - y_bottom;
-        float B4 = x_bottom-x_left;
-        float C4 = x_left*y_bottom-x_bottom*y_left;
+        float A4 = x_left - x_bottom;
+        float B4 = y_bottom-y_left;
+        float C4 = y_left*x_bottom-y_bottom*x_left;
 
 
-        for (int i=ceil(y_bottom);i<=ceil(y_top)+1;i++)
+        for (int i=max(static_cast<int>(x_bottom),0);i<min(static_cast<int>(x_top),H);i++)
         {
-            for(int j=ceil(x_left);j<=ceil(x_right)+1;j++)
+            for(int j=max(static_cast<int>(y_left),0);j<min(static_cast<int>(y_right),W);j++)
             {
 
-                float x_mid = j+0.5;
-                float y_mid =i+0.5;
-                if( ((A1*x_mid+B1*y_mid+C1)*(A3*x_mid+B3*y_mid+C3)<=0) && ((A2*x_mid+B2*y_mid+C2)*(A4*x_mid+B4*y_mid+C4)<=0))
+                float y_mid = j+0.5;
+                float x_mid =i+0.5;
+                if( ((A1*y_mid+B1*x_mid+C1)*(A3*y_mid+B3*x_mid+C3)<=0) && ((A2*y_mid+B2*x_mid+C2)*(A4*y_mid+B4*x_mid+C4)<=0))
                 {
 
                     for (int c=0;c<C;c++)
                     {
-                        map[(i*W+j)*C+c] = values[C*n+c];
+                        map[(i*W+j)*C+c] = values[C*idx+c];
                     }
                 }
             }
