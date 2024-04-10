@@ -237,19 +237,19 @@ class CenterSpeedHead(nn.Module):
             heatmap_list, target_boxes_list, inds_list, masks_list, target_boxes_src_list, speed_map_list = [], [], [], [], [], []
             for bs_idx in range(batch_size):
                 cur_gt_boxes = gt_boxes[bs_idx]
-                gt_class_names = all_names[cur_gt_boxes[:, -1].cpu().long().numpy()]
+                # gt_class_names = all_names[cur_gt_boxes[:, -1].cpu().long().numpy()]
 
                 gt_boxes_single_head = []
 
-                for idx, name in enumerate(gt_class_names):
-                    if name not in cur_class_names:
+                for idx, gt_label in enumerate(cur_gt_boxes[:,-1]):
+                    if gt_label == 0:
                         continue
                     temp_box = cur_gt_boxes[idx]
-                    temp_box[-1] = cur_class_names.index(name) + 1
+
                     gt_boxes_single_head.append(temp_box[None, :])
 
                 if len(gt_boxes_single_head) == 0:
-                    gt_boxes_single_head = cur_gt_boxes[:0, :].to(device)
+                    gt_boxes_single_head = cur_gt_boxes[:0, :]
                 else:
                     gt_boxes_single_head = torch.cat(gt_boxes_single_head, dim=0)
 
