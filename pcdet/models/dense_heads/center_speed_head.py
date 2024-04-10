@@ -159,7 +159,7 @@ class CenterSpeedHead(nn.Module):
 
             boxes[:, :2] = (boxes[:, :2] - torch.from_numpy(self.point_cloud_range)[:2]) / torch.tensor(
                 self.pillar_size[:2])[None, :]
-            boxes[:, 3:5] = (boxes[:, 3:5]) / torch.tensor(self.voxel_size[:2])[None, :]
+            boxes[:, 3:5] = (boxes[:, 3:5]) / torch.tensor(self.pillar_size[:2])[None, :]
             boxes[:, 6][boxes[:, 6] < 0] += torch.pi
             speed = torch.zeros((gt_boxes.shape[0], 5)).to(device).contiguous()
             speed[:, :2] = gt_boxes[:, 7:9]
