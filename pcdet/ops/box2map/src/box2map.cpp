@@ -277,9 +277,9 @@ int box2map(at::Tensor boxes_tensor, at::Tensor map_tensor, at::Tensor values_te
             y_top = y+(l*cos(theta)+w*sin(theta))/2;
             y_bottom = y-(l*cos(theta)+w*sin(theta))/2;
         }
-        float A1 = y_top-y_left;
-        float B1 = x_left-x_top;
-        float C1 = x_top*y_left - x_left*y_top;
+        float A1 = x_top-x_left;
+        float B1 = y_left-y_top;
+        float C1 = y_top*x_left - y_left*x_top;
 
         float A2 = x_right-x_top;
         float B2 = y_top-y_right;
