@@ -186,8 +186,7 @@ class CenterSpeedHead(nn.Module):
             speed_map_shape = (round((self.point_cloud_range[3] - self.point_cloud_range[0]) / self.pillar_size[0]),
                                round((self.point_cloud_range[4] - self.point_cloud_range[1]) / self.pillar_size[1]),
                                speed.shape[-1])
-            speed_map = torch.zeros(speed_map_shape).to(
-                device)
+            speed_map = speed.new_zeros(speed_map_shape)
             # box_coor = boxes[:, :2].long()
             # speed_map[box_coor[:, 0], box_coor[:, 1]] = speed.to(device)
             # if not GPUtil.getGPUs()[0].name.endswith('309'):
@@ -312,7 +311,7 @@ class CenterSpeedHead(nn.Module):
         return ret_dict
 
     def spatial_consistency_loss(self, gt_pred, gt_ind, batch_label):
-        sc_loss = torch.zeros(1, gt_pred.shape[1]).to(device)
+        sc_loss = gt_pred.new_zeros(1, gt_pred.shape[1])
         sc_loss_func = nn.L1Loss()
         B = batch_label.max().item() + 1
         count = 0
@@ -338,8 +337,8 @@ class CenterSpeedHead(nn.Module):
             batch_size=self.B
         )
         sp_pred = sp_pred_tensor.dense()
-        sp_pred_mask = torch.zeros((sp_pred.shape[0], sp_pred.shape[2], sp_pred.shape[3], sp_pred.shape[4]),
-                                   dtype=torch.bool).to(device)
+        sp_pred_mask = sp_pred.new_zeros((sp_pred.shape[0], sp_pred.shape[2], sp_pred.shape[3], sp_pred.shape[4]),
+                                   dtype=torch.bool)
         sp_pred_mask[
             speed_pred_coords[:, 0], speed_pred_coords[:, 1], speed_pred_coords[:, 2], speed_pred_coords[:,
                                                                                        3]] = True
@@ -459,7 +458,7 @@ class CenterSpeedHead(nn.Module):
                     speed_pred = pred_dict['speed_1st']
                     abs_speed_map = torch.norm(speed_map[:, :, :, :2], dim=-1, p=2)
                     coordinate_all = pred_dict['coordinate_all'].long()
-                    pillar_coordinates = torch.zeros((coordinate_all.shape[0], 3)).long().to(device)
+                    pillar_coordinates = coordinate_all.new_zeros((coordinate_all.shape[0], 3)).long()
 
                     pillar_coordinates[:, 1:] = coordinate_all[:, 2:]
                     pillar_coordinates[:, 0] = coordinate_all[:, 0] * FRAME + coordinate_all[:, 1]
@@ -468,7 +467,7 @@ class CenterSpeedHead(nn.Module):
                     gt_mask = speed_gt[:, -1] > 0
                     is_moving_pred = pred_dict['is_moving_pred']
                     abs_gt = torch.norm(speed_gt[:, :2], dim=-1, p=2)
-                    is_moving_label = torch.zeros(abs_gt.shape[0]).to(device)
+                    is_moving_label = abs_gt.new_zeros(abs_gt.shape[0])
                     moving_mask = abs_gt > 0.3
                     static_mask = (abs_gt < 0.1) * gt_mask
                     is_moving_label[moving_mask] = 1
@@ -746,8 +745,8 @@ class CenterSpeedHead(nn.Module):
             FRAME = 4
             num_gt_boxes = torch.tensor([(gt_box[:, -2] == i + 1).sum() for gt_box in gt_boxes for i in range(FRAME)])
             # print('num gt_boxes {:d}'.format(num_gt_boxes.sum().item()), end='  ')
-            gt_boxes_new = torch.zeros(
-                (data_dict['batch_size'], num_gt_boxes.max(), gt_boxes.shape[-1] - 1)).to(device)  # remove vx,vy,frame_id
+            gt_boxes_new = gt_boxes.new_zeros(
+                (data_dict['batch_size'], num_gt_boxes.max(), gt_boxes.shape[-1] - 1))  # remove vx,vy,frame_id
             for b in range(gt_boxes.shape[0]):
                 for f in range(FRAME):
                     temp = gt_boxes[b][gt_boxes[b][:, -2] == f + 1]

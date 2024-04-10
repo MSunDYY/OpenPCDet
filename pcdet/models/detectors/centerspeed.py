@@ -160,7 +160,7 @@ class CenterSpeed(Detector3DTemplate):
             gt_boxes = batch_dict['gt_boxes']
             gt_boxes = [gt_box[gt_box[:, -2] == 1] for gt_box in gt_boxes]
             gt_boxes_num = [gt_box.shape[0] for gt_box in gt_boxes]
-            gt_boxes_temp = torch.zeros((B, max(gt_boxes_num), 10)).to(device)
+            gt_boxes_temp = gt_boxes_all.new_zeros((B, max(gt_boxes_num), 10))
 
             for b in range(B):
                 gt_boxes_temp[b, :gt_boxes_num[b], :-1] = gt_boxes[b][:, :-2]
@@ -183,7 +183,7 @@ class CenterSpeed(Detector3DTemplate):
                     index][pred_boxes_coor[:, 0], pred_boxes_coor[:,
                                                       1]]
                 pred_speed *= is_moving_pred_mask[:, None]
-                pred_boxes = torch.concat([pred_boxes,pred_speed,torch.zeros(pred_boxes.shape[0],1).to(device)],dim=-1)
+                pred_boxes = torch.concat([pred_boxes,pred_speed,pred_boxes.new_zeros(pred_boxes.shape[0],1)],dim=-1)
                 
                 pred_dict_temp = {'pred_boxes': [pred_boxes], 'pred_scores': [pred_dict['pred_scores']],
                                   'pred_labels': [pred_dict['pred_labels']],'num_pred_gt':torch.zeros(4)}
@@ -191,7 +191,7 @@ class CenterSpeed(Detector3DTemplate):
                 gt_box_batch = gt_boxes_all[index]
                 speed_map_batch = []
 
-                speed_map_gt = torch.zeros(self.pillar_spatial_shape + [2]).to(device)
+                speed_map_gt = pred_boxes.new_zeros(self.pillar_spatial_shape + [2])
 
                 gt_box = gt_box_batch[gt_box_batch[:, -2] == 0]
                 gt_box[:, :2] = (gt_box[:, :2] - torch.from_numpy(self.dataset.point_cloud_range[:2]).to(

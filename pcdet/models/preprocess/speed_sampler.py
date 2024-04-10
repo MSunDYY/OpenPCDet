@@ -73,11 +73,10 @@ class AttentionAggregation(nn.Module):
                    range(B)]
         max_num_cur = max(max(num) for num in num_cur)
         max_num_pre = max(max(num) for num in num_pre)
-        cur_features_dense = torch.zeros((B * F, max_num_cur, cur_features.shape[-1])).to(device)
-        pre_features_dense = torch.zeros((B * F, spatial_shape[-2], spatial_shape[-1], pre_features.shape[-1])).to(
-            device)
-        cur_indices_dense = torch.zeros((B * F, max_num_cur, 2)).to(device)
-        pre_indices_dense = torch.zeros((B * F, max_num_pre, 2)).to(device)
+        cur_features_dense = cur_features.new_zeros((B * F, max_num_cur, cur_features.shape[-1]))
+        pre_features_dense = cur_features.new_zeros((B * F, spatial_shape[-2], spatial_shape[-1], pre_features.shape[-1]))
+        cur_indices_dense = cur_features.new_zeros((B * F, max_num_cur, 2))
+        pre_indices_dense = cur_features.new_zeros((B * F, max_num_pre, 2))
 
         for b in range(B):
             for f in range(F):
@@ -92,7 +91,7 @@ class AttentionAggregation(nn.Module):
                     pre_indices[pre_mask][:, -2].long(), pre_indices[pre_mask][:, -1].long()] = pre_features[pre_mask]
         pre_features_dense = pre_features_dense.reshape((B * F, -1, pre_features_dense.shape[-1]))
 
-        speed_est = torch.zeros((B * F, max_num_cur, 2)).to(device)
+        speed_est = pre_features_dense.new_features((B * F, max_num_cur, 2))
         pre_features_dense = pre_features_dense.reshape(B * F, pre_features_dense.shape[1], self.n_heads, -1)
         spatial_shape = spatial_shape[None, :]
         input_level_start_index = torch.tensor([0]).to(device)
