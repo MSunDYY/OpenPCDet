@@ -55,6 +55,8 @@ class SeparateHead(nn.Module):
         return ret_dict
 
 
+
+
 class CenterSpeedHead(nn.Module):
     def __init__(self, model_cfg, input_channels, num_class, class_names, grid_size, point_cloud_range, voxel_size,
                  predict_boxes_when_training=True):
@@ -92,7 +94,7 @@ class CenterSpeedHead(nn.Module):
             norm_func(self.model_cfg.SHARED_CONV_CHANNEL),
             nn.ReLU(),
         )
-
+        self.box2map_func = self.build_box2map_func()
         self.heads_list = nn.ModuleList()
         self.separate_head_cfg = self.model_cfg.SEPARATE_HEAD_CFG
         for idx, cur_class_names in enumerate(self.class_names_each_head):
@@ -117,7 +119,20 @@ class CenterSpeedHead(nn.Module):
         self.add_module('speed_loss_func', torch.nn.L1Loss())
         self.add_module('speed_cls_loss_func', torch.nn.BCEWithLogitsLoss())
         # self.add_module('speed_loss_func',loss_utils.)
+    def build_box2map_func(self):
+        def box2map_cpu(boxes,speed_map,speed):
+            speed_map = speed_map.to('cpu')
+            box2map.box2map(boxes.to('cpu'),speed_map,speed.to('cpu'))
+            return speed_map.to(device)
+        def box2map_gpu(boxes,speed_map,speed):
+            box2map.box2map_gpu(boxes,speed_map,speed)
+            return speed_map
 
+        import GPUtil
+        if GPUtil.getGPUs()[0].name.endswith('3090'):
+            return box2map_cpu
+        else:
+            return box2map_gpu
     def assign_target_of_single_head(
             self, num_classes, gt_boxes, feature_map_size, feature_map_stride, num_max_objs=500,
             gaussian_overlap=0.1, min_radius=2
@@ -176,7 +191,7 @@ class CenterSpeedHead(nn.Module):
             # box_coor = boxes[:, :2].long()
             # speed_map[box_coor[:, 0], box_coor[:, 1]] = speed.to(device)
             # if not GPUtil.getGPUs()[0].name.endswith('309'):
-            box2map.box2map_gpu(boxes, speed_map, speed)
+            speed_map = self.box2map_func(boxes, speed_map, speed)
             # else:
             #     speed_map = speed_map.to('cpu')
             #     box2map.box2map(boxes,speed_map.to('cpu'),speed)
