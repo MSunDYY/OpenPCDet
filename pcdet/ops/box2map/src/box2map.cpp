@@ -306,7 +306,7 @@ int box2map(at::Tensor boxes_tensor, at::Tensor map_tensor, at::Tensor values_te
 
                     for (int c=0;c<C;c++)
                     {
-                        map[(i*W+j)*C+c] = values[C*idx+c];
+                        map[(i*W+j)*C+c] = values[C*n+c];
                     }
                 }
             }
