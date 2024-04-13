@@ -162,8 +162,11 @@ def draw_scenes(points, file_name=None, gt_boxes=None, gt_labels=None, ref_boxes
         gt_labels=gt_labels.to('cpu').numpy()
     if isinstance(point_colors,torch.Tensor):
         point_colors = point_colors.to('cpu').numpy()
+    if isinstance(ref_scores,torch.Tensor):
+        ref_scores = ref_scores.to('cpu').numpy()
     if file_name is not None:
         print('file_name:', file_name, 'The num of points is:', points.shape[0])
+
     vis = open3d.visualization.Visualizer()
     vis.create_window(window_name=window_name)
 
@@ -231,6 +234,9 @@ def translate_boxes_to_open3d_instance(gt_boxes):
 def draw_box(vis, gt_boxes, color=(0, 1, 0), ref_labels=None, score=None):
     for i in range(gt_boxes.shape[0]):
         line_set, box3d = translate_boxes_to_open3d_instance(gt_boxes[i])
+        if score is not None:
+            color = (0,score[i],0)
+        
         if ref_labels is None:
             line_set.paint_uniform_color(color)
         else:

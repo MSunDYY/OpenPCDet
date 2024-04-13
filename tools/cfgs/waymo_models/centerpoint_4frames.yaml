@@ -4,7 +4,7 @@ DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/waymo_dataset_multiframe.yaml
 
     SAMPLED_INTERVAL: {
-        'train': 5,
+        'train': 10,
         'test': 1
     }
 
@@ -73,7 +73,7 @@ MODEL:
             MAX_OBJ_PER_SAMPLE: 500
             NMS_CONFIG:
                 NMS_TYPE: nms_gpu
-                NMS_THRESH: 0.7
+                NMS_THRESH: 0.5
                 NMS_PRE_MAXSIZE: 4096
                 NMS_POST_MAXSIZE: 500
 

@@ -496,8 +496,11 @@ class VoxelSampler(nn.Module):
         dis = torch.norm(
             (cur_points[:, :2].unsqueeze(0) - cur_boxes[:, :2].unsqueeze(1).repeat(1, cur_points.shape[0], 1)), dim=2)
         point_mask = (dis <= cur_radiis.unsqueeze(-1))
-
+        sampled_point_mask = torch.zeros_like(point_mask)
         sampled_mask, sampled_idx = torch.topk(point_mask.float(), num_sample)
+        sampled_point_mask[torch.arange(point_mask.shape[0]).unsqueeze(1),sampled_idx] = 1
+        
+        
         sampled_idx = sampled_idx.view(-1, 1).repeat(1, cur_points.shape[-1])
         sampled_points = torch.gather(cur_points, 0, sampled_idx).view(len(sampled_mask), num_sample, -1)
 

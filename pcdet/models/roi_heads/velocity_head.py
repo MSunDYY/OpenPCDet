@@ -11,7 +11,7 @@ from ..model_utils.velocitynet_utils import build_transformer, PointNet2, MLP, b
 from .target_assigner.proposal_target_layer import ProposalTargetLayer
 from pcdet.ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_stack_modules
 from pcdet import device
-
+from pcdet.ops.iou3d_nms.iou3d_nms_utils import nms_gpu
 
 class ProposalTargetLayerMPPNet(ProposalTargetLayer):
     def __init__(self, roi_sampler_cfg):
@@ -107,11 +107,11 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
             rois = batch_dict['proposals_list'][:, cur_frame_idx, :, :]
             roi_scores = batch_dict['roi_scores'][:, cur_frame_idx]
             roi_labels = batch_dict['roi_labels'][:, cur_frame_idx]
-            gt_boxes = batch_dict['gt_boxes'][batch_dict['gt_boxes'][:, :, -2] == cur_frame_idx + 1].unsqueeze(0)
+            # gt_boxes = batch_dict['gt_boxes'][batch_dict['gt_boxes'][:, :, -2] == cur_frame_idx + 1].unsqueeze(0)
 
             code_size = rois.shape[-1]
             batch_rois = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, code_size)
-            batch_gt_of_rois = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, gt_boxes.shape[-1])
+            batch_gt_of_rois = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, batch_dict['gt_boxes'].shape[-1])
             batch_roi_ious = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE)
             batch_roi_scores = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE)
             batch_roi_labels = rois.new_zeros((batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE), dtype=torch.long)
@@ -120,9 +120,9 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
 
                 # cur_trajectory_rois = proposals_list[index]
 
-                cur_roi, cur_gt, cur_roi_labels, cur_roi_scores = rois[index], gt_boxes[index], roi_labels[index], \
+                cur_roi,  cur_roi_labels, cur_roi_scores = rois[index], roi_labels[index], \
                     roi_scores[index]
-
+                cur_gt = batch_dict['gt_boxes'][index][batch_dict['gt_boxes'][index][:,-2]==cur_frame_idx+1]
                 if 'valid_length' in batch_dict.keys():
                     cur_valid_length = valid_length[index].to(device)
 
@@ -808,15 +808,41 @@ class VelocityHead(RoIHeadTemplate):
         :param input_data: input dict
         :return:
         """
-
-        batch_dict['rois'] = batch_dict['proposals_list'].permute(0, 2, 1, 3)
-        num_rois = batch_dict['rois'].shape[1]
-        batch_dict['num_frames'] = batch_dict['rois'].shape[2]
+        rois = batch_dict['proposals_list']
+        # roi_scores = batch_dict['roi_scores']
+        # roi_labels = batch_dict['roi_labels']
+        # rois = rois.reshape(-1,rois.shape[-2],rois.shape[-1])
+        # roi_scores = roi_scores.reshape(-1,roi_scores.shape[-1])
+        # roi_labels = roi_labels.reshape(-1,roi_labels.shape[-1])
+        # selected = [nms_gpu(rois[i,:,:7],roi_scores[i],thresh=0.7,pre_maxsize=(roi_scores[i]>0).sum())[0] for i in range(rois.shape[0])]
+        # rois_list = [rois[i][selected[i]] for i in range(rois.shape[0])]
+        # roi_scores_list = [roi_scores[i][selected[i]] for i in range(roi_scores.shape[0])]
+        # roi_labels_list = [roi_labels[i][selected[i]] for i in range(roi_labels.shape[0])]
+        #
+        # max_roi_num = max([roi.shape[0] for roi in rois_list])
+        # rois = rois.new_zeros(rois.shape[0],max_roi_num,rois.shape[-1])
+        # roi_scores = roi_scores.new_zeros(roi_scores.shape[0],max_roi_num)
+        # roi_labels = roi_labels.new_zeros(roi_labels.shape[0],max_roi_num)
+        # for i in range(rois.shape[0]):
+        #     rois[i,:rois_list[i].shape[0]] = rois_list[i]
+        #     roi_labels[i,:roi_labels_list[i].shape[0]] = roi_labels_list[i]
+        #     roi_scores[i,:roi_scores_list[i].shape[0]] = roi_scores_list[i]
+        #
+        # rois = rois.reshape(batch_dict['batch_size'],-1,rois.shape[-2],rois.shape[-1])
+        # roi_labels = roi_labels.reshape(batch_dict['batch_size'],-1,roi_labels.shape[-1])
+        # roi_scores = roi_scores.reshape(batch_dict['batch_size'],-1,roi_scores.shape[-1])
+        # batch_dict['rois_nms'] = rois
+        # batch_dict['roi_labels_nms'] = roi_labels.long()
+        # batch_dict['roi_scores_nms'] = roi_scores
+        
+        # batch_dict['rois'] = batch_dict['proposals_list'].permute(0, 2, 1, 3)
+        num_rois = batch_dict['roi_boxes'].shape[1]
+        batch_dict['num_frames'] = batch_dict['roi_boxes'].shape[2]
         # batch_dict['roi_scores'] = batch_dict['roi_scores'].permute(0, 2, 1)
         batch_dict['roi_labels'] = batch_dict['roi_labels'].long()
         proposals_list = batch_dict['proposals_list']
         batch_size = batch_dict['batch_size']
-        cur_batch_boxes = copy.deepcopy(batch_dict['rois'].detach())[:, :, 0]
+        cur_batch_boxes = copy.deepcopy(batch_dict['roi_boxes'].detach())[:, :, 0]
         batch_dict['cur_frame_idx'] = 0
 
         # trajectory_rois, valid_length = self.generate_trajectory(cur_batch_boxes, proposals_list, batch_dict)
@@ -824,7 +850,7 @@ class VelocityHead(RoIHeadTemplate):
         # batch_dict['traj_memory'] = trajectory_rois
         batch_dict['has_class_labels'] = True
         # batch_dict['trajectory_rois'] = trajectory_rois
-
+    
         if self.training:
             targets_dict = self.assign_targets(batch_dict)
             batch_dict['rois'] = targets_dict['trajectory_rois']
