@@ -837,7 +837,7 @@ class VelocityHead(RoIHeadTemplate):
         
         # batch_dict['rois'] = batch_dict['proposals_list'].permute(0, 2, 1, 3)
         num_rois = batch_dict['roi_boxes'].shape[1]
-        batch_dict['num_frames'] = batch_dict['roi_boxes'].shape[2]
+        batch_dict['num_frames'] = batch_dict['roi_boxes'].shape[1]
         # batch_dict['roi_scores'] = batch_dict['roi_scores'].permute(0, 2, 1)
         batch_dict['roi_labels'] = batch_dict['roi_labels'].long()
         proposals_list = batch_dict['proposals_list']
@@ -850,7 +850,17 @@ class VelocityHead(RoIHeadTemplate):
         # batch_dict['traj_memory'] = trajectory_rois
         batch_dict['has_class_labels'] = True
         # batch_dict['trajectory_rois'] = trajectory_rois
-    
+        # rois = batch_dict['rois']
+        if self.voxel_sampler is None:
+            self.voxel_sampler = build_voxel_sampler(device)
+
+        rois = batch_dict['roi_boxes']
+        rois = rois.reshape(batch_size, self.model_cfg.NUM_FRAMES, -1, rois.shape[-1])
+        num_rois = batch_dict['roi_boxes'].shape[1] // batch_dict['num_frames']
+        num_sample = self.num_lidar_points
+        batch_dict = self.voxel_sampler(batch_size, rois, num_sample[0],
+                                 batch_dict)
+
         if self.training:
             targets_dict = self.assign_targets(batch_dict)
             batch_dict['rois'] = targets_dict['trajectory_rois']
@@ -861,21 +871,14 @@ class VelocityHead(RoIHeadTemplate):
             # trajectory_rois = targets_dict['trajectory_rois']
             # valid_length = targets_dict['valid_length']
             empty_mask = batch_dict['rois'][:, :, :6].sum(-1) == 0
-
         else:
             empty_mask = batch_dict['rois'][:, :, 0, :6].sum(-1) == 0
             batch_dict['valid_traj_mask'] = ~empty_mask
 
-        rois = batch_dict['rois']
-        rois = rois.reshape(batch_size, self.model_cfg.NUM_FRAMES, -1, rois.shape[-1])
-        num_rois = batch_dict['rois'].shape[1] // batch_dict['num_frames']
-        num_sample = self.num_lidar_points
+
         # src = rois.new_zeros(batch_size, num_rois, num_sample, 5)
 
-        if self.voxel_sampler is None:
-            self.voxel_sampler = build_voxel_sampler(device)
-        src = self.voxel_sampler(batch_size, rois, num_sample[0],
-                                 batch_dict)
+
         rois_batch = rois
         num_frames = self.model_cfg.NUM_FRAMES
         for f in range(self.model_cfg.NUM_FRAMES):

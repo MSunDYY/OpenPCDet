@@ -9,7 +9,7 @@ from torch.nn.init import xavier_uniform_, zeros_, kaiming_normal_
 from spconv.pytorch.utils import PointToVoxel
 from pcdet.ops.pointnet2.pointnet2_stack.pointnet2_utils import ball_query, grouping_operation, QueryAndGroup
 from pcdet import device
-
+from pcdet.ops.box2map.box2map import points2box_gpu
 class PointNetfeat(nn.Module):
     def __init__(self, input_dim, x=1, outchannel=512):
         super(PointNetfeat, self).__init__()
@@ -488,8 +488,9 @@ class VoxelSampler(nn.Module):
     def get_output_feature_dim(self):
         return self.num_point_features
 
-    @staticmethod
-    def cylindrical_pool(cur_points, cur_boxes, num_sample, gamma=1.):
+
+
+    def cylindrical_pool(self,cur_points, cur_boxes, num_sample, gamma=1.):
         if len(cur_points) < num_sample:
             cur_points = F.pad(cur_points, [0, 0, 0, num_sample - len(cur_points)])
         cur_radiis = torch.norm(cur_boxes[:, 3:5] / 2, dim=-1) * gamma
@@ -497,7 +498,11 @@ class VoxelSampler(nn.Module):
             (cur_points[:, :2].unsqueeze(0) - cur_boxes[:, :2].unsqueeze(1).repeat(1, cur_points.shape[0], 1)), dim=2)
         point_mask = (dis <= cur_radiis.unsqueeze(-1))
         sampled_point_mask = torch.zeros_like(point_mask)
-        sampled_mask, sampled_idx = torch.topk(point_mask.float(), num_sample)
+        # sampled_mask, sampled_idx = torch.topk(point_mask.float(), num_sample)
+
+        sampled_point_mask,sampled_idx = self.select_points(point_mask=point_mask.float(),num_sampled_per_box=num_sample,num_sampled_per_point=2)
+        roi_mask = sampled_point_mask.sum(-1)!=0
+
         sampled_point_mask[torch.arange(point_mask.shape[0]).unsqueeze(1),sampled_idx] = 1
         
         
@@ -507,15 +512,23 @@ class VoxelSampler(nn.Module):
         sampled_points[sampled_mask == 0, :] = 0
 
         return sampled_points
+    def select_points(self,point_mask,num_sampled_per_box,num_sampled_per_point=2):
 
+        sampled_mask = point_mask.new_zeros(point_mask.shape[0],num_sampled_per_box)
+        sampled_idx = point_mask.new_zeros(point_mask.shape[0],num_sampled_per_box)
+        point_sampled_num = point_mask.new_zeros(point_mask.shape[0]).int()
+        points2box_gpu(point_mask.contiguous(),sampled_mask,sampled_idx,point_sampled_num,num_sampled_per_box,num_sampled_per_point)
+        return sampled_mask,sampled_idx
     def forward(self, batch_size, trajectory_rois, num_sample, batch_dict):
 
         src = list()
+        rois = list()
         for bs_idx in range(batch_size):
 
             cur_points = batch_dict['points'][(batch_dict['points'][:, 0] == bs_idx)][:, 1:]
             cur_batch_boxes = trajectory_rois[bs_idx]
             src_points = list()
+            rois_boxes = list()
             for idx in range(trajectory_rois.shape[1]):
                 gamma = self.GAMMA  # ** (idx+1)
 
@@ -580,12 +593,12 @@ class VoxelSampler(nn.Module):
                 key_points = key_points[point_mask]
                 key_points = key_points[torch.randperm(len(key_points)), :]
 
-                key_points = self.cylindrical_pool(key_points, cur_frame_boxes, num_sample, gamma)
+                key_points,rois_new = self.cylindrical_pool(key_points, cur_frame_boxes, num_sample, gamma)
 
                 src_points.append(key_points)
-
+                rois.append(rois_new)
             src.append(torch.stack(src_points))
-
+            rois.append()
         return torch.stack(src)
 
 
