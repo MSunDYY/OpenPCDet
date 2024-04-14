@@ -83,120 +83,100 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
                 roi_labels: (B, num_rois)
         Returns:
         """
-        FRAME = batch_dict['num_points_all'].shape[1]
+        cur_frame_idx = 0
         batch_size = batch_dict['batch_size']
+        rois = batch_dict['roi_boxes'][:,cur_frame_idx]
+        roi_scores = batch_dict['roi_scores'][:,  cur_frame_idx]
+        roi_labels = batch_dict['roi_labels'][:,cur_frame_idx]
+        gt_boxes = batch_dict['gt_boxes']
+
+        code_size = rois[0].shape[-1]
+        batch_rois = roi_scores.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, code_size)
+        batch_gt_of_rois = roi_scores.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, gt_boxes.shape[-1])
+        batch_roi_ious = roi_scores.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE)
+        batch_roi_scores = roi_scores.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE)
+        batch_roi_labels = roi_scores.new_zeros((batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE), dtype=torch.long)
 
         # trajectory_rois = batch_dict['trajectory_rois']
-        proposals_list = batch_dict['proposals_list']
-
-        # batch_trajectory_rois = proposals_list.new_zeros(batch_size, proposals_list.shape[1],
-        #                                                   self.roi_sampler_cfg.ROI_PER_IMAGE, proposals_list.shape[-1])
+        # batch_trajectory_rois = rois.new_zeros(batch_size, trajectory_rois.shape[1], self.roi_sampler_cfg.ROI_PER_IMAGE,
+        #                                        trajectory_rois.shape[-1])
 
         # valid_length = batch_dict['valid_length']
-        # batch_valid_length = trajectory_rois.new_zeros(
+        # batch_valid_length = rois.new_zeros(
         #     (batch_size, batch_dict['trajectory_rois'].shape[1], self.roi_sampler_cfg.ROI_PER_IMAGE))
-        batch_rois_list = []
-        batch_gt_of_rois_list = []
-        batch_roi_ious_list = []
-        batch_roi_scores_list = []
-        batch_roi_labels_list = []
 
-        for cur_frame_idx in range(FRAME):
-            # cur_frame_idx = 0
+        for index in range(batch_size):
 
-            rois = batch_dict['proposals_list'][:, cur_frame_idx, :, :]
-            roi_scores = batch_dict['roi_scores'][:, cur_frame_idx]
-            roi_labels = batch_dict['roi_labels'][:, cur_frame_idx]
-            # gt_boxes = batch_dict['gt_boxes'][batch_dict['gt_boxes'][:, :, -2] == cur_frame_idx + 1].unsqueeze(0)
+            # cur_rois = rois[index]
 
-            code_size = rois.shape[-1]
-            batch_rois = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, code_size)
-            batch_gt_of_rois = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, batch_dict['gt_boxes'].shape[-1])
-            batch_roi_ious = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE)
-            batch_roi_scores = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE)
-            batch_roi_labels = rois.new_zeros((batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE), dtype=torch.long)
+            cur_rois, cur_gt, cur_roi_labels, cur_roi_scores = rois[index], gt_boxes[index], roi_labels[index], \
+            roi_scores[index]
 
-            for index in range(batch_size):
+            # if 'valid_length' in batch_dict.keys():
+            #     cur_valid_length = valid_length[index]
 
-                # cur_trajectory_rois = proposals_list[index]
+            k = cur_gt.__len__() - 1
+            while k > 0 and cur_gt[k].sum() == 0:
+                k -= 1
 
-                cur_roi,  cur_roi_labels, cur_roi_scores = rois[index], roi_labels[index], \
-                    roi_scores[index]
-                cur_gt = batch_dict['gt_boxes'][index][batch_dict['gt_boxes'][index][:,-2]==cur_frame_idx+1]
-                if 'valid_length' in batch_dict.keys():
-                    cur_valid_length = valid_length[index].to(device)
+            cur_gt = cur_gt[:k + 1]
+            cur_gt = cur_gt.new_zeros((1, cur_gt.shape[1])) if len(cur_gt) == 0 else cur_gt
 
-                k = cur_gt.__len__() - 1
-                while k > 0 and cur_gt[k].sum() == 0:
-                    k -= 1
+            if self.roi_sampler_cfg.get('SAMPLE_ROI_BY_EACH_CLASS', False):
+                max_overlaps, gt_assignment = self.get_max_iou_with_same_class(
+                    rois=cur_rois, roi_labels=cur_roi_labels,
+                    gt_boxes=cur_gt[:, 0:7], gt_labels=cur_gt[:, -1].long()
+                )
 
-                cur_gt = cur_gt[:k + 1]
-                cur_gt = cur_gt.new_zeros((1, cur_gt.shape[1])) if len(cur_gt) == 0 else cur_gt
+            else:
+                iou3d = iou3d_nms_utils.boxes_iou3d_gpu(cur_rois, cur_gt[:, 0:7])  # (M, N)
+                max_overlaps, gt_assignment = torch.max(iou3d, dim=1)
 
-                if self.roi_sampler_cfg.get('SAMPLE_ROI_BY_EACH_CLASS', False):
-                    max_overlaps, gt_assignment = self.get_max_iou_with_same_class(
-                        rois=cur_roi, roi_labels=cur_roi_labels.long(),
-                        gt_boxes=cur_gt[:, 0:7], gt_labels=cur_gt[:, -1].long()
-                    )
+            sampled_inds, fg_inds, bg_inds = self.subsample_rois(max_overlaps=max_overlaps)
 
-                else:
-                    iou3d = iou3d_nms_utils.boxes_iou3d_gpu(cur_roi.cuda(), cur_gt.cuda()[:, 0:7]).to(device)  # (M, N)
-                    max_overlaps, gt_assignment = torch.max(iou3d, dim=1)
+            batch_roi_labels[index] = cur_roi_labels[sampled_inds.long()]
 
-                sampled_inds, fg_inds, bg_inds = self.subsample_rois(max_overlaps=max_overlaps)
+            if self.roi_sampler_cfg.get('USE_ROI_AUG', False):
 
-                batch_roi_labels[index] = cur_roi_labels[sampled_inds.long()]
+                fg_rois, fg_iou3d = self.aug_roi_by_noise_torch(cur_rois[fg_inds], cur_gt[gt_assignment[fg_inds]],
+                                                                max_overlaps[fg_inds],
+                                                                aug_times=self.roi_sampler_cfg.ROI_FG_AUG_TIMES)
+                bg_rois = cur_rois[bg_inds]
+                bg_iou3d = max_overlaps[bg_inds]
 
-                if self.roi_sampler_cfg.get('USE_ROI_AUG', False):
+                batch_rois[index] = torch.cat([fg_rois, bg_rois], 0)
+                batch_roi_ious[index] = torch.cat([fg_iou3d, bg_iou3d], 0)
+                batch_gt_of_rois[index] = cur_gt[gt_assignment[sampled_inds]]
 
-                    fg_rois, fg_iou3d = self.aug_roi_by_noise_torch(cur_roi[fg_inds], cur_gt[gt_assignment[fg_inds]],
-                                                                    max_overlaps[fg_inds],
-                                                                    aug_times=self.roi_sampler_cfg.ROI_FG_AUG_TIMES)
-                    bg_rois = cur_roi[bg_inds]
-                    bg_iou3d = max_overlaps[bg_inds]
+            else:
+                batch_rois[index] = cur_rois[sampled_inds]
+                batch_roi_ious[index] = max_overlaps[sampled_inds]
+                batch_gt_of_rois[index] = cur_gt[gt_assignment[sampled_inds]]
 
-                    batch_rois[index] = torch.cat([fg_rois, bg_rois], 0)
-                    batch_roi_ious[index] = torch.cat([fg_iou3d, bg_iou3d], 0)
-                    batch_gt_of_rois[index] = cur_gt[gt_assignment[sampled_inds]]
+            batch_roi_scores[index] = cur_roi_scores[sampled_inds.long()]
 
-                else:
-                    batch_rois[index] = cur_roi[sampled_inds]
-                    batch_roi_ious[index] = max_overlaps[sampled_inds]
-                    batch_gt_of_rois[index] = cur_gt[gt_assignment[sampled_inds]]
+            if 'valid_length' in batch_dict.keys():
+                batch_valid_length[index] = cur_valid_length[:, sampled_inds]
 
-                batch_roi_scores[index] = cur_roi_scores[sampled_inds]
-
-                if 'valid_length' in batch_dict.keys():
-                    batch_valid_length[index] = cur_valid_length[:, sampled_inds]
-
-            batch_rois_list.append(batch_rois)
-            batch_gt_of_rois_list.append(batch_gt_of_rois)
-            batch_roi_ious_list.append(batch_roi_ious)
-            batch_roi_scores_list.append(batch_roi_scores)
-            batch_roi_labels_list.append(batch_roi_labels)
-        if self.roi_sampler_cfg.USE_TRAJ_AUG.ENABLED:
-            batch_trajectory_rois_list = []
-            for idx in range(0, batch_dict['num_frames']):
-                if idx == cur_frame_idx:
-                    batch_trajectory_rois_list.append(
-                        cur_trajectory_rois[cur_frame_idx:cur_frame_idx + 1, sampled_inds])
-                    continue
-                fg_trajs, _ = self.aug_roi_by_noise_torch(cur_trajectory_rois[idx, fg_inds],
-                                                          cur_trajectory_rois[idx, fg_inds][:, :8],
-                                                          max_overlaps[fg_inds], \
-                                                          aug_times=self.roi_sampler_cfg.ROI_FG_AUG_TIMES,
-                                                          pos_thresh=self.roi_sampler_cfg.USE_TRAJ_AUG.THRESHOD)
-                bg_trajs = cur_trajectory_rois[idx, bg_inds]
-                batch_trajectory_rois_list.append(torch.cat([fg_trajs, bg_trajs], 0)[None, :, :])
-            # batch_trajectory_rois[index] = torch.cat(batch_trajectory_rois_list, 0)
-        else:
-            pass
-            # batch_trajectory_rois[index] = cur_trajectory_rois[:, sampled_inds]
-
-        return torch.concat(batch_rois_list, 1), torch.concat(batch_gt_of_rois_list, 1), torch.concat(
-            batch_roi_ious_list,
-            1), torch.concat(batch_roi_scores_list, 1), torch.concat(batch_roi_labels_list,
-                                                                     1)
+            if self.roi_sampler_cfg.USE_TRAJ_AUG.ENABLED:
+                batch_trajectory_rois_list = []
+                for idx in range(0, batch_dict['num_frames']):
+                    if idx == cur_frame_idx:
+                        batch_trajectory_rois_list.append(
+                            cur_trajectory_rois[cur_frame_idx:cur_frame_idx + 1, sampled_inds])
+                        continue
+                    fg_trajs, _ = self.aug_roi_by_noise_torch(cur_trajectory_rois[idx, fg_inds],
+                                                              cur_trajectory_rois[idx, fg_inds][:, :8],
+                                                              max_overlaps[fg_inds], \
+                                                              aug_times=self.roi_sampler_cfg.ROI_FG_AUG_TIMES,
+                                                              pos_thresh=self.roi_sampler_cfg.USE_TRAJ_AUG.THRESHOD)
+                    bg_trajs = cur__rois[idx, bg_inds]
+                    batch_trajectory_rois_list.append(torch.cat([fg_trajs, bg_trajs], 0)[None, :, :])
+                batch_trajectory_rois[index] = torch.cat(batch_trajectory_rois_list, 0)
+            else:
+                # rois[index] = cur_rois[sampled_inds]
+                pass
+        return batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_scores, batch_roi_labels
 
     def subsample_rois(self, max_overlaps):
         # sample fg, easy_bg, hard_bg
@@ -386,7 +366,7 @@ class VelocityHead(RoIHeadTemplate):
                               self.box_coder.code_size * self.num_class, 4)
 
         num_radius = len(self.model_cfg.ROI_GRID_POOL.POOL_RADIUS)
-        self.up_dimension_geometry = MLP(input_dim=29, hidden_dim=256, output_dim=hidden_dim, num_layers=3)
+        self.up_dimension_geometry = MLP(input_dim=30, hidden_dim=256, output_dim=hidden_dim, num_layers=3)
         self.up_dimension_motion = MLP(input_dim=30, hidden_dim=64, output_dim=hidden_dim, num_layers=3)
         self.box_cls = MLP(input_dim=384, output_dim=1, hidden_dim=256, num_layers=3)
         self.box_reg = MLP(input_dim=384, output_dim=7, hidden_dim=256, num_layers=3)
@@ -649,14 +629,11 @@ class VelocityHead(RoIHeadTemplate):
         lwh = trajectory_rois[:,  :][:, 3:6].unsqueeze(1)
         diag_dist = ((lwh[:, :, 0] ** 2 + lwh[:, :, 1] ** 2 + lwh[:, :, 2] ** 2) ** 0.5).repeat(1,proposal_aware_feat.shape[1])
         proposal_aware_feat = self.spherical_coordinate(proposal_aware_feat, diag_dist=diag_dist.unsqueeze(-1))
-        pos = (src[:,:,:3] - trajectory_roi_center[:,None,:])/diag_dist.unsqueeze(-1)
-        pos = common_utils.rotate_points_along_z(points=pos,angle=-trajectory_rois[:,6])
-        pos = torch.concat([pos,torch.full((pos.shape[0],pos.shape[1],1),t).to(device)],dim=-1)
 
         proposal_aware_feat = torch.cat([proposal_aware_feat, src[:, :, 3:]], dim=-1)
         src_gemoetry = self.up_dimension_geometry(proposal_aware_feat)
 
-        return src_gemoetry,pos
+        return src_gemoetry
 
     def get_proposal_aware_motion_feature(self, proxy_point, batch_size, trajectory_rois, num_rois, batch_dict):
 
@@ -854,12 +831,11 @@ class VelocityHead(RoIHeadTemplate):
         if self.voxel_sampler is None:
             self.voxel_sampler = build_voxel_sampler(device)
 
-        rois = batch_dict['roi_boxes']
-        rois = rois.reshape(batch_size, self.model_cfg.NUM_FRAMES, -1, rois.shape[-1])
+        # rois = batch_dict['roi_boxes']
+        # rois = rois.reshape(batch_size, self.model_cfg.NUM_FRAMES, -1, rois.shape[-1])
         num_rois = batch_dict['roi_boxes'].shape[1] // batch_dict['num_frames']
         num_sample = self.num_lidar_points
-        batch_dict = self.voxel_sampler(batch_size, rois, num_sample[0],
-                                 batch_dict)
+
 
         if self.training:
             targets_dict = self.assign_targets(batch_dict)
@@ -875,33 +851,41 @@ class VelocityHead(RoIHeadTemplate):
             empty_mask = batch_dict['rois'][:, :, 0, :6].sum(-1) == 0
             batch_dict['valid_traj_mask'] = ~empty_mask
 
-
+        batch_dict = self.voxel_sampler(batch_size, rois, num_sample[0],
+                                        batch_dict)
         # src = rois.new_zeros(batch_size, num_rois, num_sample, 5)
-
-
-        rois_batch = rois
+        rois_list = batch_dict['rois_list']
+        srcs_list = batch_dict['src_list']
+        num_rois = max([roi.shape[0] for roi in batch_dict['rois_list']])
+        src = srcs_list[0].new_zeros(len(srcs_list),num_rois,num_sample[0],srcs_list[0].shape[-1])
+        rois = rois_list[0].new_zeros(len(rois_list),num_rois,rois_list[0].shape[-1])
+        for i,(src_single,roi_single) in enumerate(zip(srcs_list,rois_list)):
+            src[i,:src_single.shape[0]] = src_single
+            rois[i,:roi_single.shape[0]] = roi_single
         num_frames = self.model_cfg.NUM_FRAMES
-        for f in range(self.model_cfg.NUM_FRAMES):
-            # src = self.crop_current_frame_points(src, batch_size, trajectory_rois, num_rois, batch_dict)
 
-            # src = self.crop_previous_frame_points(src, batch_size, trajectory_rois, num_rois, valid_length, batch_dict)
+        # src = self.crop_current_frame_points(src, batch_size, trajectory_rois, num_rois, batch_dict)
 
-            src_geometry_feature ,pos= self.get_proposal_aware_geometry_feature(src.reshape(-1,self.num_lidar_points[f],src.shape[-1]), batch_size, rois_batch.reshape(-1,rois_batch.shape[-1]),
-                                                                                          num_rois*num_frames)
-            # src_motion_feature = self.get_proposal_aware_motion_feature(src, batch_size, rois_batch, num_rois)
+        # src = self.crop_previous_frame_points(src, batch_size, trajectory_rois, num_rois, valid_length, batch_dict)
 
-            # src_motion_feature = self.get_proposal_aware_motion_feature(proxy_points, batch_size, trajectory_rois, num_rois,
-            #                                                             batch_dict)
-            src = src_geometry_feature
-            if self.model_cfg.get('USE_TRAJ_EMPTY_MASK', None):
-                src[empty_mask.view(-1)] = 0
+        src_geometry_feature= self.get_proposal_aware_geometry_feature(src.reshape(-1,self.num_lidar_points[0],src.shape[-1]), batch_size, rois.reshape(-1,rois.shape[-1]),
+                                                                                      num_rois*num_frames)
 
-            if self.model_cfg.Transformer.use_grid_pos.init_type == 'index':
-                pos = self.grid_pos_embeded(pos)
+        # src_motion_feature = self.get_proposal_aware_motion_feature(src, batch_size, rois_batch, num_rois)
 
-            else:
-                pos = None
-            hs, tokens = self.transformer[f](src, pos=pos)
+        # src_motion_feature = self.get_proposal_aware_motion_feature(proxy_points, batch_size, trajectory_rois, num_rois,
+        #                                                             batch_dict)
+        src = src_geometry_feature
+        if self.model_cfg.get('USE_TRAJ_EMPTY_MASK', None):
+            src[empty_mask.view(-1)] = 0
+        src = src.reshape(batch_size,num_frames,-1,num_sample[0],src.shape[-1])
+
+        # if self.model_cfg.Transformer.use_grid_pos.init_type == 'index':
+        #     pos = self.grid_pos_embeded(pos)
+        # else:
+        #     pos = None
+        for i in range(len(self.transformer)):
+            hs, tokens = self.transformer[i](src, pos=None)
         point_cls_list = []
         point_reg_list = []
 

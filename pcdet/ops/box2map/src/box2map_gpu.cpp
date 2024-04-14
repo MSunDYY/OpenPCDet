@@ -40,7 +40,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 const int THREADS_PER_BLOCK_NMS = sizeof(unsigned long long) * 8;
 
 void box2mapLauncher(const int N,const int C,const int H,const int W,const float *boxes,const float *values,float * map);
-void points2boxLauncher(const int N,const int P,const float *points_mask_pr,float *sampled_mask_pr,float*sampled_idx_pr,int *point_sampled_num_pr,const int num_sampled_per_box,const int num_sampled_per_point);
+void points2boxLauncher(const int N,const int P,const int *points_mask_pr,int *sampled_mask_pr,int*sampled_idx_pr,int *point_sampled_num_pr,const int num_sampled_per_box,const int num_sampled_per_point,const int num_threads);
 
 
 int box2map_gpu(at::Tensor boxes_tensor, at::Tensor map_tensor, at::Tensor values_tensor)
@@ -60,18 +60,18 @@ int box2map_gpu(at::Tensor boxes_tensor, at::Tensor map_tensor, at::Tensor value
     return 1;
 }
 
-int points2box_gpu(at::Tensor points_mask,at::Tensor sampled_mask,at::Tensor sampled_idx,at::Tensor point_sampled_num,int num_sampled_per_box,int num_sampled_per_point)
+int points2box_gpu(at::Tensor points_mask,at::Tensor sampled_mask,at::Tensor sampled_idx,at::Tensor point_sampled_num,const int num_sampled_per_box,const int num_sampled_per_point,const int num_threads)
 {
     int N = points_mask.size(0);
     int P = points_mask.size(1);
     CHECK_INPUT(points_mask);
     CHECK_INPUT(sampled_idx);
     CHECK_INPUT(sampled_mask);
-    const float *points_mask_pr = points_mask.data<float>();
-    float *sampled_mask_pr = sampled_mask.data<float>();
-    float *sampled_idx_pr = sampled_idx.data<float>();
+    int *points_mask_pr = points_mask.data<int>();
+    int *sampled_mask_pr = sampled_mask.data<int>();
+    int *sampled_idx_pr = sampled_idx.data<int>();
     int *point_sampled_num_pr = point_sampled_num.data<int>();
-    points2boxLauncher(N,P,points_mask_pr,sampled_mask_pr,sampled_idx_pr,point_sampled_num_pr,num_sampled_per_box,num_sampled_per_point);
+    points2boxLauncher(N,P,points_mask_pr,sampled_mask_pr,sampled_idx_pr,point_sampled_num_pr,num_sampled_per_box,num_sampled_per_point,num_threads);
     return 1;
 }
 

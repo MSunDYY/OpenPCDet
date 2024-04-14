@@ -338,3 +338,38 @@ int boxes_aligned_iou_bev_cpu(at::Tensor boxes_a_tensor, at::Tensor boxes_b_tens
     }
     return 1;
 }
+
+int points2box(at::Tensor points_mask,at::Tensor sampled_mask,at::Tensor sampled_idx,at::Tensor point_sampled_num,const int num_sampled_per_box,const int num_sampled_per_point)
+{
+    int N = points_mask.size(0);
+    int P = points_mask.size(1);
+    const int *points_mask_pr = points_mask.data<int>();
+    int *sampled_mask_pr = sampled_mask.data<int>();
+    int *sampled_idx_pr = sampled_idx.data<int>();
+    int *point_sampled_num_pr = point_sampled_num.data<int>();
+
+
+    for(int idx=0;idx<P;idx++)
+    {
+        for(int i=0;i<N;i++)
+        {
+            int point_sampled_num=0;
+            if((*(points_mask_pr+idx+i*P)==1) &&(point_sampled_num_pr[i]<num_sampled_per_box))
+            {
+                *(sampled_mask_pr+point_sampled_num_pr[i]+num_sampled_per_box*i)=1;
+                *(sampled_idx_pr+point_sampled_num_pr[i]+num_sampled_per_box*i)=idx;
+                point_sampled_num_pr[i]+=1;
+                point_sampled_num+=1;
+                if (point_sampled_num==num_sampled_per_point)
+                {
+                break;
+                }
+            }
+            else
+            {
+            continue;
+            }
+        }
+    }
+    return 1;
+}

@@ -91,7 +91,7 @@ MODEL:
             num_frames: 4
             num_groups: 4
             use_grid_pos:
-                enabled: True
+                enabled: False
                 init_type: index
 
             use_mlp_mixer:

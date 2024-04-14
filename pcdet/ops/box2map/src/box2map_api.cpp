@@ -14,4 +14,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 	m.def("box2map", &box2map, "boxes information copied to map");
 	m.def("box2map_gpu",&box2map_gpu,"boxes information copied to map");
 	m.def("points2box_gpu",&points2box_gpu,"selete points to box");
+    m.def("points2box",&points2box,"cpu");
 }

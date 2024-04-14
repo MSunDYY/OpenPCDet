@@ -7,7 +7,7 @@ All Rights Reserved 2019-2020.
 
 #include <stdio.h>
 #define THREADS_PER_BLOCK 4
-#define THREADS_PER_BLOCK_P 32
+#define THREADS_PER_BLOCK_P 1
 #define DIVUP(m, n) ((m) / (n) + ((m) % (n) > 0))
 
 // #define DEBUG
@@ -224,28 +224,57 @@ __device__ inline float box_overlap(const float *box_a, const float *box_b){
 
     return fabs(area) / 2.0;
 }
+__global__ void mask2ind_kernel(const int N,const int P,int *points_mask_pr)
+{
+    const int idx = blockIdx.x*THREADS_PER_BLOCK_P+threadIdx.x;
+    if(idx>=N)
+    {return;}
 
-__global__ void points2box_kernel(const int N,const int P,const float *points_mask_pr,float *sampled_mask_pr,float*sampled_idx_pr,int *point_sampled_num_pr,const int num_sampled_per_box,const int num_sampled_per_point)
+    int *points_mask_pr_cur = points_mask_pr+idx*P;
+    int num_points=0;
+    for(int i =0;i<P;i++)
+    {
+        if (points_mask_pr_cur[i]==0)
+        {
+        continue;
+        }
+        else
+        {
+        num_points+=1;
+        points_mask_pr_cur[i]=num_points;
+        }
+    }
+
+}
+
+__global__ void points2box_kernel(const int N,const int P,const int *points_mask_pr,int *sampled_mask_pr,int*sampled_idx_pr,int *point_sampled_num_pr,const int num_sampled_per_box,const int num_sampled_per_point)
 {
     const int idx = blockIdx.x*THREADS_PER_BLOCK_P+threadIdx.x;
     if(idx>=P)
     {return;}
-    printf("%d ",N);
+//     if(idx%32==0)
+//     {
+//      printf("%d ",idx);
+//      }
 //     float * points_mask_pr_cur = points_mask_pr+idx;
     for(int i=0;i<N;i++)
     {
          int point_sampled_num=0;
-        if((*(points_mask_pr+idx+i*P)==1) && (point_sampled_num_pr[i]<num_sampled_per_box))
+        if((*(points_mask_pr+idx+i*P)!=0) )
         {
-            *(sampled_mask_pr+point_sampled_num_pr[i]+num_sampled_per_box*i)=1.;
-            *(sampled_idx_pr+point_sampled_num_pr[i]+num_sampled_per_box*i)=idx;
-            point_sampled_num_pr[i]+=1;
-            point_sampled_num+=1;
-            if (point_sampled_num==num_sampled_per_point)
+            if((*(points_mask_pr+idx+i*P)<=num_sampled_per_box) )
             {
-            break;
+            *(sampled_mask_pr+*(points_mask_pr+idx+i*P)+num_sampled_per_box*i)=1;
+            *(sampled_idx_pr+*(points_mask_pr+idx+i*P)+num_sampled_per_box*i)=idx;
+            point_sampled_num+=1;
+            }
+            else
+            {
+
             }
         }
+
+
         else
         {
         continue;
@@ -339,11 +368,18 @@ void box2mapLauncher(const int N,const int C,const int H,const int W,const float
 }
 
 
-void points2boxLauncher(const int N,const int P,const float *points_mask_pr,float *sampled_mask_pr,float*sampled_idx_pr,int *point_sampled_num_pr,const int num_sampled_per_box,const int num_sampled_per_point)
+void points2boxLauncher(const int N,const int P,int *points_mask_pr,int *sampled_mask_pr,int*sampled_idx_pr,int *point_sampled_num_pr,const int num_sampled_per_box,const int num_sampled_per_point,const int num_threads)
 {
-    dim3 blocks(DIVUP(P,THREADS_PER_BLOCK_P));
+
+    dim3 blocks(DIBUP(N,THREADS_PER_BLOCK_P);
+    dim3 threads(THREADS_PER_BLOCK_P);
+    mask2ind_kernel<<<blocks,threads>>>(N,P,points_mask_pr);
+
+    dim3 blocks(DIVUP(P,THREADS_PER_BLOCK_P);
     dim3 threads(THREADS_PER_BLOCK_P);
     points2box_kernel<<<blocks,threads>>>(N,P,points_mask_pr,sampled_mask_pr,sampled_idx_pr,point_sampled_num_pr,num_sampled_per_box,num_sampled_per_point);
+
+
 #ifdef DEBUG
     cudaDeviceSynchronize();
 #endif

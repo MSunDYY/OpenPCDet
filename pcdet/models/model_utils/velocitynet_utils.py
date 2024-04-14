@@ -9,7 +9,9 @@ from torch.nn.init import xavier_uniform_, zeros_, kaiming_normal_
 from spconv.pytorch.utils import PointToVoxel
 from pcdet.ops.pointnet2.pointnet2_stack.pointnet2_utils import ball_query, grouping_operation, QueryAndGroup
 from pcdet import device
-from pcdet.ops.box2map.box2map import points2box_gpu
+from pcdet.ops.box2map.box2map import points2box_gpu,points2box
+
+
 class PointNetfeat(nn.Module):
     def __init__(self, input_dim, x=1, outchannel=512):
         super(PointNetfeat, self).__init__()
@@ -39,40 +41,42 @@ class PointNetfeat(nn.Module):
 
 
 class PointNet2(nn.Module):
-    def __init__(self, input_dim,model_cfg=None):
+    def __init__(self, input_dim, model_cfg=None):
         super(PointNet2, self).__init__()
         num_dim = model_cfg.POINT_DIM
-        self.sampler = QueryAndGroup(radius=1, nsample=4,use_xyz=False)
-        self.conv1 = nn.Conv1d(in_channels=input_dim,out_channels=num_dim,kernel_size=1)
+        self.sampler = QueryAndGroup(radius=1, nsample=4, use_xyz=False)
+        self.conv1 = nn.Conv1d(in_channels=input_dim, out_channels=num_dim, kernel_size=1)
         self.bn1 = nn.BatchNorm1d(num_dim)
-        self.fc1 = nn.Linear(num_dim,num_dim)
-        self.fc_ce = nn.Linear(num_dim,3)
-        self.fc2 = nn.Linear(num_dim,num_dim)
-        self.fc_lwh = nn.Linear(num_dim,3)
-        self.fc3 = nn.Linear(num_dim,num_dim)
-        self.fc_theta = nn.Linear(num_dim,1)
-        self.out_dim=3+3+1
+        self.fc1 = nn.Linear(num_dim, num_dim)
+        self.fc_ce = nn.Linear(num_dim, 3)
+        self.fc2 = nn.Linear(num_dim, num_dim)
+        self.fc_lwh = nn.Linear(num_dim, 3)
+        self.fc3 = nn.Linear(num_dim, num_dim)
+        self.fc_theta = nn.Linear(num_dim, 1)
+        self.out_dim = 3 + 3 + 1
+
     def forward(self, x):
-        num_batch_cnt = (torch.ones(x.shape[0]) * x.shape[1]*x.shape[2]).to(device)
+        num_batch_cnt = (torch.ones(x.shape[0]) * x.shape[1] * x.shape[2]).to(device)
         num_batch_new_cnt = (torch.ones(x.shape[0]) * x.shape[2]).to(device)
         B = x.shape[0]
-        new_xyz = x[:,0,:,:3].reshape(-1,3)
-        xyz = x[:,:,:,:3].reshape(-1,3)
-        
-        x,_ = self.sampler(xyz.contiguous(), num_batch_cnt.contiguous().int(),new_xyz.contiguous(),
-                                            num_batch_new_cnt.contiguous().int(),x.reshape(-1,x.shape[-1]))
+        new_xyz = x[:, 0, :, :3].reshape(-1, 3)
+        xyz = x[:, :, :, :3].reshape(-1, 3)
+
+        x, _ = self.sampler(xyz.contiguous(), num_batch_cnt.contiguous().int(), new_xyz.contiguous(),
+                            num_batch_new_cnt.contiguous().int(), x.reshape(-1, x.shape[-1]))
         # x = x.reshape(B,-1,x.shape[-2],x.shape[-1])
         x = self.bn1(self.conv1(x))
-        x = torch.max(x,dim=-1)[0]
-        feature = x.reshape(B,-1,x.shape[-1])
+        x = torch.max(x, dim=-1)[0]
+        feature = x.reshape(B, -1, x.shape[-1])
         x1 = F.relu(self.bn1(self.fc1(x)))
         x_center = self.fc_ce(x1)
         x2 = F.relu(self.bn1(self.fc2(x)))
         x_lwh = self.fc_lwh(x2)
         x3 = F.relu(self.bn1(self.fc3(x)))
         x_theta = self.fc_theta(x3)
-        
-        return torch.concat((x_center,x_lwh,x_theta),dim=-1).reshape(B,-1,self.out_dim),feature
+
+        return torch.concat((x_center, x_lwh, x_theta), dim=-1).reshape(B, -1, self.out_dim), feature
+
 
 class PointNet(nn.Module):
     def __init__(self, input_dim, joint_feat=False, model_cfg=None):
@@ -152,12 +156,11 @@ class SpatialMixerBlock(nn.Module):
     def __init__(self, hidden_dim, grid_size, channels, config=None, dropout=0.0):
         super().__init__()
 
-        self.mixer_x = MLP(input_dim=grid_size, hidden_dim=hidden_dim, output_dim=grid_size, num_layers=3)
-        self.mixer_y = MLP(input_dim=grid_size, hidden_dim=hidden_dim, output_dim=grid_size, num_layers=3)
-        self.mixer_z = MLP(input_dim=grid_size, hidden_dim=hidden_dim, output_dim=grid_size, num_layers=3)
-        self.norm_x = nn.LayerNorm(channels)
-        self.norm_y = nn.LayerNorm(channels)
-        self.norm_z = nn.LayerNorm(channels)
+        self.mixer = nn.MultiheadAttention(channels, 8, dropout=dropout)
+
+        self.dropout = nn.Dropout(dropout)
+        self.norm = nn.LayerNorm(channels)
+
         self.norm_channel = nn.LayerNorm(channels)
         self.ffn = nn.Sequential(
             nn.Linear(channels, 2 * channels),
@@ -169,23 +172,11 @@ class SpatialMixerBlock(nn.Module):
         self.grid_size = grid_size
 
     def forward(self, src):
-        src_3d = src.permute(1, 2, 0).contiguous().view(src.shape[1], src.shape[2],
-                                                        self.grid_size, self.grid_size, self.grid_size)
-        src_3d = src_3d.permute(0, 1, 4, 3, 2).contiguous()
-        mixed_x = self.mixer_x(src_3d)
-        mixed_x = src_3d + mixed_x
-        mixed_x = self.norm_x(mixed_x.permute(0, 2, 3, 4, 1)).permute(0, 4, 1, 2, 3).contiguous()
+        src2 = self.mixer(src, src, src)[0]
 
-        mixed_y = self.mixer_y(mixed_x.permute(0, 1, 2, 4, 3)).permute(0, 1, 2, 4, 3).contiguous()
-        mixed_y = mixed_x + mixed_y
-        mixed_y = self.norm_y(mixed_y.permute(0, 2, 3, 4, 1)).permute(0, 4, 1, 2, 3).contiguous()
+        src = src + self.dropout(src2)
+        src_mixer = self.norm(src)
 
-        mixed_z = self.mixer_z(mixed_y.permute(0, 1, 4, 3, 2)).permute(0, 1, 4, 3, 2).contiguous()
-
-        mixed_z = mixed_y + mixed_z
-        mixed_z = self.norm_z(mixed_z.permute(0, 2, 3, 4, 1)).permute(0, 4, 1, 2, 3).contiguous()
-
-        src_mixer = mixed_z.view(src.shape[1], src.shape[2], -1).permute(2, 0, 1)
         src_mixer = src_mixer + self.ffn(src_mixer)
         src_mixer = self.norm_channel(src_mixer)
 
@@ -196,7 +187,7 @@ class Transformer(nn.Module):
 
     def __init__(self, config, d_model=512, nhead=8, num_encoder_layers=6,
                  dim_feedforward=2048, dropout=0.1, activation="relu", normalize_before=False,
-                 num_lidar_points=None,  share_head=True, num_groups=None,
+                 num_lidar_points=None, share_head=True, num_groups=None,
                  sequence_stride=None, num_frames=None):
         super().__init__()
 
@@ -205,7 +196,6 @@ class Transformer(nn.Module):
 
         self.nhead = nhead
         self.sequence_stride = sequence_stride
-
 
         self.num_lidar_points = num_lidar_points
         self.d_model = d_model
@@ -236,7 +226,7 @@ class Transformer(nn.Module):
 
     def forward(self, src, pos=None):
 
-        BS, N, C = src.shape
+        BS, F,N,K, C = src.shape
         if not pos is None:
             pos = pos.permute(1, 0, 2)
 
@@ -269,11 +259,10 @@ class Transformer(nn.Module):
         #
         # else:
         token_list = self.token.to(device)
+        src = src.reshape(BS*N*F,K,-1).permute(1,0,2)
+        src = torch.cat([token_list.repeat(1, src.shape[1], 1), src], dim=0)
 
-
-        src = torch.cat([token_list.repeat(src.shape[0],1,1),src],dim=1)
-
-        src = src.permute(1, 0, 2)
+        # src = src.permute(1, 0, 2)
         memory, tokens = self.encoder(src, pos=pos)
 
         memory = torch.cat(memory[0:1].chunk(4, 1), 0)
@@ -447,7 +436,7 @@ class FFN(nn.Module):
 
 
 def build_transformer(args):
-    return [Transformer(
+    return nn.ModuleList([Transformer(
         config=args,
         d_model=args.hidden_dim,
         dropout=args.dropout,
@@ -460,7 +449,7 @@ def build_transformer(args):
         num_frames=args.num_frames,
         sequence_stride=args.get('sequence_stride', 1),
         num_groups=args.num_groups,
-    ) for i in range(args.num_frames-1)]
+    ) for i in range(args.num_frames - 1)])
 
 
 class VoxelSampler(nn.Module):
@@ -488,37 +477,49 @@ class VoxelSampler(nn.Module):
     def get_output_feature_dim(self):
         return self.num_point_features
 
-
-
-    def cylindrical_pool(self,cur_points, cur_boxes, num_sample, gamma=1.):
+    def cylindrical_pool(self, cur_points, cur_boxes, num_sample, gamma=1.,pool='even'):
         if len(cur_points) < num_sample:
             cur_points = F.pad(cur_points, [0, 0, 0, num_sample - len(cur_points)])
         cur_radiis = torch.norm(cur_boxes[:, 3:5] / 2, dim=-1) * gamma
         dis = torch.norm(
             (cur_points[:, :2].unsqueeze(0) - cur_boxes[:, :2].unsqueeze(1).repeat(1, cur_points.shape[0], 1)), dim=2)
         point_mask = (dis <= cur_radiis.unsqueeze(-1))
-        sampled_point_mask = torch.zeros_like(point_mask)
-        # sampled_mask, sampled_idx = torch.topk(point_mask.float(), num_sample)
 
-        sampled_point_mask,sampled_idx = self.select_points(point_mask=point_mask.float(),num_sampled_per_box=num_sample,num_sampled_per_point=2)
-        roi_mask = sampled_point_mask.sum(-1)!=0
+        if pool=='even':
 
-        sampled_point_mask[torch.arange(point_mask.shape[0]).unsqueeze(1),sampled_idx] = 1
-        
-        
+            sampled_mask, sampled_idx = torch.topk(point_mask.float(), num_sample)
+            rois_new = cur_boxes
+        else:
+            sampled_mask, sampled_idx = self.select_points(point_mask=point_mask.int(), num_sampled_per_box=num_sample,
+                                                       num_sampled_per_point=1)
+            roi_mask = sampled_mask.sum(-1) != 0
+
+            rois_new = cur_boxes[roi_mask]
+            sampled_idx = sampled_idx[roi_mask]
+            sampled_mask = sampled_mask[roi_mask]
+        # sampled_point_mask[torch.arange(point_mask.shape[0]).unsqueeze(1),sampled_idx] = 1
         sampled_idx = sampled_idx.view(-1, 1).repeat(1, cur_points.shape[-1])
-        sampled_points = torch.gather(cur_points, 0, sampled_idx).view(len(sampled_mask), num_sample, -1)
-
+        sampled_points = torch.gather(cur_points, 0, sampled_idx.long()).view(len(rois_new), num_sample, -1)
         sampled_points[sampled_mask == 0, :] = 0
 
-        return sampled_points
-    def select_points(self,point_mask,num_sampled_per_box,num_sampled_per_point=2):
+        return sampled_points, rois_new
 
-        sampled_mask = point_mask.new_zeros(point_mask.shape[0],num_sampled_per_box)
-        sampled_idx = point_mask.new_zeros(point_mask.shape[0],num_sampled_per_box)
-        point_sampled_num = point_mask.new_zeros(point_mask.shape[0]).int()
-        points2box_gpu(point_mask.contiguous(),sampled_mask,sampled_idx,point_sampled_num,num_sampled_per_box,num_sampled_per_point)
-        return sampled_mask,sampled_idx
+    def select_points(self, point_mask, num_sampled_per_box, num_sampled_per_point=2):
+
+        sampled_mask = point_mask.new_zeros(point_mask.shape[0], num_sampled_per_box,device='cpu')
+        sampled_idx = point_mask.new_zeros(point_mask.shape[0], num_sampled_per_box,device = 'cpu')
+        point_sampled_num = point_mask.new_zeros(point_mask.shape[0],device='cpu').int()
+        points2box(point_mask.to('cpu').contiguous(), sampled_mask, sampled_idx, point_sampled_num, num_sampled_per_box,
+                       num_sampled_per_point)
+
+        # point_mask_cpu = point_mask.to('cpu')
+        # sampled_mask_cpu = point_mask_cpu.new_zeros(point_mask.shape[0], num_sampled_per_box)
+        # sampled_idx_cpu = point_mask_cpu.new_zeros(point_mask.shape[0], num_sampled_per_box)
+        # point_sampled_num_cpu = point_mask_cpu.new_zeros(point_mask.shape[0]).int()
+        # points2box(point_mask_cpu.contiguous(), sampled_mask_cpu, sampled_idx_cpu, point_sampled_num_cpu, num_sampled_per_box,
+        #                num_sampled_per_point-1)
+        return sampled_mask.to(device), sampled_idx.to(device)
+
     def forward(self, batch_size, trajectory_rois, num_sample, batch_dict):
 
         src = list()
@@ -534,8 +535,10 @@ class VoxelSampler(nn.Module):
 
                 time_mask = (cur_points[:, -1] - idx * 0.1).abs() < 1e-3
                 cur_time_points = cur_points[time_mask, :5].contiguous()
-
-                cur_frame_boxes = cur_batch_boxes[idx]
+                if idx==0 and self.training:
+                    cur_frame_boxes = batch_dict['rois'][bs_idx]
+                else:
+                    cur_frame_boxes = cur_batch_boxes[idx]
 
                 voxel, coords, num_points = self.gen(cur_time_points)
                 coords = coords[:, [2, 1]].contiguous()
@@ -593,13 +596,14 @@ class VoxelSampler(nn.Module):
                 key_points = key_points[point_mask]
                 key_points = key_points[torch.randperm(len(key_points)), :]
 
-                key_points,rois_new = self.cylindrical_pool(key_points, cur_frame_boxes, num_sample, gamma)
+                key_points, rois_new = self.cylindrical_pool(key_points, cur_frame_boxes, num_sample, gamma,pool='even' if idx==0 else 'point_nms')
 
-                src_points.append(key_points)
+                src.append(key_points)
                 rois.append(rois_new)
-            src.append(torch.stack(src_points))
-            rois.append()
-        return torch.stack(src)
+
+        batch_dict['src_list'] = src
+        batch_dict['rois_list'] = rois
+        return batch_dict
 
 
 def build_voxel_sampler(device):
@@ -608,5 +612,5 @@ def build_voxel_sampler(device):
         voxel_size=0.4,
         pc_range=[-75.2, -75.2, -10, 75.2, 75.2, 10],
         max_points_per_voxel=32,
-        num_point_features=5
+        num_point_features=6
     )
