@@ -40,7 +40,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 const int THREADS_PER_BLOCK_NMS = sizeof(unsigned long long) * 8;
 
 void box2mapLauncher(const int N,const int C,const int H,const int W,const float *boxes,const float *values,float * map);
-void points2boxLauncher(const int N,const int P,const int *points_mask_pr,int *sampled_mask_pr,int*sampled_idx_pr,int *point_sampled_num_pr,const int num_sampled_per_box,const int num_sampled_per_point,const int num_threads);
+void points2boxLauncher(const int N,const int P,int *points_mask_pr,int *sampled_mask_pr,int*sampled_idx_pr,int *point_sampled_num_pr,const int num_sampled_per_box,const int num_sampled_per_point,const int num_threads);
 
 
 int box2map_gpu(at::Tensor boxes_tensor, at::Tensor map_tensor, at::Tensor values_tensor)
