@@ -633,7 +633,7 @@ class VelocityHead(RoIHeadTemplate):
         proposal_aware_feat = torch.cat([proposal_aware_feat, src[:, :, 3:]], dim=-1)
         src_gemoetry = self.up_dimension_geometry(proposal_aware_feat)
 
-        return src_gemoetry
+        return torch.concat([src_gemoetry,src[:,:,:3]],dim=-1)
 
     def get_proposal_aware_motion_feature(self, proxy_point, batch_size, trajectory_rois, num_rois, batch_dict):
 
@@ -779,7 +779,22 @@ class VelocityHead(RoIHeadTemplate):
             return boxes_cur, cur_features, scores_cur, attention_map
         else:
             return boxes_cur, cur_features, scores_cur, index_cur_all, attention_map
-
+    
+    def select_points2boxes(self,features,xyz,boxes,num_sample,gamma=1):
+        
+        
+        cur_radiis = torch.norm(boxes[:,:,3:5] /2,dim=-1)*gamma
+        dis = torch.norm((xyz[:,None,:,:2] - boxes[:,:,None,:2].repeat(1,1,xyz.shape[1],1)),dim=3)
+        point_mask = dis<=cur_radiis.unsqueeze(-1)
+        sampled_mask,sampled_idx = torch.topk(point_mask.float(),num_sample,dim=-1)
+        sampled_idx = sampled_idx.view(sampled_idx.shape[0],-1,1).repeat(1,1,features.shape[-1])
+        sampled_points = torch.gather(features,1,sampled_idx.long()).view(sampled_idx.shape[0],boxes.shape[1],num_sample,-1)
+        sampled_points[sampled_mask==0]=0
+        return sampled_points
+        
+    def bio_crossattention(self,src_pre,src_cur):
+        pass
+    
     def forward(self, batch_dict):
         """
         :param input_data: input dict
@@ -876,16 +891,31 @@ class VelocityHead(RoIHeadTemplate):
         # src_motion_feature = self.get_proposal_aware_motion_feature(proxy_points, batch_size, trajectory_rois, num_rois,
         #                                                             batch_dict)
         src = src_geometry_feature
+        src_velocity = torch.rand(src.shape[0],src.shape[1],2).to(device)-0.5
+        src = torch.concat([src,src_velocity],dim=-1)
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK', None):
             src[empty_mask.view(-1)] = 0
-        src = src.reshape(batch_size,num_frames,-1,num_sample[0],src.shape[-1])
+        # src = src.reshape(batch_size,num_frames,-1,num_sample[0],src.shape[-1])
 
         # if self.model_cfg.Transformer.use_grid_pos.init_type == 'index':
         #     pos = self.grid_pos_embeded(pos)
         # else:
         #     pos = None
+        rois  = rois.reshape(batch_size,num_frames,-1,rois.shape[-1])
         for i in range(len(self.transformer)):
-            hs, tokens = self.transformer[i](src, pos=None)
+            src, tokens = self.transformer[i](src, pos=None)
+            src = src.permute(1,0,2).reshape(batch_size,num_frames,-1,num_sample[0],src.shape[-1])
+            src_cur,src_pre = [src[:,torch.arange(src.shape[1]//2)*2+i,:,:,:] for i in range(2)]
+            roi_cur,roi_pre = [rois[:,torch.arange(rois.shape[1]//2)*2+i,:,:] for i in range(2)]
+            
+            src_pre[:,:,:,:,-5:-3]+=src_pre[:,:,:,:,-2:]*0.1*2**i
+            src_pre = src_pre.reshape(-1,src_pre.shape[2]*num_sample[0],src_pre.shape[-1])
+            # src_cur = src_cur.reshape(-1,src_cur.shape[2]*num_sample[0],src_cur.shape[-1])
+            roi_cur = roi_cur.reshape(-1,roi_cur.shape[-2],roi_cur.shape[-1])
+            src_pre2cur = self.select_points2boxes(src_pre,src_pre[:,:,-5:-2],roi_cur,num_sample=num_sample[0],gamma=1.1*2**i)
+            src = self.bio_crossattention(src_pre2cur,src_cur)
+            
+            # src_ = src.permute(1,0,2).
         point_cls_list = []
         point_reg_list = []
 

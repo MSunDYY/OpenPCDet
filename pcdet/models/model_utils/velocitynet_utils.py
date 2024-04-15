@@ -226,7 +226,7 @@ class Transformer(nn.Module):
 
     def forward(self, src, pos=None):
 
-        BS, F,N,K, C = src.shape
+        # BS, F,N,K, C = src.shape
         if not pos is None:
             pos = pos.permute(1, 0, 2)
 
@@ -259,14 +259,17 @@ class Transformer(nn.Module):
         #
         # else:
         token_list = self.token.to(device)
-        src = src.reshape(BS*N*F,K,-1).permute(1,0,2)
-        src = torch.cat([token_list.repeat(1, src.shape[1], 1), src], dim=0)
+        src = src.permute(1,0,2)
+        
+        xyz_vel = src[:,:,-5:]
+        
+        src = torch.cat([token_list.repeat(1, src.shape[1], 1), src[:,:,:-5]], dim=0)
 
         # src = src.permute(1, 0, 2)
-        memory, tokens = self.encoder(src, pos=pos)
-
-        memory = torch.cat(memory[0:1].chunk(4, 1), 0)
-        return memory, tokens
+        src, tokens = self.encoder(src, pos=pos)
+        src = torch.concat([src,xyz_vel],dim=-1)
+        # memory = torch.cat(memory[0:1].chunk(4, 1), 0)
+        return src, tokens
 
 
 class TransformerEncoder(nn.Module):
@@ -351,7 +354,7 @@ class TransformerEncoderLayer(nn.Module):
         src_summary = self.linear2(self.dropout(self.activation(self.linear1(token))))
         token = token + self.dropout2(src_summary)
         token = self.norm2(token)
-        src = torch.cat([token, src[1:]], 0)
+        # src = torch.cat([token, src[1:]], 0)
 
         if self.layer_count <= self.config.enc_layers - 1:
 
@@ -374,7 +377,7 @@ class TransformerEncoderLayer(nn.Module):
 
             src = torch.cat([src[:1], src_inter_group_fusion], 0)
 
-        return src, torch.cat(src[:1].chunk(4, 1), 0)
+        return src[1:], src[:1].chunk(4, 1)[0]
 
     def forward_pre(self, src,
                     pos: Optional[Tensor] = None):
