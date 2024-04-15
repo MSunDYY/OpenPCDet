@@ -76,6 +76,12 @@ MODEL:
             NSAMPLE: [16, 16]
             POOL_METHOD: max_pool
             
+        BIOCROSSATTENTION:
+            num_layers: 2
+            nhead: 4
+            dim_feedforward: 512
+            dropout: 0.1
+
 
         Transformer:
 

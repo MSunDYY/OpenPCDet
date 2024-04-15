@@ -458,7 +458,7 @@ def build_transformer(args):
 class VoxelSampler(nn.Module):
     GAMMA = 1.1
 
-    def __init__(self, device, voxel_size, pc_range, max_points_per_voxel, num_point_features=5):
+    def __init__(self, device, voxel_size, pc_range, max_points_per_voxel, num_point_features=5,training = True):
         super().__init__()
 
         self.voxel_size = voxel_size
@@ -471,7 +471,7 @@ class VoxelSampler(nn.Module):
             max_num_points_per_voxel=max_points_per_voxel,
             device=device
         )
-
+        self.training = training
         self.pc_start = torch.FloatTensor(pc_range[:2]).to(device)
         self.k = max_points_per_voxel
         self.grid_x = int((pc_range[3] - pc_range[0]) / voxel_size)
@@ -492,9 +492,10 @@ class VoxelSampler(nn.Module):
 
             sampled_mask, sampled_idx = torch.topk(point_mask.float(), num_sample)
             rois_new = cur_boxes
+            roi_mask = cur_boxes.new_ones(cur_boxes.shape[0],dtype = torch.bool)
         else:
             sampled_mask, sampled_idx = self.select_points(point_mask=point_mask.int(), num_sampled_per_box=num_sample,
-                                                       num_sampled_per_point=1)
+                                                       num_sampled_per_point=2)
             roi_mask = sampled_mask.sum(-1) > 0
             
             rois_new = cur_boxes[roi_mask]
@@ -540,12 +541,17 @@ class VoxelSampler(nn.Module):
             rois_boxes = list()
             for idx in range(trajectory_rois.shape[1]):
                 gamma = self.GAMMA  # ** (idx+1)
-
+                
                 time_mask = (cur_points[:, -1] - idx * 0.1).abs() < 1e-3
-                cur_time_points = cur_points[time_mask, :5].contiguous()
-                cur_frame_boxes = trajectory_rois[bs_idx,idx]
-                cur_frame_scores = trajectory_scores[bs_idx,idx]
-                cur_frame_labels = trajectory_labels[bs_idx,idx]
+                cur_time_points = cur_points[time_mask, :].contiguous()
+                if self.training and idx==0:
+                    cur_frame_boxes = batch_dict['rois_cur'][bs_idx]
+                    cur_frame_scores = batch_dict['roi_scores_cur'][bs_idx]
+                    cur_frame_labels = batch_dict['roi_labels_cur'][bs_idx]
+                else:
+                    cur_frame_boxes = trajectory_rois[bs_idx,idx]
+                    cur_frame_scores = trajectory_scores[bs_idx,idx]
+                    cur_frame_labels = trajectory_labels[bs_idx,idx]
 
                 voxel, coords, num_points = self.gen(cur_time_points)
                 coords = coords[:, [2, 1]].contiguous()
@@ -603,7 +609,7 @@ class VoxelSampler(nn.Module):
                 key_points = key_points[point_mask]
                 key_points = key_points[torch.randperm(len(key_points)), :]
 
-                key_points, rois_new,roi_mask = self.cylindrical_pool(key_points, cur_frame_boxes, num_sample, gamma,pool='point_nms' if idx==0 else 'point_nms')
+                key_points, rois_new,roi_mask = self.cylindrical_pool(key_points, cur_frame_boxes, num_sample, gamma,pool='even' if idx==0 else 'point_nms')
 
                 src.append(key_points)
                 rois.append(rois_new)
@@ -616,11 +622,12 @@ class VoxelSampler(nn.Module):
         return batch_dict
 
 
-def build_voxel_sampler(device):
+def build_voxel_sampler(device,training=True):
     return VoxelSampler(
         device,
         voxel_size=0.4,
         pc_range=[-75.2, -75.2, -10, 75.2, 75.2, 10],
         max_points_per_voxel=32,
-        num_point_features=6
+        num_point_features=6,
+        training=training
     )
