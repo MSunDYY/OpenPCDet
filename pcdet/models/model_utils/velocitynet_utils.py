@@ -495,17 +495,17 @@ class VoxelSampler(nn.Module):
         else:
             sampled_mask, sampled_idx = self.select_points(point_mask=point_mask.int(), num_sampled_per_box=num_sample,
                                                        num_sampled_per_point=1)
-            roi_mask = sampled_mask.sum(-1) != 0
-
+            roi_mask = point_mask.sum(-1) > 0
+            
             rois_new = cur_boxes[roi_mask]
             sampled_idx = sampled_idx[roi_mask]
             sampled_mask = sampled_mask[roi_mask]
         # sampled_point_mask[torch.arange(point_mask.shape[0]).unsqueeze(1),sampled_idx] = 1
         sampled_idx = sampled_idx.view(-1, 1).repeat(1, cur_points.shape[-1])
-        sampled_points = torch.gather(cur_points, 0, sampled_idx.long()).view(len(rois_new), num_sample, -1)
+        sampled_points = torch.gather(cur_points, 0, sampled_idx.long()).view(len(rois_new), num_sample, cur_points.shape[-1])
         sampled_points[sampled_mask == 0, :] = 0
 
-        return sampled_points, rois_new
+        return sampled_points, rois_new,roi_mask
 
     def select_points(self, point_mask, num_sampled_per_box, num_sampled_per_point=2):
 
@@ -527,10 +527,15 @@ class VoxelSampler(nn.Module):
 
         src = list()
         rois = list()
+        roi_scores = list()
+        roi_labels = list()
+        trajectory_rois = batch_dict['roi_boxes']
+        trajectory_scores = batch_dict['roi_scores']
+        trajectory_labels = batch_dict['roi_labels']
         for bs_idx in range(batch_size):
 
             cur_points = batch_dict['points'][(batch_dict['points'][:, 0] == bs_idx)][:, 1:]
-            cur_batch_boxes = trajectory_rois[bs_idx]
+            # cur_batch_boxes = trajectory_rois[bs_idx]
             src_points = list()
             rois_boxes = list()
             for idx in range(trajectory_rois.shape[1]):
@@ -538,10 +543,9 @@ class VoxelSampler(nn.Module):
 
                 time_mask = (cur_points[:, -1] - idx * 0.1).abs() < 1e-3
                 cur_time_points = cur_points[time_mask, :5].contiguous()
-                if idx==0 and self.training:
-                    cur_frame_boxes = batch_dict['rois'][bs_idx]
-                else:
-                    cur_frame_boxes = cur_batch_boxes[idx]
+                cur_frame_boxes = trajectory_rois[bs_idx,idx]
+                cur_frame_scores = trajectory_scores[bs_idx,idx]
+                cur_frame_labels = trajectory_labels[bs_idx,idx]
 
                 voxel, coords, num_points = self.gen(cur_time_points)
                 coords = coords[:, [2, 1]].contiguous()
@@ -599,13 +603,16 @@ class VoxelSampler(nn.Module):
                 key_points = key_points[point_mask]
                 key_points = key_points[torch.randperm(len(key_points)), :]
 
-                key_points, rois_new = self.cylindrical_pool(key_points, cur_frame_boxes, num_sample, gamma,pool='even' if idx==0 else 'point_nms')
+                key_points, rois_new,roi_mask = self.cylindrical_pool(key_points, cur_frame_boxes, num_sample, gamma,pool='point_nms' if idx==0 else 'point_nms')
 
                 src.append(key_points)
                 rois.append(rois_new)
-
+                roi_scores.append(cur_frame_scores[roi_mask])
+                roi_labels.append(cur_frame_labels[roi_mask])
         batch_dict['src_list'] = src
         batch_dict['rois_list'] = rois
+        batch_dict['roi_scores_list'] = roi_scores
+        batch_dict['roi_labels_list'] = roi_labels
         return batch_dict
 
 

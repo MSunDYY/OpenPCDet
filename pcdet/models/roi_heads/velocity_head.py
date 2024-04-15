@@ -863,11 +863,14 @@ class VelocityHead(RoIHeadTemplate):
             # valid_length = targets_dict['valid_length']
             empty_mask = batch_dict['rois'][:, :, :6].sum(-1) == 0
         else:
-            empty_mask = batch_dict['rois'][:, :, 0, :6].sum(-1) == 0
+            empty_mask = batch_dict['roi_boxes'][:, :, :, :6].sum(-1) == 0
             batch_dict['valid_traj_mask'] = ~empty_mask
-
+            batch_dict['rois'] = batch_dict['roi_boxes'][:,0,:,:]
         batch_dict = self.voxel_sampler(batch_size, rois, num_sample[0],
                                         batch_dict)
+        
+        if not self.training:
+            return batch_dict
         # src = rois.new_zeros(batch_size, num_rois, num_sample, 5)
         rois_list = batch_dict['rois_list']
         srcs_list = batch_dict['src_list']

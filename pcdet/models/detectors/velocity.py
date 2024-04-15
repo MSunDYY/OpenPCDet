@@ -63,6 +63,25 @@ class VelocityNet(Detector3DTemplate):
         batch_size = batch_dict['batch_size']
         recall_dict = {}
         pred_dicts = []
+        signal = True
+        if signal:
+            for index in range(batch_size):
+                record_dict={'pred_boxes': batch_dict['rois_list'][4*index][:,:7],
+                'pred_scores': batch_dict['roi_scores_list'][4*index],
+                'pred_labels': batch_dict['roi_labels_list'][4*index]}
+                pred_dicts.append(record_dict)
+            batch_dict['final_box_dicts'] = pred_dicts
+            for index in range(batch_size):
+                pred_boxes = pred_dicts[index]['pred_boxes']
+                recall_dict = self.generate_recall_record(
+                    box_preds=pred_boxes,
+                    recall_dict=recall_dict, batch_index=index, data_dict=batch_dict,
+                    thresh_list=post_process_cfg.RECALL_THRESH_LIST
+                )
+
+            return pred_dicts, recall_dict
+            
+            
         for index in range(batch_size):
             if batch_dict.get('batch_index', None) is not None:
                 assert batch_dict['batch_box_preds'].shape.__len__() == 2
@@ -176,7 +195,7 @@ class VelocityNet(Detector3DTemplate):
         for index in range(batch_size):
             pred_boxes = pred_dicts[index]['pred_boxes']
             recall_dict = self.generate_recall_record(
-                box_preds=final_boxes ,
+                box_preds=pred_boxes ,
                 recall_dict=recall_dict, batch_index=index, data_dict=batch_dict,
                 thresh_list=post_process_cfg.RECALL_THRESH_LIST
         )
