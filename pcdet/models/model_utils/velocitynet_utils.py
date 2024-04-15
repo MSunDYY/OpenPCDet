@@ -495,7 +495,7 @@ class VoxelSampler(nn.Module):
         else:
             sampled_mask, sampled_idx = self.select_points(point_mask=point_mask.int(), num_sampled_per_box=num_sample,
                                                        num_sampled_per_point=1)
-            roi_mask = point_mask.sum(-1) > 0
+            roi_mask = sampled_mask.sum(-1) > 0
             
             rois_new = cur_boxes[roi_mask]
             sampled_idx = sampled_idx[roi_mask]

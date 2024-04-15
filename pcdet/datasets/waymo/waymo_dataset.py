@@ -85,7 +85,7 @@ class WaymoDataset(DatasetTemplate):
                 continue
             with open(info_path, 'rb') as f:
                 infos = pickle.load(f)
-                num_rm_frame = self.dataset_cfg.get('REMOVE_FIRST_FRAME', 0)
+                num_rm_frame = self.dataset_cfg.get('REMOVE_FIRST_FRAME', 0) if self.training else 0
                 waymo_infos.extend(infos[num_rm_frame:])
                 seq_name_to_infos[infos[0]['point_cloud']['lidar_sequence']] = infos
         self.infos.extend(waymo_infos[:])
@@ -387,7 +387,7 @@ class WaymoDataset(DatasetTemplate):
             else:
                 # add timestamp
                 points_pre = np.hstack([points_pre,
-                                        0.1 * (sample_idx - sample_idx_pre) * np.ones((points_pre.shape[0], 1)).astype(
+                                        0.1 * (idx+1) * np.ones((points_pre.shape[0], 1)).astype(
                                             points_pre.dtype)])  # one frame 0.1s
 
             points_pre = remove_ego_points(points_pre, 1.0)
