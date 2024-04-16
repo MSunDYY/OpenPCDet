@@ -85,6 +85,7 @@ MODEL:
 
         Transformer:
 
+
             num_lidar_points: [128,192,288]
             num_proxy_points: 64  # GRID_SIZE*GRID_SIZE*GRID_SIZE
             pos_hidden_dim: 64
@@ -95,7 +96,7 @@ MODEL:
             nheads: 4
             pre_norm: False
             num_frames: 4
-            num_groups: 4
+#            num_groups: 4
             use_grid_pos:
                 enabled: False
                 init_type: index

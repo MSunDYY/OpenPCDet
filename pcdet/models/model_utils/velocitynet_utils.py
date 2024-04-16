@@ -60,7 +60,7 @@ class PointNet2(nn.Module):
         num_batch_new_cnt = (torch.ones(x.shape[0]) * x.shape[2]).to(device)
         B = x.shape[0]
         new_xyz = x[:, 0, :, :3].reshape(-1, 3)
-        xyz = x[:, :, :, :3].reshape(-1, 3)
+        xyz = x[:, 1:, :, :3].reshape(-1, 3)
 
         x, _ = self.sampler(xyz.contiguous(), num_batch_cnt.contiguous().int(), new_xyz.contiguous(),
                             num_batch_new_cnt.contiguous().int(), x.reshape(-1, x.shape[-1]))
@@ -224,7 +224,7 @@ class Transformer(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, src, pos=None):
+    def forward(self, src,num_groups, pos=None):
 
         # BS, F,N,K, C = src.shape
         if not pos is None:
@@ -266,10 +266,12 @@ class Transformer(nn.Module):
         src = torch.cat([token_list.repeat(1, src.shape[1], 1), src[:,:,:-5]], dim=0)
 
         # src = src.permute(1, 0, 2)
-        src, tokens = self.encoder(src, pos=pos)
-        src = torch.concat([src,xyz_vel],dim=-1)
+        src = self.encoder(src, pos=pos)
+        token = src[:1][:,torch.arange(src.shape[1]//num_groups)*num_groups]
+        src = torch.concat([src[1:],xyz_vel],dim=-1)
+        
         # memory = torch.cat(memory[0:1].chunk(4, 1), 0)
-        return src, tokens
+        return src,token
 
 
 class TransformerEncoder(nn.Module):
@@ -287,13 +289,12 @@ class TransformerEncoder(nn.Module):
         token_list = []
         output = src
         for layer in self.layers:
-            output, tokens = layer(output, pos=pos)
-            token_list.append(tokens)
+            output = layer(output, pos=pos)
+            # token_list.append(tokens)
         if self.norm is not None:
             output = self.norm(output)
 
-        return output, token_list
-
+        return output
 
 class TransformerEncoderLayer(nn.Module):
     count = 0
@@ -376,8 +377,8 @@ class TransformerEncoderLayer(nn.Module):
             src_inter_group_fusion = torch.cat(inter_group_fusion_list, 1)
 
             src = torch.cat([src[:1], src_inter_group_fusion], 0)
-
-        return src[1:], src[:1].chunk(4, 1)[0]
+        
+        return src
 
     def forward_pre(self, src,
                     pos: Optional[Tensor] = None):
@@ -438,7 +439,7 @@ class FFN(nn.Module):
         return tgt
 
 
-def build_transformer(args):
+def build_transformer(args,num_groups):
     return nn.ModuleList([Transformer(
         config=args,
         d_model=args.hidden_dim,
@@ -448,11 +449,9 @@ def build_transformer(args):
         num_encoder_layers=args.enc_layers,
         normalize_before=args.pre_norm,
         num_lidar_points=args.num_lidar_points[i],
-
-        num_frames=args.num_frames,
         sequence_stride=args.get('sequence_stride', 1),
-        num_groups=args.num_groups,
-    ) for i in range(args.num_frames - 1)])
+
+    ) for i in range(num_groups)])
 
 
 class VoxelSampler(nn.Module):
@@ -480,7 +479,7 @@ class VoxelSampler(nn.Module):
     def get_output_feature_dim(self):
         return self.num_point_features
 
-    def cylindrical_pool(self, cur_points, cur_boxes, num_sample, gamma=1.,pool='even'):
+    def cylindrical_pool(self, cur_points, cur_boxes, num_sample, gamma=1.,pool='even',next_boxes = None):
         if len(cur_points) < num_sample:
             cur_points = F.pad(cur_points, [0, 0, 0, num_sample - len(cur_points)])
         cur_radiis = torch.norm(cur_boxes[:, 3:5] / 2, dim=-1) * gamma
@@ -497,7 +496,11 @@ class VoxelSampler(nn.Module):
             sampled_mask, sampled_idx = self.select_points(point_mask=point_mask.int(), num_sampled_per_box=num_sample,
                                                        num_sampled_per_point=2)
             roi_mask = sampled_mask.sum(-1) > 0
-            
+            if next_boxes is not None:
+                next_radiis = torch.norm(next_boxes[:,3:5]/2,dim=-1)*gamma
+                dis_next = torch.norm((cur_points[:,:2].unsqueeze(0)-next_boxes[:,:2].unsqueeze(1).repeat(1,cur_points.shape[0],1)),dim=2)
+                point_mask = dis<=next_radiis.unsequeeze(-1)
+                
             rois_new = cur_boxes[roi_mask]
             sampled_idx = sampled_idx[roi_mask]
             sampled_mask = sampled_mask[roi_mask]

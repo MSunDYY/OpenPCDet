@@ -7,12 +7,12 @@ import torch.nn.functional as F
 from pcdet.ops.iou3d_nms import iou3d_nms_utils
 from ...utils import common_utils, loss_utils
 from .roi_head_template import RoIHeadTemplate
-from ..model_utils.velocitynet_utils import build_transformer, PointNet2, MLP, build_voxel_sampler
+from ..model_utils.velocitynet_utils import build_transformer, PointNet2,PointNet, MLP, build_voxel_sampler
 from .target_assigner.proposal_target_layer import ProposalTargetLayer
 from pcdet.ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_stack_modules
 from pcdet import device
 from pcdet.ops.iou3d_nms.iou3d_nms_utils import nms_gpu
-
+import math
 
 class ProposalTargetLayerMPPNet(ProposalTargetLayer):
     def __init__(self, roi_sampler_cfg):
@@ -399,16 +399,17 @@ class VelocityHead(RoIHeadTemplate):
         self.use_time_stamp = self.model_cfg.get('USE_TIMESTAMP', None)
         self.num_lidar_points = self.model_cfg.Transformer.num_lidar_points
         self.avg_stage1_score = self.model_cfg.get('AVG_STAGE1_SCORE', None)
-
+        
+        
         self.nhead = model_cfg.Transformer.nheads
         self.num_enc_layer = model_cfg.Transformer.enc_layers
         hidden_dim = model_cfg.TRANS_INPUT
         self.hidden_dim = model_cfg.TRANS_INPUT
-        self.num_groups = model_cfg.Transformer.num_groups
+        self.num_groups = round(math.log(model_cfg.Transformer.num_frames,2))+1
         self.voxel_sampler = None
         self.grid_size = model_cfg.ROI_GRID_POOL.GRID_SIZE
         self.num_proxy_points = model_cfg.Transformer.num_proxy_points
-        self.seqboxembed = PointNet2(10, model_cfg=self.model_cfg)
+        self.seqboxembed = PointNet(10, model_cfg=self.model_cfg)
         self.jointembed = MLP(self.hidden_dim * (self.num_groups + 1), model_cfg.Transformer.hidden_dim,
                               self.box_coder.code_size * self.num_class, 4)
 
@@ -418,7 +419,7 @@ class VelocityHead(RoIHeadTemplate):
         self.box_cls = MLP(input_dim=384, output_dim=1, hidden_dim=256, num_layers=3)
         self.box_reg = MLP(input_dim=384, output_dim=7, hidden_dim=256, num_layers=3)
 
-        self.transformer = build_transformer(model_cfg.Transformer)
+        self.transformer = build_transformer(model_cfg.Transformer,self.num_groups)
         self.bio_crossattention = nn.ModuleList(
             [biocrossattention_layer(self.model_cfg.BIOCROSSATTENTION, d_model=256) for i in
              range(self.model_cfg.BIOCROSSATTENTION.num_layers)])
@@ -435,11 +436,11 @@ class VelocityHead(RoIHeadTemplate):
             self.cross_atten_decode_layer.append(Cross_attention_layer(d_model=256))
 
         self.class_embed = nn.ModuleList()
-        for _ in range(self.num_enc_layer):
+        for _ in range(self.num_groups):
             self.class_embed.append(nn.Linear(model_cfg.Transformer.hidden_dim, 1))
 
         self.bbox_embed = nn.ModuleList()
-        for _ in range(self.num_enc_layer):
+        for _ in range(self.num_groups):
             self.bbox_embed.append(MLP(model_cfg.Transformer.hidden_dim, model_cfg.Transformer.hidden_dim,
                                        self.box_coder.code_size * self.num_class, 4))
 
@@ -716,14 +717,22 @@ class VelocityHead(RoIHeadTemplate):
         return proxy_point_motion_feat
 
     def trajectories_auxiliary_branch(self, trajectory_rois):
-
-        time_stamp = torch.ones([trajectory_rois.shape[0], trajectory_rois.shape[1], trajectory_rois.shape[2], 1]).to(
-            device)
-        for i in range(time_stamp.shape[1]):
+        B = trajectory_rois.shape[0]
+        time_stamp = trajectory_rois.new_zeros([trajectory_rois.shape[0], trajectory_rois.shape[1], trajectory_rois.shape[2], 1])
+        
+        
+        for i in range(1,time_stamp.shape[1]):
             time_stamp[:, i, :] = i * 0.1
-
-        box_seq = torch.cat([trajectory_rois[:, :, :, :], time_stamp], -1)
-
+            trajectory_rois[:,i,:,:2]-=trajectory_rois[:,i,:,-2:]*i
+            iou3d = [iou3d_nms_utils.boxes_iou3d_gpu(trajectory_rois[b, 0, :, :7], trajectory_rois[b, i, :, :7].reshape(-1, 7)) for b in
+                     range(B)]
+            iou3d = torch.stack(iou3d)
+            values,sampled_inds = torch.topk(iou3d,k=1,dim=2)
+            sampled_inds = sampled_inds.unsqueeze(-1).repeat(1,1,1,trajectory_rois.shape[-1])
+            
+            trajectory_rois[:,i] = torch.gather(trajectory_rois[:,i],dim=1,index=sampled_inds.squeeze(2)) * (values>0.5)
+            
+        box_seq = torch.cat([trajectory_rois, time_stamp], -1)
         box_seq[:, :, :, 0:3] = box_seq[:, :, :, 0:3] - box_seq[:, 0:1, :, 0:3]
 
         roi_ry = box_seq[:, :, :, 6] % (2 * np.pi)
@@ -737,10 +746,10 @@ class VelocityHead(RoIHeadTemplate):
         box_seq[:, :, :, 6] = 0
 
         batch_rcnn = box_seq.shape[0] * box_seq.shape[2]
-        box_seq[:, :, :, :2] -= box_seq[:, :, :, 7:9] * time_stamp * 10
+        
 
-        box_reg, box_feat = self.seqboxembed(
-            box_seq.contiguous())
+        box_reg, box_feat ,_ = self.seqboxembed(
+            box_seq.permute(0,2,3,1).contiguous().view(batch_rcnn,box_seq.shape[-1],box_seq.shape[1]))
 
         return box_reg, box_feat
 
@@ -933,7 +942,7 @@ class VelocityHead(RoIHeadTemplate):
         src_geometry_feature = self.get_proposal_aware_geometry_feature(
             src.reshape(-1, self.num_lidar_points[0], src.shape[-1]), batch_size, rois.reshape(-1, rois.shape[-1]),
             num_rois * num_frames)
-
+        box_reg, feat_box = self.trajectories_auxiliary_branch(rois.reshape(batch_size,num_frames,-1,rois.shape[-1]))
         # src_motion_feature = self.get_proposal_aware_motion_feature(src, batch_size, rois_batch, num_rois)
 
         # src_motion_feature = self.get_proposal_aware_motion_feature(proxy_points, batch_size, trajectory_rois, num_rois,
@@ -950,88 +959,92 @@ class VelocityHead(RoIHeadTemplate):
         # else:
         #     pos = None
         rois = rois.reshape(batch_size, num_frames, -1, rois.shape[-1])
+        tokens = []
         for i in range(len(self.transformer)):
-            src, tokens = self.transformer[i](src, pos=None)
-            src = src.permute(1, 0, 2).reshape(batch_size, num_frames, -1, num_sample[0], src.shape[-1])
-            src_cur, src_pre = [src[:, torch.arange(src.shape[1] // 2) * 2 + i, :, :, :] for i in range(2)]
-            roi_cur, roi_pre = [rois[:, torch.arange(rois.shape[1] // 2) * 2 + i, :, :] for i in range(2)]
-
-            src_pre[:, :, :, :, -5:-3] += src_pre[:, :, :, :, -2:] * 0.1 * 2 ** i
-            src_cur = src_cur.flatten(0, 1)
-            src_pre = src_pre.reshape(-1, src_pre.shape[2] * num_sample[0], src_pre.shape[-1])
-            # src_cur = src_cur.reshape(-1,src_cur.shape[2]*num_sample[0],src_cur.shape[-1])
-            roi_cur = roi_cur.reshape(-1, roi_cur.shape[-2], roi_cur.shape[-1])
-            src_pre2cur = self.select_points2boxes(src_pre, src_pre[:, :, -5:-2], roi_cur, num_sample=num_sample[0],
-                                                   gamma=1.1 * 2 ** i)
-
-            src = self.bio_crossattention[i](src_pre2cur.flatten(0, 1), src_cur.flatten(0, 1))
+            src, token = self.transformer[i](src,num_groups = num_frames//2**i, pos=None)
+            tokens.append(token)
+            if i < len(self.bio_crossattention):
+                src = src.permute(1, 0, 2).reshape(batch_size, num_frames//2**i, -1, num_sample[0], src.shape[-1])
+                src_cur, src_pre = [src[:, torch.arange(src.shape[1] // 2) * 2 + i, :, :, :] for i in range(2)]
+                roi_cur, roi_pre = [rois[:, torch.arange(rois.shape[1] // 2) * 2 + i, :, :] for i in range(2)]
+                rois = roi_cur
+                src_pre[:, :, :, :, -5:-3] += src_pre[:, :, :, :, -2:] * 0.1 * 2 ** i
+                src_cur = src_cur.flatten(0, 1)
+                src_pre = src_pre.reshape(-1, src_pre.shape[2] * num_sample[0], src_pre.shape[-1])
+                # src_cur = src_cur.reshape(-1,src_cur.shape[2]*num_sample[0],src_cur.shape[-1])
+                roi_cur = roi_cur.reshape(-1, roi_cur.shape[-2], roi_cur.shape[-1])
+                src_pre2cur = self.select_points2boxes(src_pre, src_pre[:, :, -5:-2], roi_cur, num_sample=num_sample[0],
+                                                       gamma=1.1 * 2 ** i)
+                src = self.bio_crossattention[i](src_pre2cur.flatten(0, 1), src_cur.flatten(0, 1))
 
             # src_ = src.permute(1,0,2).
         point_cls_list = []
         point_reg_list = []
 
-        for i in range(self.num_enc_layer):
-            point_cls_list.append(self.class_embed[i](tokens[i][0]))
+        for i in range(self.num_groups):
+            point_cls_list.append(self.class_embed[i](tokens[i]))
 
-        for i in range(self.num_enc_layer):
-            point_reg_list.append(self.bbox_embed[i](tokens[i][0]))
+        for i in range(self.num_groups):
+            point_reg_list.append(self.bbox_embed[i](tokens[i]))
 
-        point_cls = torch.cat(point_cls_list, 0).reshape(batch_size, self.num_enc_layer, -1, 1)
+        point_cls = torch.cat(point_cls_list,0)
 
-        point_reg = torch.cat(point_reg_list, 0).reshape(batch_size, self.num_enc_layer, -1, 7)
+        point_reg = torch.cat(point_reg_list,0)
 
         # hs = hs.permute(1, 0, 2).reshape(hs.shape[1], -1)
-
-        # joint_reg = self.jointembed(torch.cat([hs, feat_box], -1))
-        features = hs.reshape(batch_size, -1, hs.shape[-2], hs.shape[-1])
-        rois = rois.reshape(batch_size, self.model_cfg.NUM_FRAMES, -1, rois.shape[-1])
-        features_list = []
-        roi_scores, roi_labels = targets_dict['roi_scores'].reshape(batch_size, -1, num_rois), targets_dict[
-            'roi_labels'].reshape(batch_size, -1, num_rois)
-
-        for i in range(self.model_cfg.NUM_FRAMES - 1):
-            cur_features = features[:, :-1]
-
-            pre_features = features[:, 1:]
-            boxes_pre = rois[:, 1:-i] if i > 0 else rois[:, 1:]
-            boxes_pre[:, :, :, :2] -= boxes_pre[:, :, :, -2:]
-            scores_pre = roi_scores[:, 1:] if i == 0 else roi_scores[:, 1:-i]
-            labels_pre = roi_labels[:, 1:] if i == 0 else roi_labels[:, 1:-i]
-
-            boxes_cur = rois[:, :-i - 1]
-            scores_cur = roi_scores[:, -i - 1]
-            labels_cur = roi_labels[:, :-i - 1]
-
-            atten_weight_map = self.attention_weight_map_cal(
-                boxes_pre.reshape(-1, boxes_pre.shape[-2], boxes_pre.shape[-1]),
-                boxes_cur.reshape(-1, boxes_cur.shape[-2],
-                                  boxes_cur.shape[-1]), scores_pre.reshape(-1, scores_pre.shape[-1]),
-                labels_pre.reshape(-1, labels_pre.shape[-1]),
-                labels_cur.reshape(-1, labels_cur.shape[-1])).reshape(
-                batch_size, -1, boxes_pre.shape[-2], boxes_cur.shape[-2])
-            if not self.training:
-                if i < self.model_cfg.NUM_FRAMES - 2:
-                    rois[:, :-i - 1], cur_features[:, -1], scores_cur, atten_weight_map[:, -1] = self.exchange_box(
-                        atten_weight_map[:, -1].clone(), boxes_pre[:, -1], boxes_cur[:, -1],
-                        roi_scores[:, -i - 1], roi_scores[:, -i], cur_features[:, -1],
-                        pre_features[:, -1])
-                else:
-                    rois[:, :-i - 1], cur_features[:, -1], scores_cur, idx, atten_weight_map[:, -1] = self.exchange_box(
-                        atten_weight_map[:, -1].clone(),
-                        boxes_pre[:, -1].clone(),
-                        boxes_cur[:, -1].clone(),
-                        roi_scores[:, -i - 1],
-                        roi_scores[:, -i],
-                        cur_features[:, -1],
-                        pre_features[:, -1], return_idx=True)
-
-            features = self.cross_atten_decode_layer[i](pre_features, cur_features, atten_weight_map)
-
-            features_list.append(features[:, 0])
-
-        features = torch.concat(features_list, dim=1)
-        box_reg, feat_box = self.trajectories_auxiliary_branch(rois)
-        features = torch.concat([features, feat_box.repeat(1, self.model_cfg.NUM_FRAMES - 1, 1)], dim=-1)
+        
+        joint_reg = self.jointembed(torch.cat(tokens+[ feat_box.unsqueeze(0)], -1))
+        
+        
+        # features = hs.reshape(batch_size, -1, hs.shape[-2], hs.shape[-1])
+        # rois = rois.reshape(batch_size, self.model_cfg.NUM_FRAMES, -1, rois.shape[-1])
+        # features_list = []
+        # roi_scores, roi_labels = targets_dict['roi_scores'].reshape(batch_size, -1, num_rois), targets_dict[
+        #     'roi_labels'].reshape(batch_size, -1, num_rois)
+        # 
+        # for i in range(self.model_cfg.NUM_FRAMES - 1):
+        #     cur_features = features[:, :-1]
+        # 
+        #     pre_features = features[:, 1:]
+        #     boxes_pre = rois[:, 1:-i] if i > 0 else rois[:, 1:]
+        #     boxes_pre[:, :, :, :2] -= boxes_pre[:, :, :, -2:]
+        #     scores_pre = roi_scores[:, 1:] if i == 0 else roi_scores[:, 1:-i]
+        #     labels_pre = roi_labels[:, 1:] if i == 0 else roi_labels[:, 1:-i]
+        # 
+        #     boxes_cur = rois[:, :-i - 1]
+        #     scores_cur = roi_scores[:, -i - 1]
+        #     labels_cur = roi_labels[:, :-i - 1]
+        # 
+        #     atten_weight_map = self.attention_weight_map_cal(
+        #         boxes_pre.reshape(-1, boxes_pre.shape[-2], boxes_pre.shape[-1]),
+        #         boxes_cur.reshape(-1, boxes_cur.shape[-2],
+        #                           boxes_cur.shape[-1]), scores_pre.reshape(-1, scores_pre.shape[-1]),
+        #         labels_pre.reshape(-1, labels_pre.shape[-1]),
+        #         labels_cur.reshape(-1, labels_cur.shape[-1])).reshape(
+        #         batch_size, -1, boxes_pre.shape[-2], boxes_cur.shape[-2])
+        #     if not self.training:
+        #         if i < self.model_cfg.NUM_FRAMES - 2:
+        #             rois[:, :-i - 1], cur_features[:, -1], scores_cur, atten_weight_map[:, -1] = self.exchange_box(
+        #                 atten_weight_map[:, -1].clone(), boxes_pre[:, -1], boxes_cur[:, -1],
+        #                 roi_scores[:, -i - 1], roi_scores[:, -i], cur_features[:, -1],
+        #                 pre_features[:, -1])
+        #         else:
+        #             rois[:, :-i - 1], cur_features[:, -1], scores_cur, idx, atten_weight_map[:, -1] = self.exchange_box(
+        #                 atten_weight_map[:, -1].clone(),
+        #                 boxes_pre[:, -1].clone(),
+        #                 boxes_cur[:, -1].clone(),
+        #                 roi_scores[:, -i - 1],
+        #                 roi_scores[:, -i],
+        #                 cur_features[:, -1],
+        #                 pre_features[:, -1], return_idx=True)
+        # 
+        #     features = self.cross_atten_decode_layer[i](pre_features, cur_features, atten_weight_map)
+        # 
+        #     features_list.append(features[:, 0])
+        # 
+        # features = torch.concat(features_list, dim=1)
+        
+        # features = torch.concat([features, feat_box.repeat(1, self.model_cfg.NUM_FRAMES - 1, 1)], dim=-1)
 
         # rcnn_cls = point_cls
         # rcnn_reg = joint_reg
