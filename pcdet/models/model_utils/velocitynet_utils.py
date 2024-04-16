@@ -355,7 +355,7 @@ class TransformerEncoderLayer(nn.Module):
         src_summary = self.linear2(self.dropout(self.activation(self.linear1(token))))
         token = token + self.dropout2(src_summary)
         token = self.norm2(token)
-        # src = torch.cat([token, src[1:]], 0)
+        src = torch.cat([token, src[1:]], 0)
 
         if self.layer_count <= self.config.enc_layers - 1:
 
@@ -479,7 +479,7 @@ class VoxelSampler(nn.Module):
     def get_output_feature_dim(self):
         return self.num_point_features
 
-    def cylindrical_pool(self, cur_points, cur_boxes, num_sample, gamma=1.,pool='even',next_boxes = None):
+    def cylindrical_pool(self, cur_points, cur_boxes, num_sample, gamma=1.,pool='even',next_boxes = None,next_idx=0):
         if len(cur_points) < num_sample:
             cur_points = F.pad(cur_points, [0, 0, 0, num_sample - len(cur_points)])
         cur_radiis = torch.norm(cur_boxes[:, 3:5] / 2, dim=-1) * gamma
@@ -496,10 +496,7 @@ class VoxelSampler(nn.Module):
             sampled_mask, sampled_idx = self.select_points(point_mask=point_mask.int(), num_sampled_per_box=num_sample,
                                                        num_sampled_per_point=2)
             roi_mask = sampled_mask.sum(-1) > 0
-            if next_boxes is not None:
-                next_radiis = torch.norm(next_boxes[:,3:5]/2,dim=-1)*gamma
-                dis_next = torch.norm((cur_points[:,:2].unsqueeze(0)-next_boxes[:,:2].unsqueeze(1).repeat(1,cur_points.shape[0],1)),dim=2)
-                point_mask = dis<=next_radiis.unsequeeze(-1)
+
                 
             rois_new = cur_boxes[roi_mask]
             sampled_idx = sampled_idx[roi_mask]
@@ -507,8 +504,22 @@ class VoxelSampler(nn.Module):
         # sampled_point_mask[torch.arange(point_mask.shape[0]).unsqueeze(1),sampled_idx] = 1
         sampled_idx = sampled_idx.view(-1, 1).repeat(1, cur_points.shape[-1])
         sampled_points = torch.gather(cur_points, 0, sampled_idx.long()).view(len(rois_new), num_sample, cur_points.shape[-1])
+        sampled_points = torch.concat([sampled_points,rois_new[:,None,-2:].repeat(1,num_sample,1)],dim=-1)
         sampled_points[sampled_mask == 0, :] = 0
-
+        if next_boxes is not None:
+            next_boxes = next_boxes[next_boxes[:,:3].sum(-1)!=0]
+            next_radiis = torch.norm(next_boxes[:, 3:5] / 2, dim=-1) * gamma**next_idx
+            sampled_points = sampled_points.reshape(-1,sampled_points.shape[-1])
+            dis = torch.norm(
+                ((sampled_points[:, :2]-sampled_points[:,-2:]*next_idx).unsqueeze(1) - next_boxes[:, :2].unsqueeze(0).repeat(sampled_points.shape[0],1, 1)),
+                dim=2)
+            point_mask = (dis <= next_radiis.unsqueeze(0))
+            point_mask = point_mask.reshape(-1,num_sample,dis.shape[-1])
+            cur_mask = (point_mask.reshape(point_mask.shape[0],-1).sum(-1)!=0)
+            sampled_points = sampled_points.reshape(cur_mask.shape[0],num_sample,sampled_points.shape[-1])
+            temp = roi_mask.clone()
+            roi_mask[temp] = temp[temp]*cur_mask
+            return sampled_points[cur_mask], rois_new[cur_mask], roi_mask
         return sampled_points, rois_new,roi_mask
 
     def select_points(self, point_mask, num_sampled_per_box, num_sampled_per_point=2):
@@ -532,6 +543,7 @@ class VoxelSampler(nn.Module):
         src = list()
         rois = list()
         roi_scores = list()
+
         roi_labels = list()
         trajectory_rois = batch_dict['roi_boxes']
         trajectory_scores = batch_dict['roi_scores']
@@ -540,8 +552,10 @@ class VoxelSampler(nn.Module):
 
             cur_points = batch_dict['points'][(batch_dict['points'][:, 0] == bs_idx)][:, 1:]
             # cur_batch_boxes = trajectory_rois[bs_idx]
-            src_points = list()
-            rois_boxes = list()
+            src_single_batch = list()
+            rois_single_batch = list()
+            roi_labels_single_batch = list()
+            roi_scores_single_batch = list()
             for idx in range(trajectory_rois.shape[1]):
                 gamma = self.GAMMA  # ** (idx+1)
                 
@@ -611,13 +625,17 @@ class VoxelSampler(nn.Module):
                 point_mask = num_points[:, None] > point_mask
                 key_points = key_points[point_mask]
                 key_points = key_points[torch.randperm(len(key_points)), :]
+                assign_list = [0,0,0,2,0,4,4,6]
+                key_points, rois_new,roi_mask = self.cylindrical_pool(key_points, cur_frame_boxes, num_sample, gamma,pool='even' if idx==0 else 'pointnms',next_boxes=None if idx==0 else rois_single_batch[assign_list[idx]],next_idx=idx-assign_list[idx])
 
-                key_points, rois_new,roi_mask = self.cylindrical_pool(key_points, cur_frame_boxes, num_sample, gamma,pool='even' if idx==0 else 'point_nms')
-
-                src.append(key_points)
-                rois.append(rois_new)
-                roi_scores.append(cur_frame_scores[roi_mask])
-                roi_labels.append(cur_frame_labels[roi_mask])
+                src_single_batch.append(key_points)
+                rois_single_batch.append(rois_new)
+                roi_scores_single_batch.append(cur_frame_scores[roi_mask])
+                roi_labels_single_batch.append(cur_frame_labels[roi_mask])
+            src+=src_single_batch
+            rois+=rois_single_batch
+            roi_scores+=roi_scores_single_batch
+            roi_labels_single_batch+=roi_labels_single_batch
         batch_dict['src_list'] = src
         batch_dict['rois_list'] = rois
         batch_dict['roi_scores_list'] = roi_scores

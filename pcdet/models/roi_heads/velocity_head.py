@@ -414,7 +414,7 @@ class VelocityHead(RoIHeadTemplate):
                               self.box_coder.code_size * self.num_class, 4)
 
         num_radius = len(self.model_cfg.ROI_GRID_POOL.POOL_RADIUS)
-        self.up_dimension_geometry = MLP(input_dim=30, hidden_dim=256, output_dim=hidden_dim, num_layers=3)
+        self.up_dimension_geometry = MLP(input_dim=32, hidden_dim=256, output_dim=hidden_dim, num_layers=3)
         self.up_dimension_motion = MLP(input_dim=30, hidden_dim=64, output_dim=hidden_dim, num_layers=3)
         self.box_cls = MLP(input_dim=384, output_dim=1, hidden_dim=256, num_layers=3)
         self.box_reg = MLP(input_dim=384, output_dim=7, hidden_dim=256, num_layers=3)
@@ -684,7 +684,7 @@ class VelocityHead(RoIHeadTemplate):
         proposal_aware_feat = torch.cat([proposal_aware_feat, src[:, :, 3:]], dim=-1)
         src_gemoetry = self.up_dimension_geometry(proposal_aware_feat)
 
-        return torch.concat([src_gemoetry, src[:, :, :3]], dim=-1)
+        return torch.concat([src_gemoetry, src[:, :, :3],src[:,:,-2:]], dim=-1)
 
     def get_proposal_aware_motion_feature(self, proxy_point, batch_size, trajectory_rois, num_rois, batch_dict):
 
@@ -948,8 +948,8 @@ class VelocityHead(RoIHeadTemplate):
         # src_motion_feature = self.get_proposal_aware_motion_feature(proxy_points, batch_size, trajectory_rois, num_rois,
         #                                                             batch_dict)
         src = src_geometry_feature
-        src_velocity = torch.rand(src.shape[0], src.shape[1], 2).to(device) - 0.5
-        src = torch.concat([src, src_velocity], dim=-1)
+        # src_velocity = torch.rand(src.shape[0], src.shape[1], 2).to(device) - 0.5
+        # src = torch.concat([src, src_velocity], dim=-1)
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK', None):
             src[empty_mask.view(-1)] = 0
         # src = src.reshape(batch_size,num_frames,-1,num_sample[0],src.shape[-1])
