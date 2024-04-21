@@ -845,15 +845,20 @@ class VelocityHead(RoIHeadTemplate):
         else:
             return boxes_cur, cur_features, scores_cur, index_cur_all, attention_map
 
-    def select_points2boxes(self, features, xyz, boxes, num_sample, gamma=1):
+    def select_points2boxes(self, features, boxes, num_sample, gamma=1):
 
         cur_radiis = torch.norm(boxes[:,  3:5] / 2, dim=-1) * gamma
         features = features.reshape(-1,features.shape[-1])
-        xyz = xyz.reshape(-1,xyz.shape[-1])
+        xyz=features[:,-5:-2]
+        xyz[:,:2]-=features[:,-2:]
+
         
         dis = torch.norm(xyz[None,:,  :2] - boxes[:,None, :2], dim=2)
         point_mask = dis <= cur_radiis.unsqueeze(-1)
-        sampled_mask, sampled_idx = torch.topk(point_mask.float(), num_sample, dim=-1)
+        try:
+            sampled_mask, sampled_idx = torch.topk(point_mask.float(), k=num_sample, dim=-1)
+        except:
+            pass
         sampled_idx = sampled_idx.view( -1, 1).repeat( 1, features.shape[-1])
         sampled_points = torch.gather(features, 0, sampled_idx.long()).view( boxes.shape[0],
                                                                             num_sample, -1)
@@ -990,15 +995,19 @@ class VelocityHead(RoIHeadTemplate):
                 for bs in range(batch_size):
                     for fr in range(num_frames_single_batch_next):
                         with (torch.cuda.stream(stream[bs * num_frames_single_batch_next + fr])):
-                            src_pre2cur[bs*num_frames_single_batch_next+fr] = \
+                            try:
+                                src_pre2cur[bs*num_frames_single_batch_next+fr] = \
                                 self.select_points2boxes(
-                                  src[:,num_rois[bs*num_frames_single_batch+fr+1]:num_rois[bs*num_frames_single_batch+fr+1+1]],
-                                    src[:, num_rois[bs * num_frames_single_batch + fr + 1]:num_rois[bs * num_frames_single_batch + fr +1 +1]][:,:,-5:-2],
-                                  rois[num_rois[bs*num_frames_single_batch+fr]:num_rois[bs*num_frames_single_batch+fr+1]],
-                                  gamma=1.1*2**i,num_sample=num_sample[0])
+                                  src[:,num_rois[bs*num_frames_single_batch+fr*2+1]:num_rois[bs*num_frames_single_batch+fr*2+1+1]],
+
+                                  rois[num_rois[bs*num_frames_single_batch+fr*2]:num_rois[bs*num_frames_single_batch+fr*2+1]],
+                                  gamma=1.1**(2*i+1),num_sample=num_sample[0])
+                            except:
+                                pass
+
                             src_cur[bs*num_frames_single_batch_next+fr] = \
-                                src[:, num_rois[bs * num_frames_single_batch + fr ]:num_rois[
-                                                                                           bs * num_frames_single_batch + fr+1] ]
+                                src[:, num_rois[bs * num_frames_single_batch + fr*2 ]:num_rois[
+                                                                                           bs * num_frames_single_batch + fr*2+1] ]
                 torch.cuda.synchronize()
                 src_pre2cur = torch.concat(src_pre2cur,1)
                 src_cur = torch.concat(src_cur,1)
@@ -1189,22 +1198,21 @@ class VelocityHead(RoIHeadTemplate):
             rois_anchor = roi_boxes3d.clone().detach()[:, :, :7].contiguous().view(-1, code_size)
             rois_anchor[:, 0:3] = 0
             rois_anchor[:, 6] = 0
-            num_groups = rcnn_reg.shape[1] // gt_boxes3d_ct.shape[1]
+            num_groups = forward_ret_dict['rcnn_cls'].shape[0]
             num_features = gt_boxes3d_ct.shape[1]
             # gt_boxes3d_ct = gt_boxes3d_ct.repeat(1,num_groups,1)
             reg_targets = self.box_coder.encode_torch(
                 gt_boxes3d_ct.view(rcnn_batch_size, code_size), rois_anchor
             )
-            rcnn_loss_reg = 0
-            for i in range(num_groups):
-                rcnn_loss_reg_ = self.reg_loss_func(
-                    rcnn_reg[:, num_features * i:num_features * (i + 1)].view(rcnn_batch_size, -1).unsqueeze(dim=0),
+            # rcnn_loss_reg = 0
+
+            rcnn_loss_reg = self.reg_loss_func(
+                    rcnn_reg.view(rcnn_batch_size, -1).unsqueeze(dim=0),
                     reg_targets.unsqueeze(dim=0),
                 )  # [B, M, 7]
-                rcnn_loss_reg += (rcnn_loss_reg_.view(rcnn_batch_size, -1) * fg_mask.unsqueeze(
-                    dim=-1).float()).sum() / max(
-                    fg_sum, 1)
-            rcnn_loss_reg /= num_groups
+
+
+            rcnn_loss_reg = (rcnn_loss_reg.view(rcnn_batch_size, -1) * fg_mask.unsqueeze(dim=-1).float()).sum() / max(fg_sum, 1)
 
             rcnn_loss_reg = rcnn_loss_reg * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight'] * \
                             loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][0]
@@ -1253,36 +1261,35 @@ class VelocityHead(RoIHeadTemplate):
                 rcnn_loss_reg += seqbox_loss_reg
 
             if loss_cfgs.CORNER_LOSS_REGULARIZATION and fg_sum > 0:
-                for i in range(num_groups):
-                    fg_rcnn_reg = rcnn_reg[:, i * num_features:(i + 1) * num_features].view(rcnn_batch_size, -1)[
-                        fg_mask]
-                    fg_roi_boxes3d = roi_boxes3d[:, :, :7].contiguous().view(-1, code_size)[fg_mask]
 
-                    fg_roi_boxes3d = fg_roi_boxes3d.view(1, -1, code_size)
-                    batch_anchors = fg_roi_boxes3d.clone().detach()
-                    roi_ry = fg_roi_boxes3d[:, :, 6].view(-1)
-                    roi_xyz = fg_roi_boxes3d[:, :, 0:3].view(-1, 3)
-                    batch_anchors[:, :, 0:3] = 0
-                    rcnn_boxes3d = self.box_coder.decode_torch(
-                        fg_rcnn_reg.view(batch_anchors.shape[0], -1, code_size), batch_anchors
-                    ).view(-1, code_size)
+                fg_rcnn_reg = rcnn_reg.view(rcnn_batch_size, -1)[fg_mask]
+                fg_roi_boxes3d = roi_boxes3d[:, :, :7].contiguous().view(-1, code_size)[fg_mask]
 
-                    rcnn_boxes3d = common_utils.rotate_points_along_z(
-                        rcnn_boxes3d.unsqueeze(dim=1), roi_ry
-                    ).squeeze(dim=1)
-                    rcnn_boxes3d[:, 0:3] += roi_xyz
+                fg_roi_boxes3d = fg_roi_boxes3d.view(1, -1, code_size)
+                batch_anchors = fg_roi_boxes3d.clone().detach()
+                roi_ry = fg_roi_boxes3d[:, :, 6].view(-1)
+                roi_xyz = fg_roi_boxes3d[:, :, 0:3].view(-1, 3)
+                batch_anchors[:, :, 0:3] = 0
+                rcnn_boxes3d = self.box_coder.decode_torch(
+                    fg_rcnn_reg.view(batch_anchors.shape[0], -1, code_size), batch_anchors
+                ).view(-1, code_size)
 
-                    corner_loss_func = loss_utils.get_corner_loss_lidar
+                rcnn_boxes3d = common_utils.rotate_points_along_z(
+                    rcnn_boxes3d.unsqueeze(dim=1), roi_ry
+                ).squeeze(dim=1)
+                rcnn_boxes3d[:, 0:3] += roi_xyz
 
-                    loss_corner = corner_loss_func(
-                        rcnn_boxes3d[:, 0:7],
-                        gt_of_rois_src[fg_mask][:, 0:7])
+                corner_loss_func = loss_utils.get_corner_loss_lidar
 
-                    loss_corner = loss_corner.mean()
-                    loss_corner = loss_corner * loss_cfgs.LOSS_WEIGHTS['rcnn_corner_weight']
+                loss_corner = corner_loss_func(
+                    rcnn_boxes3d[:, 0:7],
+                    gt_of_rois_src[fg_mask][:, 0:7])
 
-                    rcnn_loss_reg += loss_corner
-                    tb_dict['rcnn_loss_corner'] = loss_corner.item()
+                loss_corner = loss_corner.mean()
+                loss_corner = loss_corner * loss_cfgs.LOSS_WEIGHTS['rcnn_corner_weight']
+
+                rcnn_loss_reg += loss_corner
+                tb_dict['rcnn_loss_corner'] = loss_corner.item()
 
         else:
             raise NotImplementedError

@@ -515,7 +515,7 @@ class VoxelSampler(nn.Module):
                 dim=2)
             point_mask = (dis <= next_radiis.unsqueeze(0))
             point_mask = point_mask.reshape(-1,num_sample,dis.shape[-1])
-            cur_mask = (point_mask.reshape(point_mask.shape[0],-1).sum(-1)!=0)
+            cur_mask = (point_mask.reshape(point_mask.shape[0],-1).sum(-1)>1)
             sampled_points = sampled_points.reshape(cur_mask.shape[0],num_sample,sampled_points.shape[-1])
             temp = roi_mask.clone()
             roi_mask[temp] = temp[temp]*cur_mask
