@@ -1020,10 +1020,10 @@ class VelocityHead(RoIHeadTemplate):
         point_reg_list = []
 
         for i in range(self.num_groups):
-            point_cls_list.append(self.class_embed[i](tokens[i][0]))
+            point_cls_list.append(self.class_embed[i](tokens[i]))
 
         for i in range(self.num_groups):
-            point_reg_list.append(self.bbox_embed[i](tokens[i][0]))
+            point_reg_list.append(self.bbox_embed[i](tokens[i]))
 
         point_cls = torch.cat(point_cls_list, 0)
 
