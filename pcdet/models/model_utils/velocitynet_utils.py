@@ -224,7 +224,7 @@ class Transformer(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, src,num_groups, pos=None):
+    def forward(self, src,num_groups,batch_size,num_frames, pos=None):
 
         # BS, F,N,K, C = src.shape
         if not pos is None:
@@ -259,7 +259,7 @@ class Transformer(nn.Module):
         #
         # else:
         token_list = self.token.to(device)
-        src = src.permute(1,0,2)
+        # src = src.permute(1,0,2)
         
         xyz_vel = src[:,:,-5:]
         
@@ -267,11 +267,11 @@ class Transformer(nn.Module):
 
         # src = src.permute(1, 0, 2)
         src = self.encoder(src, pos=pos)
-        token = src[:1][:,torch.arange(src.shape[1]//num_groups)*num_groups]
+        token = [src[:1][:,num_groups[i*num_frames]:num_groups[i+1]] for i in range(batch_size)]
         src = torch.concat([src[1:],xyz_vel],dim=-1)
         
         # memory = torch.cat(memory[0:1].chunk(4, 1), 0)
-        return src,token
+        return src,torch.concat(token,1)
 
 
 class TransformerEncoder(nn.Module):

@@ -326,7 +326,7 @@ class TransformerEncoderLayer(nn.Module):
             src_all_groups = src[1:].view((src.shape[0]-1)*4,-1,src.shape[-1])
             
             src_groups_list = src_all_groups.chunk(self.num_groups,0)
-            # src_groups_list = [src_all_groups[torch.arange(64)*4+i] for i in range(4)]
+            src_groups_list = [src_all_groups[torch.arange(64)*4+i] for i in range(4)]
             
             src_all_groups = torch.cat(src_groups_list,-1)
             src_all_groups_fusion = self.fusion_all_groups(src_all_groups)

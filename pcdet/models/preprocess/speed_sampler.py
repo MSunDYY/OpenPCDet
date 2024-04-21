@@ -178,7 +178,8 @@ class SEDLayer(spconv.SparseModule):
             #                conv_type='subm'),
 
             # self.max_pool.append(spconv.SparseMaxPool3d(kernel_size=(5,1,1),stride=(2,1,1),padding=(1,0,0),indice_key=f'max_pool_{idx}'))
-        downsample_times = len(down_stride)
+        downsample_times = len(down_stride  )
+        
         self.decoder = nn.ModuleList()
         self.decoder_norm = nn.ModuleList()
         self.conv2d = nn.ModuleList()
@@ -247,10 +248,10 @@ class SEDLayer(spconv.SparseModule):
 
             x = self.tranconv[idx](x)
             x = replace_feature(up_x,
-                                self.decoder_norm[idx](x.dense().permute(0, 2, 3, 4, 1)[
+                                torch.concat([x.dense().permute(0, 2, 3, 4, 1)[
                                                            index[:, 0], index[:, 1], index[:, 2], index[:,
-                                                                                                  3]] + up_x.features))
-
+                                                                                                  3]] , up_x.features],dim=-1))
+            x=self.conv2d[idx](x)
             # x = self.conv2d[idx](x)
 
             # up_x = replace_feature(x, norm(x.features))
@@ -727,7 +728,8 @@ class SpeedSampler(nn.Module):
             )
 
             voxels_single_batch = torch.concat([voxels_single_batch[:, :, :2], voxels_single_batch[:, :, 3:]], dim=-1)
-            mask = voxels_single_batch[:, :, 2].max(-1)[0] > GROUND
+            mask = (voxels_single_batch[:, :, 2].max(-1)[0] > GROUND)*((voxels_single_batch[:,:,2].max(-1)[0]-voxels_single_batch[:,:,2].min(-1)[0])>0.05)
+
             # for f in range(F):
             #     voxel,coor,num_points = self.gen(points_single_batch[points_single_batch[:,-1]==f*0.1][:,:-1])
             #     coor = torch.concat([torch.full((voxel.shape[0],1),f).to(device),coor],dim=-1)
@@ -741,7 +743,10 @@ class SpeedSampler(nn.Module):
             voxels.append(voxels_single_batch[mask])
             coors.append(coors_single_batch[mask])
             nums_points.append(num_points_single_batch[mask])
-
+            gt_boxes = data_dict['gt_boxes'][b]
+            gt_boxes_mask = (gt_boxes[:,2]+gt_boxes[:,5]/2)<GROUND
+            if (gt_boxes_mask).sum()>1:
+                pass
         data_dict['pillars'] = torch.concat(voxels)
         data_dict['pillar_coords'] = torch.concat(coors)
         data_dict['pillar_num_points'] = torch.concat(nums_points)

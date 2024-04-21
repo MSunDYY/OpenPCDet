@@ -7,12 +7,13 @@ import torch.nn.functional as F
 from pcdet.ops.iou3d_nms import iou3d_nms_utils
 from ...utils import common_utils, loss_utils
 from .roi_head_template import RoIHeadTemplate
-from ..model_utils.velocitynet_utils import build_transformer, PointNet2,PointNet, MLP, build_voxel_sampler
+from ..model_utils.velocitynet_utils import build_transformer, PointNet2, PointNet, MLP, build_voxel_sampler
 from .target_assigner.proposal_target_layer import ProposalTargetLayer
 from pcdet.ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_stack_modules
 from pcdet import device
 from pcdet.ops.iou3d_nms.iou3d_nms_utils import nms_gpu
 import math
+
 
 class ProposalTargetLayerMPPNet(ProposalTargetLayer):
     def __init__(self, roi_sampler_cfg):
@@ -366,8 +367,8 @@ class biocrossattention_layer(nn.Module):
         self.activation = F.relu
 
     def forward(self, src_pre, src_cur):
-        src_pre = src_pre.permute(1, 0, 2)
-        src_cur = src_cur.permute(1, 0, 2)
+        # src_pre = src_pre.permute(1, 0, 2)
+        # src_cur = src_cur.permute(1, 0, 2)
         src_pre_xyz = src_pre[:, :, self.d_model:]
         src_cur_xyz = src_cur[:, :, self.d_model:]
         src_pre = src_pre[:, :, :self.d_model]
@@ -384,12 +385,15 @@ class biocrossattention_layer(nn.Module):
         src_cur = self.norm2(src_cur)
         src_pre = torch.concat([src_pre, src_pre_xyz], dim=-1)
         src_cur = torch.concat([src_cur, src_cur_xyz], dim=-1)
-        selected_pre = torch.topk(weight_cur2pre.sum(1), dim=-1, k=weight_cur2pre.shape[-1] // 2)[1].unsqueeze(-1).repeat(1,1,src_pre.shape[-1])
-        selected_cur = torch.topk(weight_pre2cur.sum(1), dim=-1, k=weight_pre2cur.shape[-1] // 2)[1].unsqueeze(-1).repeat(1,1,src_cur.shape[-1])
-        
-        
-        src = torch.concat([torch.gather(src_cur.permute(1, 0, 2),dim=1,index=selected_cur), torch.gather(src_pre.permute(1, 0, 2),dim=1,index=selected_pre)],dim=1)
+        selected_pre_mask,selected_pre = torch.topk(weight_cur2pre.sum(1), dim=-1, k=weight_cur2pre.shape[-1] // 2)
+        selected_pre = selected_pre.unsqueeze(-1).repeat(1, 1, src_pre.shape[-1])
+        # selected_cur = torch.topk(weight_pre2cur.sum(1), dim=-1, k=weight_pre2cur.shape[-1] // 2)[1].unsqueeze(
+        #     -1).repeat(1, 1, src_cur.shape[-1])
+
+        src = torch.concat([src_cur,
+                            torch.gather(src_pre, dim=0, index=selected_pre.permute(1,0,2))*(selected_pre_mask.permute(1,0)>1)[:,:,None]], dim=0)
         return src
+
 
 class VelocityHead(RoIHeadTemplate):
     def __init__(self, model_cfg, num_class=1, **kwargs):
@@ -399,13 +403,12 @@ class VelocityHead(RoIHeadTemplate):
         self.use_time_stamp = self.model_cfg.get('USE_TIMESTAMP', None)
         self.num_lidar_points = self.model_cfg.Transformer.num_lidar_points
         self.avg_stage1_score = self.model_cfg.get('AVG_STAGE1_SCORE', None)
-        
-        
+
         self.nhead = model_cfg.Transformer.nheads
         self.num_enc_layer = model_cfg.Transformer.enc_layers
         hidden_dim = model_cfg.TRANS_INPUT
         self.hidden_dim = model_cfg.TRANS_INPUT
-        self.num_groups = round(math.log(model_cfg.Transformer.num_frames,2))+1
+        self.num_groups = round(math.log(model_cfg.Transformer.num_frames, 2)) + 1
         self.voxel_sampler = None
         self.grid_size = model_cfg.ROI_GRID_POOL.GRID_SIZE
         self.num_proxy_points = model_cfg.Transformer.num_proxy_points
@@ -419,7 +422,7 @@ class VelocityHead(RoIHeadTemplate):
         self.box_cls = MLP(input_dim=384, output_dim=1, hidden_dim=256, num_layers=3)
         self.box_reg = MLP(input_dim=384, output_dim=7, hidden_dim=256, num_layers=3)
 
-        self.transformer = build_transformer(model_cfg.Transformer,self.num_groups)
+        self.transformer = build_transformer(model_cfg.Transformer, self.num_groups)
         self.bio_crossattention = nn.ModuleList(
             [biocrossattention_layer(self.model_cfg.BIOCROSSATTENTION, d_model=256) for i in
              range(self.model_cfg.BIOCROSSATTENTION.num_layers)])
@@ -663,13 +666,13 @@ class VelocityHead(RoIHeadTemplate):
 
         return src
 
-    def get_proposal_aware_geometry_feature(self, src, batch_size, trajectory_rois, num_rois, t=0):
+    def get_proposal_aware_geometry_feature(self, src, trajectory_rois, num_rois, t=0):
         proposal_aware_feat_list = []
 
         corner_points, _ = self.get_corner_points_of_roi(trajectory_rois)
 
         # corner_points = corner_points.view(batch_size, num_rois, -1, corner_points.shape[-1])
-        corner_points = corner_points.view(batch_size * num_rois, -1)
+        corner_points = corner_points.view(num_rois, -1)
         trajectory_roi_center = trajectory_rois[:, :3]
         corner_add_center_points = torch.cat([corner_points, trajectory_roi_center], dim=-1)
         proposal_aware_feat = src[:, :, :3].repeat(1, 1, 9) - \
@@ -684,7 +687,7 @@ class VelocityHead(RoIHeadTemplate):
         proposal_aware_feat = torch.cat([proposal_aware_feat, src[:, :, 3:]], dim=-1)
         src_gemoetry = self.up_dimension_geometry(proposal_aware_feat)
 
-        return torch.concat([src_gemoetry, src[:, :, :3],src[:,:,-2:]], dim=-1)
+        return torch.concat([src_gemoetry, src[:, :, :3], src[:, :, -2:]], dim=-1)
 
     def get_proposal_aware_motion_feature(self, proxy_point, batch_size, trajectory_rois, num_rois, batch_dict):
 
@@ -716,23 +719,27 @@ class VelocityHead(RoIHeadTemplate):
 
         return proxy_point_motion_feat
 
-    def trajectories_auxiliary_branch(self, trajectory_rois):
-        B = trajectory_rois.shape[0]
-        time_stamp = trajectory_rois.new_zeros([trajectory_rois.shape[0], trajectory_rois.shape[1], trajectory_rois.shape[2], 1])
+    def trajectories_auxiliary_branch(self, trajectory_rois, num_rois, num_frames):
+        B = len(num_rois) // num_frames
         
-        
-        for i in range(1,time_stamp.shape[1]):
-            time_stamp[:, i, :] = i * 0.1
-            trajectory_rois[:,i,:,:2]-=trajectory_rois[:,i,:,-2:]*i
-            iou3d = [iou3d_nms_utils.boxes_iou3d_gpu(trajectory_rois[b, 0, :, :7], trajectory_rois[b, i, :, :7].reshape(-1, 7)) for b in
-                     range(B)]
-            iou3d = torch.stack(iou3d)
-            values,sampled_inds = torch.topk(iou3d,k=1,dim=2)
-            sampled_inds = sampled_inds.unsqueeze(-1).repeat(1,1,1,trajectory_rois.shape[-1])
-            
-            trajectory_rois[:,i] = torch.gather(trajectory_rois[:,i],dim=1,index=sampled_inds.squeeze(2)) * (values>0.5)
-            
-        box_seq = torch.cat([trajectory_rois, time_stamp], -1)
+
+        box_seq = trajectory_rois[0].new_zeros(B, num_frames, max([num_rois[4 * i] for i in range(B)]),
+                                               trajectory_rois[0].shape[-1])
+       
+        time_stamp = (torch.arange(num_frames).to(device) * 0.1)[None, :, None, None].repeat(B, 1, box_seq.shape[2], 1)
+        for b in range(B):
+            roi_cur = trajectory_rois[b * num_frames]
+            box_seq[b, 0, :roi_cur.shape[0], :] = roi_cur
+            for i in range(1, num_frames):
+                # time_stamp[:, i, :] = i * 0.1
+                roi_pre = trajectory_rois[b * num_frames + i]
+                iou3d = iou3d_nms_utils.boxes_iou3d_gpu(roi_cur[:, :7], roi_pre[:, :7])
+                values, sampled_inds = torch.topk(iou3d, k=1, dim=1)
+                sampled_inds = sampled_inds.repeat(1, roi_pre.shape[-1])
+
+                box_seq[b, i, :, :] = torch.gather(roi_pre, dim=0, index=sampled_inds) * (values > 0.5)
+
+        box_seq = torch.cat([box_seq, time_stamp], -1)
         box_seq[:, :, :, 0:3] = box_seq[:, :, :, 0:3] - box_seq[:, 0:1, :, 0:3]
 
         roi_ry = box_seq[:, :, :, 6] % (2 * np.pi)
@@ -746,10 +753,9 @@ class VelocityHead(RoIHeadTemplate):
         box_seq[:, :, :, 6] = 0
 
         batch_rcnn = box_seq.shape[0] * box_seq.shape[2]
-        
 
-        box_reg, box_feat ,_ = self.seqboxembed(
-            box_seq.permute(0,2,3,1).contiguous().view(batch_rcnn,box_seq.shape[-1],box_seq.shape[1]))
+        box_reg, box_feat, _ = self.seqboxembed(
+            box_seq.permute(0, 2, 3, 1).contiguous().view(batch_rcnn, box_seq.shape[-1], box_seq.shape[1]))
 
         return box_reg, box_feat
 
@@ -841,15 +847,18 @@ class VelocityHead(RoIHeadTemplate):
 
     def select_points2boxes(self, features, xyz, boxes, num_sample, gamma=1):
 
-        cur_radiis = torch.norm(boxes[:, :, 3:5] / 2, dim=-1) * gamma
-        dis = torch.norm((xyz[:, None, :, :2] - boxes[:, :, None, :2].repeat(1, 1, xyz.shape[1], 1)), dim=3)
+        cur_radiis = torch.norm(boxes[:,  3:5] / 2, dim=-1) * gamma
+        features = features.reshape(-1,features.shape[-1])
+        xyz = xyz.reshape(-1,xyz.shape[-1])
+        
+        dis = torch.norm(xyz[None,:,  :2] - boxes[:,None, :2], dim=2)
         point_mask = dis <= cur_radiis.unsqueeze(-1)
         sampled_mask, sampled_idx = torch.topk(point_mask.float(), num_sample, dim=-1)
-        sampled_idx = sampled_idx.view(sampled_idx.shape[0], -1, 1).repeat(1, 1, features.shape[-1])
-        sampled_points = torch.gather(features, 1, sampled_idx.long()).view(sampled_idx.shape[0], boxes.shape[1],
+        sampled_idx = sampled_idx.view( -1, 1).repeat( 1, features.shape[-1])
+        sampled_points = torch.gather(features, 0, sampled_idx.long()).view( boxes.shape[0],
                                                                             num_sample, -1)
         sampled_points[sampled_mask == 0] = 0
-        return sampled_points
+        return sampled_points.permute(1,0,2)
 
     def forward(self, batch_dict):
         """
@@ -928,11 +937,15 @@ class VelocityHead(RoIHeadTemplate):
         rois_list = batch_dict['rois_list']
         srcs_list = batch_dict['src_list']
         num_rois = max([roi.shape[0] for roi in batch_dict['rois_list']])
-        src = srcs_list[0].new_zeros(len(srcs_list), num_rois, num_sample[0], srcs_list[0].shape[-1])
-        rois = rois_list[0].new_zeros(len(rois_list), num_rois, rois_list[0].shape[-1])
-        for i, (src_single, roi_single) in enumerate(zip(srcs_list, rois_list)):
-            src[i, :src_single.shape[0]] = src_single
-            rois[i, :roi_single.shape[0]] = roi_single
+        # src = srcs_list[0].new_zeros(len(srcs_list), num_rois, num_sample[0], srcs_list[0].shape[-1])
+        # rois = rois_list[0].new_zeros(len(rois_list), num_rois, rois_list[0].shape[-1])
+
+        num_rois = [roi.shape[0] for roi in rois_list]
+        rois = torch.concat(rois_list, dim=0)
+        src = torch.concat(srcs_list, dim=0)
+        # for i, (src_single, roi_single) in enumerate(zip(srcs_list, rois_list)):
+        #     src[i, :src_single.shape[0]] = src_single
+        #     rois[i, :roi_single.shape[0]] = roi_single
         num_frames = self.model_cfg.NUM_FRAMES
 
         # src = self.crop_current_frame_points(src, batch_size, trajectory_rois, num_rois, batch_dict)
@@ -940,14 +953,14 @@ class VelocityHead(RoIHeadTemplate):
         # src = self.crop_previous_frame_points(src, batch_size, trajectory_rois, num_rois, valid_length, batch_dict)
 
         src_geometry_feature = self.get_proposal_aware_geometry_feature(
-            src.reshape(-1, self.num_lidar_points[0], src.shape[-1]), batch_size, rois.reshape(-1, rois.shape[-1]),
-            num_rois * num_frames)
-        box_reg, feat_box = self.trajectories_auxiliary_branch(rois.reshape(batch_size,num_frames,-1,rois.shape[-1]))
+            src.reshape(-1, self.num_lidar_points[0], src.shape[-1]), rois.reshape(-1, rois.shape[-1]),
+            src.shape[0])
+        box_reg, feat_box = self.trajectories_auxiliary_branch(rois_list, num_rois, num_frames)
         # src_motion_feature = self.get_proposal_aware_motion_feature(src, batch_size, rois_batch, num_rois)
 
         # src_motion_feature = self.get_proposal_aware_motion_feature(proxy_points, batch_size, trajectory_rois, num_rois,
         #                                                             batch_dict)
-        src = src_geometry_feature
+        src = src_geometry_feature.permute(1,0,2)
         # src_velocity = torch.rand(src.shape[0], src.shape[1], 2).to(device) - 0.5
         # src = torch.concat([src, src_velocity], dim=-1)
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK', None):
@@ -958,44 +971,68 @@ class VelocityHead(RoIHeadTemplate):
         #     pos = self.grid_pos_embeded(pos)
         # else:
         #     pos = None
-        rois = rois.reshape(batch_size, num_frames, -1, rois.shape[-1])
+        # rois = rois.reshape(batch_size, num_frames, -1, rois.shape[-1])
         tokens = []
+        stream = [torch.cuda.Stream() for i in range(len(srcs_list) // 2)]
+        num_rois = [0] + np.cumsum(num_rois).tolist()
         for i in range(len(self.transformer)):
-            src, token = self.transformer[i](src,num_groups = num_frames//2**i, pos=None)
+            num_frames_single_batch = num_frames // 2 ** (i + 1)
+            src, token = self.transformer[i](src, num_rois,batch_size,num_frames_single_batch, pos=None)
             tokens.append(token)
+            
+
             if i < len(self.bio_crossattention):
-                src = src.permute(1, 0, 2).reshape(batch_size, num_frames//2**i, -1, num_sample[0], src.shape[-1])
-                src_cur, src_pre = [src[:, torch.arange(src.shape[1] // 2) * 2 + i, :, :, :] for i in range(2)]
-                roi_cur, roi_pre = [rois[:, torch.arange(rois.shape[1] // 2) * 2 + i, :, :] for i in range(2)]
-                rois = roi_cur
-                src_pre[:, :, :, :, -5:-3] += src_pre[:, :, :, :, -2:] * 0.1 * 2 ** i
-                src_cur = src_cur.flatten(0, 1)
-                src_pre = src_pre.reshape(-1, src_pre.shape[2] * num_sample[0], src_pre.shape[-1])
-                # src_cur = src_cur.reshape(-1,src_cur.shape[2]*num_sample[0],src_cur.shape[-1])
-                roi_cur = roi_cur.reshape(-1, roi_cur.shape[-2], roi_cur.shape[-1])
-                src_pre2cur = self.select_points2boxes(src_pre, src_pre[:, :, -5:-2], roi_cur, num_sample=num_sample[0],
-                                                       gamma=1.1 * 2 ** i)
-                src = self.bio_crossattention[i](src_pre2cur.flatten(0, 1), src_cur.flatten(0, 1))
+                src_pre2cur = [None] * (batch_size * num_frames_single_batch)
+                src_cur = [None] * (batch_size * num_frames_single_batch)
+                # roi_new = [None] * (batch_size * num_frames_single_batch)
+                for bs in range(batch_size):
+                    for fr in range(num_frames_single_batch):
+                        with (torch.cuda.stream(stream[bs * num_frames_single_batch + fr])):
+                            src_pre2cur[bs*num_frames_single_batch+fr] = \
+                                self.select_points2boxes(
+                                  src[:,num_rois[bs*num_frames_single_batch+fr+1]:num_rois[bs*num_frames_single_batch+fr+1+1]],
+                                    src[:, num_rois[bs * num_frames_single_batch + fr + 1]:num_rois[bs * num_frames_single_batch + fr +1 +1]][:,:,-5:-2],
+                                  rois[num_rois[bs*num_frames_single_batch+fr]:num_rois[bs*num_frames_single_batch+fr+1]],
+                                  gamma=1.1*2**i,num_sample=num_sample[0])
+                            src_cur[bs*num_frames_single_batch+fr] = \
+                                src[:, num_rois[bs * num_frames_single_batch + fr ]:num_rois[
+                                                                                           bs * num_frames_single_batch + fr+1] ]
+                torch.cuda.synchronize()
+                src_pre2cur = torch.concat(src_pre2cur,1)
+                src_cur = torch.concat(src_cur,1)
+                # src_pre2cur = torch.concat(src_pre2cur,0)
+                # src_cur = torch.concat(src_cur,0)
+                # src = src.permute(1, 0, 2).reshape(batch_size, num_frames // 2 ** i, -1, num_sample[0], src.shape[-1])
+                # src_cur, src_pre = [src[:, torch.arange(src.shape[1] // 2) * 2 + i, :, :, :] for i in range(2)]
+                # roi_cur, roi_pre = [rois[:, torch.arange(rois.shape[1] // 2) * 2 + i, :, :] for i in range(2)]
+                # rois = roi_cur
+                # src_pre[:, :, :, :, -5:-3] += src_pre[:, :, :, :, -2:] * 0.1 * 2 ** i
+                # src_cur = src_cur.flatten(0, 1)
+                # src_pre = src_pre.reshape(-1, src_pre.shape[2] * num_sample[0], src_pre.shape[-1])
+                # # src_cur = src_cur.reshape(-1,src_cur.shape[2]*num_sample[0],src_cur.shape[-1])
+                # roi_cur = roi_cur.reshape(-1, roi_cur.shape[-2], roi_cur.shape[-1])
+                # src_pre2cur = self.select_points2boxes(src_pre, src_pre[:, :, -5:-2], roi_cur, num_sample=num_sample[0],
+                #                                        gamma=1.1 * 2 ** i)
+                src = self.bio_crossattention[i](src_pre2cur, src_cur)
 
             # src_ = src.permute(1,0,2).
         point_cls_list = []
         point_reg_list = []
 
         for i in range(self.num_groups):
-            point_cls_list.append(self.class_embed[i](tokens[i]))
+            point_cls_list.append(self.class_embed[i](tokens[i][0]))
 
         for i in range(self.num_groups):
-            point_reg_list.append(self.bbox_embed[i](tokens[i]))
+            point_reg_list.append(self.bbox_embed[i](tokens[i][0]))
 
-        point_cls = torch.cat(point_cls_list,0)
+        point_cls = torch.cat(point_cls_list, 0)
 
-        point_reg = torch.cat(point_reg_list,0)
+        point_reg = torch.cat(point_reg_list, 0)
 
         # hs = hs.permute(1, 0, 2).reshape(hs.shape[1], -1)
-        
-        joint_reg = self.jointembed(torch.cat(tokens+[ feat_box.unsqueeze(0)], -1))
-        
-        
+
+        joint_reg = self.jointembed(torch.cat(tokens + [feat_box.unsqueeze(0)], -1))
+
         # features = hs.reshape(batch_size, -1, hs.shape[-2], hs.shape[-1])
         # rois = rois.reshape(batch_size, self.model_cfg.NUM_FRAMES, -1, rois.shape[-1])
         # features_list = []
@@ -1043,17 +1080,17 @@ class VelocityHead(RoIHeadTemplate):
         #     features_list.append(features[:, 0])
         # 
         # features = torch.concat(features_list, dim=1)
-        
+
         # features = torch.concat([features, feat_box.repeat(1, self.model_cfg.NUM_FRAMES - 1, 1)], dim=-1)
 
         # rcnn_cls = point_cls
         # rcnn_reg = joint_reg
-        if not self.training:
-            idx_mask = torch.ones(batch_size, features.shape[-2], dtype=torch.bool)
-            for b in range(batch_size):
-                idx_mask[b][idx[b][idx[b] >= 0]] = False
-        rcnn_cls = self.box_cls(features)
-        rcnn_reg = self.box_reg(features)
+        # if not self.training:
+        #     idx_mask = torch.ones(batch_size, features.shape[-2], dtype=torch.bool)
+        #     for b in range(batch_size):
+        #         idx_mask[b][idx[b][idx[b] >= 0]] = False
+        rcnn_cls = point_cls
+        rcnn_reg = joint_reg
 
         if not self.training:
             batch_dict['rois'] = batch_dict['rois'][:, :, 0].contiguous()
@@ -1175,13 +1212,13 @@ class VelocityHead(RoIHeadTemplate):
             if self.model_cfg.USE_AUX_LOSS:
                 point_reg = forward_ret_dict['point_reg']
 
-                groups = point_reg.shape[1]
+                groups = point_reg.shape[0]
                 if groups != 1:
                     point_loss_regs = 0
                     slice = reg_targets.shape[0]
                     for i in range(groups):
                         point_loss_reg = self.reg_loss_func(
-                            point_reg[:, i].view(slice, -1).unsqueeze(dim=0),
+                            point_reg[i].view(slice, -1).unsqueeze(dim=0),
                             reg_targets.unsqueeze(dim=0), )
                         point_loss_reg = (point_loss_reg.view(slice, -1) * fg_mask.unsqueeze(
                             dim=-1).float()).sum() / max(fg_sum, 1)

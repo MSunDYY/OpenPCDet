@@ -5,7 +5,7 @@ DATA_CONFIG:
     GET_FLOW_VOXELS: True
     SAMPLED_INTERVAL: {
         'train': 5,
-        'test': 1
+        'test': 50
     }
     CONCAT: False
 
