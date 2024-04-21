@@ -940,7 +940,7 @@ class VelocityHead(RoIHeadTemplate):
         # src = srcs_list[0].new_zeros(len(srcs_list), num_rois, num_sample[0], srcs_list[0].shape[-1])
         # rois = rois_list[0].new_zeros(len(rois_list), num_rois, rois_list[0].shape[-1])
 
-        num_rois = [roi.shape[0] for roi in rois_list]
+        num_rois_all = [roi.shape[0] for roi in rois_list]
         rois = torch.concat(rois_list, dim=0)
         src = torch.concat(srcs_list, dim=0)
         # for i, (src_single, roi_single) in enumerate(zip(srcs_list, rois_list)):
@@ -955,7 +955,7 @@ class VelocityHead(RoIHeadTemplate):
         src_geometry_feature = self.get_proposal_aware_geometry_feature(
             src.reshape(-1, self.num_lidar_points[0], src.shape[-1]), rois.reshape(-1, rois.shape[-1]),
             src.shape[0])
-        box_reg, feat_box = self.trajectories_auxiliary_branch(rois_list, num_rois, num_frames)
+        box_reg, feat_box = self.trajectories_auxiliary_branch(rois_list, num_rois_all, num_frames)
         # src_motion_feature = self.get_proposal_aware_motion_feature(src, batch_size, rois_batch, num_rois)
 
         # src_motion_feature = self.get_proposal_aware_motion_feature(proxy_points, batch_size, trajectory_rois, num_rois,
@@ -974,27 +974,29 @@ class VelocityHead(RoIHeadTemplate):
         # rois = rois.reshape(batch_size, num_frames, -1, rois.shape[-1])
         tokens = []
         stream = [torch.cuda.Stream() for i in range(len(srcs_list) // 2)]
-        num_rois = [0] + np.cumsum(num_rois).tolist()
+
         for i in range(len(self.transformer)):
-            num_frames_single_batch = num_frames // 2 ** (i + 1)
+            num_rois = [0] + np.cumsum(num_rois_all).tolist()
+            num_frames_single_batch = num_frames // 2 ** (i)
+            num_frames_single_batch_next = num_frames//2**(i+1)
             src, token = self.transformer[i](src, num_rois,batch_size,num_frames_single_batch, pos=None)
             tokens.append(token)
-            
+
 
             if i < len(self.bio_crossattention):
-                src_pre2cur = [None] * (batch_size * num_frames_single_batch)
-                src_cur = [None] * (batch_size * num_frames_single_batch)
+                src_pre2cur = [None] * (batch_size * num_frames_single_batch_next)
+                src_cur = [None] * (batch_size * num_frames_single_batch_next)
                 # roi_new = [None] * (batch_size * num_frames_single_batch)
                 for bs in range(batch_size):
-                    for fr in range(num_frames_single_batch):
-                        with (torch.cuda.stream(stream[bs * num_frames_single_batch + fr])):
-                            src_pre2cur[bs*num_frames_single_batch+fr] = \
+                    for fr in range(num_frames_single_batch_next):
+                        with (torch.cuda.stream(stream[bs * num_frames_single_batch_next + fr])):
+                            src_pre2cur[bs*num_frames_single_batch_next+fr] = \
                                 self.select_points2boxes(
                                   src[:,num_rois[bs*num_frames_single_batch+fr+1]:num_rois[bs*num_frames_single_batch+fr+1+1]],
                                     src[:, num_rois[bs * num_frames_single_batch + fr + 1]:num_rois[bs * num_frames_single_batch + fr +1 +1]][:,:,-5:-2],
                                   rois[num_rois[bs*num_frames_single_batch+fr]:num_rois[bs*num_frames_single_batch+fr+1]],
                                   gamma=1.1*2**i,num_sample=num_sample[0])
-                            src_cur[bs*num_frames_single_batch+fr] = \
+                            src_cur[bs*num_frames_single_batch_next+fr] = \
                                 src[:, num_rois[bs * num_frames_single_batch + fr ]:num_rois[
                                                                                            bs * num_frames_single_batch + fr+1] ]
                 torch.cuda.synchronize()
@@ -1014,7 +1016,7 @@ class VelocityHead(RoIHeadTemplate):
                 # src_pre2cur = self.select_points2boxes(src_pre, src_pre[:, :, -5:-2], roi_cur, num_sample=num_sample[0],
                 #                                        gamma=1.1 * 2 ** i)
                 src = self.bio_crossattention[i](src_pre2cur, src_cur)
-
+                num_rois_all = [num_rois_all[2 * j] for j in range(len(num_rois_all) // 2)]
             # src_ = src.permute(1,0,2).
         point_cls_list = []
         point_reg_list = []

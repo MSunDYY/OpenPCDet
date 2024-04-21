@@ -267,7 +267,7 @@ class Transformer(nn.Module):
 
         # src = src.permute(1, 0, 2)
         src = self.encoder(src, pos=pos)
-        token = [src[:1][:,num_groups[i*num_frames]:num_groups[i+1]] for i in range(batch_size)]
+        token = [src[:1][:,num_groups[i*num_frames]:num_groups[i*num_frames+1]] for i in range(batch_size)]
         src = torch.concat([src[1:],xyz_vel],dim=-1)
         
         # memory = torch.cat(memory[0:1].chunk(4, 1), 0)
