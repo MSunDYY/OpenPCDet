@@ -296,29 +296,38 @@ class TransformerEncoder(nn.Module):
 
         return output
 class vector_attention(nn.Module):
-    def __init__(self,d_model):
+    def __init__(self,d_model,nhead):
         super().__init__()
         self.d_model = d_model
-        self.linear_p = nn.Sequential(nn.Linear(self.d_model, self.d_model),
-                                      nn.BatchNorm1d(self.d_model),
-                                      nn.ReLU(inplace=True),
-                                      nn.Linear(self.d_model, self.d_model)
-                                      )
-        self.linear_w = nn.Sequential(nn.BatchNorm1d(d_model),nn.ReLU(inplace=True),
-                                      nn.Linear(d_model,d_model),
-                                      nn.BatchNorm1d(d_model),nn.ReLU(inplace=True),
-                                      nn.Linear(d_model,d_model))
-        self.softmax = nn.Softmax(dim=1)
-        self.linear_q = nn.Linear(d_model,d_model)
-        self.linear_k = nn.Linear(d_model, d_model)
-        self.linear_v = nn.Linear(d_model, d_model)
-    def forward(self,q,k,v,pos=None):
-        q,k,v = self.linear_q(q),self.linear_k(k),self.linear_v(v)
-        w = k -q
-        for i,layer in enumerate(self.linear_w): w =layer(w.transpose(1,2).contiguous().transpose(1,2).contiguous() if i%3==0 else layer(w))
-        w = self.softmax(w)
-        x = x_v*w
+        self.nhead = nhead
+        self.linear_q = nn.ModuleList()
+        self.linear_w = nn.ModuleList()
+        self.linear_k = nn.ModuleList()
+        self.linear_v = nn.ModuleList()
+        for i in range(nhead):
 
+            self.linear_w.append(nn.Sequential(nn.BatchNorm1d(d_model),nn.ReLU(inplace=True),
+                                          nn.Linear(d_model,d_model),
+                                          nn.BatchNorm1d(d_model),nn.ReLU(inplace=True),
+                                          nn.Linear(d_model,d_model)))
+            self.softmax = nn.Softmax(dim=0)
+            self.linear_q.append(nn.Linear(d_model,d_model))
+            self.linear_k.append(nn.Linear(d_model, d_model))
+            self.linear_v.append(nn.Linear(d_model, d_model))
+            self.MLP = MLP(d_model*nhead,hidden_dim=d_model,output_dim=d_model,num_layers=3)
+    def forward(self,q,k,v,pos=None):
+        x_list = []
+        for i in range(self.nhead):
+            q,k,v = self.linear_q[i](q),self.linear_k[i](k),self.linear_v[i](v)
+            w = k -q
+            for j,layer in enumerate(self.linear_w[i]): w =layer(w.permute(1,2,0).contiguous()).permute(2,0,1).contiguous() if j%3==0 else layer(w)
+            w = self.softmax(w)
+            x = (w*v).sum(0).unsqueeze(0)
+            x_list.append(x)
+        x =self.MLP(torch.concat(x_list,dim=-1))
+        return x
+
+        return x
 
 
 class TransformerEncoderLayer(nn.Module):
@@ -333,7 +342,7 @@ class TransformerEncoderLayer(nn.Module):
         self.num_point = num_points
         self.num_groups = num_groups
         self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-        self.self_attn = vector_attention(d_model)
+        self.self_attn = vector_attention(d_model,nhead = 4)
 
         self.linear1 = nn.Linear(d_model, dim_feedforward)
         self.dropout = nn.Dropout(dropout)
@@ -376,7 +385,7 @@ class TransformerEncoderLayer(nn.Module):
         else:
             key = src_intra_group_fusion
 
-        src_summary = self.self_attn(token, key, src_intra_group_fusion)[0]
+        src_summary = self.self_attn(token, key, src_intra_group_fusion)
 
         token = token + self.dropout1(src_summary)
         token = self.norm1(token)
