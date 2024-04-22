@@ -86,7 +86,7 @@ MODEL:
                 MIN_NUM_POINTS: 1
                 NMS_PRE_MAXSIZE: 4096
                 NMS_POST_MAXSIZE: 500
-                NMS_THRESH: 0.5
+                NMS_THRESH: 0.7
 
 
     POST_PROCESSING:

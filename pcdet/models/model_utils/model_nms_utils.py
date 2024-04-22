@@ -19,10 +19,10 @@ def point_nms(box_scores,box_preds,nms_config,points,box_labels=None):
 
     points_mask = torch.from_numpy(roiaware_pool3d_utils.points_in_boxes_cpu(points[:, :3].cpu().numpy(), box_preds[:, :7].cpu().numpy())).to(device)
     points_mask = points_mask[:,points_mask.sum(0)>0]
-    sampled_mask, sampled_idx = select_points(point_mask=points_mask.int(), num_sampled_per_box=128,
+    sampled_mask, sampled_idx = select_points(point_mask=points_mask.int(), num_sampled_per_box=28,
                                                    num_sampled_per_point=nms_config.MAX_NUM_POINTS)
     selected = sampled_mask.sum(-1)>=nms_config.MIN_NUM_POINTS
-    print( selected.sum().item(),'      ',selected.shape[0])
+    print( selected.sum().item())
     return selected,box_scores[selected]
 def class_agnostic_nms(box_scores, box_preds, nms_config, score_thresh=None):
     src_box_scores = box_scores

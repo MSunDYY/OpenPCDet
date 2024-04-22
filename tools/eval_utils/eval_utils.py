@@ -18,16 +18,18 @@ def statistics_info(cfg, ret_dict, metric, disp_dict):
         metric['velocity_diff_num_%s'%str(cur_thresh)]+=ret_dict.get('velocity_diff_num_%s' %str(cur_thresh),0)
     metric['gt_num'] += ret_dict.get('gt', 0)
     min_thresh = cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST[0]
-
+    thresh = cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST
     if ret_dict.get('velocity_diff_0.3', 0) != 0:
         disp_dict['recall_%s' % str(min_thresh)] = \
             '(%d, %d) / %d  diff: %f' % (
                 metric['recall_roi_%s' % str(min_thresh)], metric['recall_rcnn_%s' % str(min_thresh)], metric['gt_num'],
                 metric['velocity_diff_%s' % str(min_thresh)].item() / metric['velocity_diff_num_%s' % str(min_thresh)])
     else:
-        disp_dict['recall_%s' % str(min_thresh)] = \
-            '(%d, %d) / %d' % (
+        disp_dict['recall_%s_%s_%s ' % (str(min_thresh),str(thresh[1]),str(thresh[2]))] = \
+            '(%d, %d)  (%d, %d )  (%d, %d )/ %d' % (
                 metric['recall_roi_%s' % str(min_thresh)], metric['recall_rcnn_%s' % str(min_thresh)],
+                metric['recall_roi_%s' % str(thresh[1])], metric['recall_rcnn_%s' % str(thresh[1])],
+                metric['recall_roi_%s' % str(thresh[2])], metric['recall_rcnn_%s' % str(thresh[2])],
                 metric['gt_num'],)
 
 
@@ -49,7 +51,11 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
     dataset = dataloader.dataset
     class_names = dataset.class_names
     det_annos = []
-
+    import GPUtil
+    if GPUtil.getGPUs()[0].name.endswith('3080'):
+        delay_time = 0.5
+    else:
+        delay_time = 0
     if getattr(args, 'infer_time', False):
         start_iter = int(len(dataloader) * 0.1)
         infer_time_meter = common_utils.AverageMeter()
@@ -76,7 +82,7 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
 
         with torch.no_grad():
             pred_dicts, ret_dict = model(batch_dict)
-
+        time.sleep(delay_time)
         disp_dict = {}
 
         if getattr(args, 'infer_time', False):

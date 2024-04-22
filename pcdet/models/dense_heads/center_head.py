@@ -502,20 +502,21 @@ class CenterHead(nn.Module):
                     )
 
                 elif post_process_cfg.NMS_CONFIG.NMS_TYPE == 'point_nms':
+                    print(final_dict['pred_scores'].shape[0],end='   ')
                     selected_iou, selected_scores_iou = model_nms_utils.class_agnostic_nms(
                         box_scores=final_dict['pred_scores'], box_preds=final_dict['pred_boxes'],
                         nms_config=post_process_cfg.NMS_CONFIG,
                         score_thresh=None
                     )
                     print(selected_iou.shape[0],end='   ')
-                    post_process_cfg.NMS_CONFIG.NMS_THRESH=0.9
+                    # post_process_cfg.NMS_CONFIG.NMS_THRESH=0.9
                     selected_iou, selected_scores_iou = model_nms_utils.class_agnostic_nms(
                         box_scores=final_dict['pred_scores'], box_preds=final_dict['pred_boxes'],
                         nms_config=post_process_cfg.NMS_CONFIG,
                         score_thresh=None
                     )
                     print(selected_iou.shape[0], end='   ')
-
+                    # post_process_cfg.NMS_CONFIG.NMS_THRESH = 0.7
                     batch_dict['rois'] = final_dict['pred_boxes'][selected_iou].unsqueeze(0)
                     points = batch_dict['points'][(batch_dict['points'][:,0]==idx) ]
                     selected, selected_scores = model_nms_utils.point_nms(

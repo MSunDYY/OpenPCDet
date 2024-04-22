@@ -31,7 +31,11 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
         forward_time = common_utils.AverageMeter()
         losses_m = common_utils.AverageMeter()
     end = time.time()
-
+    import GPUtil
+    if GPUtil.getGPUs()[0].name.endswith('3080'):
+        delay_time = 0.5
+    else:
+        delay_time = 0
     for cur_it in range(start_it, total_it_each_epoch):
         try:
 
@@ -63,6 +67,7 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
 
         with torch.cuda.amp.autocast(enabled=use_amp):
             loss, tb_dict, disp_dict = model_func(model, batch)
+        time.sleep(delay_time)
         t3 = time.time()
         # print('train_time:',t3-t2)
         scaler.scale(loss).backward()
