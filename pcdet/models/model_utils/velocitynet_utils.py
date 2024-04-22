@@ -295,6 +295,31 @@ class TransformerEncoder(nn.Module):
             output = self.norm(output)
 
         return output
+class vector_attention(nn.Module):
+    def __init__(self,d_model):
+        super().__init__()
+        self.d_model = d_model
+        self.linear_p = nn.Sequential(nn.Linear(self.d_model, self.d_model),
+                                      nn.BatchNorm1d(self.d_model),
+                                      nn.ReLU(inplace=True),
+                                      nn.Linear(self.d_model, self.d_model)
+                                      )
+        self.linear_w = nn.Sequential(nn.BatchNorm1d(d_model),nn.ReLU(inplace=True),
+                                      nn.Linear(d_model,d_model),
+                                      nn.BatchNorm1d(d_model),nn.ReLU(inplace=True),
+                                      nn.Linear(d_model,d_model))
+        self.softmax = nn.Softmax(dim=1)
+        self.linear_q = nn.Linear(d_model,d_model)
+        self.linear_k = nn.Linear(d_model, d_model)
+        self.linear_v = nn.Linear(d_model, d_model)
+    def forward(self,q,k,v,pos=None):
+        q,k,v = self.linear_q(q),self.linear_k(k),self.linear_v(v)
+        w = k -q
+        for i,layer in enumerate(self.linear_w): w =layer(w.transpose(1,2).contiguous().transpose(1,2).contiguous() if i%3==0 else layer(w))
+        w = self.softmax(w)
+        x = x_v*w
+
+
 
 class TransformerEncoderLayer(nn.Module):
     count = 0
@@ -308,6 +333,8 @@ class TransformerEncoderLayer(nn.Module):
         self.num_point = num_points
         self.num_groups = num_groups
         self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.self_attn = vector_attention(d_model)
+
         self.linear1 = nn.Linear(d_model, dim_feedforward)
         self.dropout = nn.Dropout(dropout)
         self.linear2 = nn.Linear(dim_feedforward, d_model)
@@ -349,7 +376,8 @@ class TransformerEncoderLayer(nn.Module):
         else:
             key = src_intra_group_fusion
 
-        src_summary = self.self_attn(token, key, value=src_intra_group_fusion)[0]
+        src_summary = self.self_attn(token, key, src_intra_group_fusion)[0]
+
         token = token + self.dropout1(src_summary)
         token = self.norm1(token)
         src_summary = self.linear2(self.dropout(self.activation(self.linear1(token))))
