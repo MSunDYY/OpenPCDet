@@ -108,7 +108,7 @@ class CenterHead(nn.Module):
                                       num_max_objs=500,
                                       gaussian_overlap=0.1, min_radius=2):
         heatmap = gt_boxes.new_zeros(num_classes, feature_map_size[1], feature_map_size[0])
-        ret_boxes = gt_boxes.new_zeros((num_max_objs, gt_boxes.shape[-1] - 1 +1))
+        ret_boxes = gt_boxes.new_zeros((num_max_objs, gt_boxes.shape[-1] - 1 + 1))
         inds = gt_boxes.new_zeros(num_max_objs).long()
         mask = gt_boxes.new_zeros(num_max_objs).long()
         ret_boxes_src = gt_boxes.new_zeros(num_max_objs, gt_boxes.shape[-1])
@@ -309,14 +309,14 @@ class CenterHead(nn.Module):
             target_boxes = target_dicts['target_boxes'][idx]
             pred_boxes = torch.cat([pred_dict[head_name] for head_name in self.separate_head_cfg.HEAD_ORDER], dim=1)
             if 'pro_l' in self.separate_head_cfg.HEAD_ORDER:
-                l = torch.sqrt(pred_boxes[:,3:4]**2+pred_boxes[:,3:4]**2).log()
-                pred_boxes = torch.concat([pred_boxes[:,:3],l,pred_boxes[:,3:]],dim=1)
+                l = torch.sqrt(pred_boxes[:, 3:4] ** 2 + pred_boxes[:, 3:4] ** 2).log()
+                pred_boxes = torch.concat([pred_boxes[:, :3], l, pred_boxes[:, 3:]], dim=1)
 
             reg_loss = self.reg_loss_func(
                 pred_boxes, target_dicts['masks'][idx], target_dicts['inds'][idx], target_boxes
             )
             if 'pro_l' in self.separate_head_cfg.HEAD_ORDER:
-                reg_loss[6:8] =reg_loss[6:8]/torch.sqrt(reg_loss[6]**2+reg_loss[7]**2)
+                reg_loss[6:8] = reg_loss[6:8] / torch.sqrt(reg_loss[6] ** 2 + reg_loss[7] ** 2)
 
             loc_loss = (reg_loss * reg_loss.new_tensor(self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['code_weights'])).sum()
             loc_loss = loc_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['loc_weight']
@@ -435,7 +435,7 @@ class CenterHead(nn.Module):
 
         return ret_dict
 
-    def generate_predicted_boxes(self, batch_size, pred_dicts):
+    def generate_predicted_boxes(self, batch_size, pred_dicts, batch_dict=['None']):
         post_process_cfg = self.model_cfg.POST_PROCESSING
         post_center_limit_range = torch.tensor(post_process_cfg.POST_CENTER_LIMIT_RANGE).cuda().float()
 
@@ -487,7 +487,7 @@ class CenterHead(nn.Module):
                                                           1 - IOU_RECTIFIER[final_dict['pred_labels']]) * torch.pow(
                         pred_iou, IOU_RECTIFIER[final_dict['pred_labels']])
 
-                if post_process_cfg.NMS_CONFIG.NMS_TYPE not in ['circle_nms', 'class_specific_nms']:
+                if post_process_cfg.NMS_CONFIG.NMS_TYPE not in ['circle_nms', 'class_specific_nms','point_nms']:
                     selected, selected_scores = model_nms_utils.class_agnostic_nms(
                         box_scores=final_dict['pred_scores'], box_preds=final_dict['pred_boxes'],
                         nms_config=post_process_cfg.NMS_CONFIG,
@@ -500,12 +500,34 @@ class CenterHead(nn.Module):
                         box_labels=final_dict['pred_labels'], nms_config=post_process_cfg.NMS_CONFIG,
                         score_thresh=post_process_cfg.NMS_CONFIG.get('SCORE_THRESH', None)
                     )
+
+                elif post_process_cfg.NMS_CONFIG.NMS_TYPE == 'point_nms':
+                    selected_iou, selected_scores_iou = model_nms_utils.class_agnostic_nms(
+                        box_scores=final_dict['pred_scores'], box_preds=final_dict['pred_boxes'],
+                        nms_config=post_process_cfg.NMS_CONFIG,
+                        score_thresh=None
+                    )
+                    print(selected_iou.shape[0],end='   ')
+                    post_process_cfg.NMS_CONFIG.NMS_THRESH=0.9
+                    selected_iou, selected_scores_iou = model_nms_utils.class_agnostic_nms(
+                        box_scores=final_dict['pred_scores'], box_preds=final_dict['pred_boxes'],
+                        nms_config=post_process_cfg.NMS_CONFIG,
+                        score_thresh=None
+                    )
+                    print(selected_iou.shape[0], end='   ')
+
+                    batch_dict['rois'] = final_dict['pred_boxes'][selected_iou].unsqueeze(0)
+                    points = batch_dict['points'][(batch_dict['points'][:,0]==idx) ]
+                    selected, selected_scores = model_nms_utils.point_nms(
+                        box_scores=final_dict['pred_scores'][selected_iou],box_preds=final_dict['pred_boxes'][selected_iou],points=points[:,1:],
+                    box_labels = final_dict['pred_labels'][selected_iou],nms_config = post_process_cfg.NMS_CONFIG)
+
                 elif post_process_cfg.NMS_CONFIG.NMS_TYPE == 'circle_nms':
                     raise NotImplementedError
 
-                final_dict['pred_boxes'] = final_dict['pred_boxes'][selected]
+                final_dict['pred_boxes'] = final_dict['pred_boxes'][selected_iou][selected]
                 final_dict['pred_scores'] = selected_scores
-                final_dict['pred_labels'] = final_dict['pred_labels'][selected]
+                final_dict['pred_labels'] = final_dict['pred_labels'][selected_iou][selected]
 
                 ret_dict[k]['pred_boxes'].append(final_dict['pred_boxes'])
                 ret_dict[k]['pred_scores'].append(final_dict['pred_scores'])
@@ -556,7 +578,7 @@ class CenterHead(nn.Module):
         if not self.training or self.predict_boxes_when_training:
             if 'pro_l' not in self.model_cfg.SEPARATE_HEAD_CFG.HEAD_DICT:
                 pred_dicts = self.generate_predicted_boxes(
-                    data_dict['batch_size'], pred_dicts
+                    data_dict['batch_size'], pred_dicts, data_dict
                 )
             else:
                 pred_dicts = self.generate_predicted_boxes_(
