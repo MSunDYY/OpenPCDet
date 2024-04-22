@@ -855,10 +855,9 @@ class VelocityHead(RoIHeadTemplate):
         
         dis = torch.norm(xyz[None,:,  :2] - boxes[:,None, :2], dim=2)
         point_mask = dis <= cur_radiis.unsqueeze(-1)
-        try:
-            sampled_mask, sampled_idx = torch.topk(point_mask.float(), k=num_sample, dim=-1)
-        except:
-            pass
+
+        sampled_mask, sampled_idx = torch.topk(point_mask.float(), k=num_sample, dim=-1)
+
         sampled_idx = sampled_idx.view( -1, 1).repeat( 1, features.shape[-1])
         sampled_points = torch.gather(features, 0, sampled_idx.long()).view( boxes.shape[0],
                                                                             num_sample, -1)
@@ -994,18 +993,16 @@ class VelocityHead(RoIHeadTemplate):
                 # roi_new = [None] * (batch_size * num_frames_single_batch)
                 for bs in range(batch_size):
                     for fr in range(num_frames_single_batch_next):
-                        with (torch.cuda.stream(stream[bs * num_frames_single_batch_next + fr])):
-                            try:
-                                src_pre2cur[bs*num_frames_single_batch_next+fr] = \
+
+                        src_pre2cur[bs*num_frames_single_batch_next+fr] = \
                                 self.select_points2boxes(
                                   src[:,num_rois[bs*num_frames_single_batch+fr*2+1]:num_rois[bs*num_frames_single_batch+fr*2+1+1]],
 
                                   rois[num_rois[bs*num_frames_single_batch+fr*2]:num_rois[bs*num_frames_single_batch+fr*2+1]],
                                   gamma=1.1**(2*i+1),num_sample=num_sample[0])
-                            except:
-                                pass
 
-                            src_cur[bs*num_frames_single_batch_next+fr] = \
+
+                        src_cur[bs*num_frames_single_batch_next+fr] = \
                                 src[:, num_rois[bs * num_frames_single_batch + fr*2 ]:num_rois[
                                                                                            bs * num_frames_single_batch + fr*2+1] ]
                 torch.cuda.synchronize()

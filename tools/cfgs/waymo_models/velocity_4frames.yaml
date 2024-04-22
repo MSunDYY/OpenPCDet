@@ -107,7 +107,7 @@ MODEL:
 
         TARGET_CONFIG:
             BOX_CODER: ResidualCoder
-            ROI_PER_IMAGE: 96
+            ROI_PER_IMAGE: 16
             FG_RATIO: 0.5
             REG_AUG_METHOD: single
             ROI_FG_AUG_TIMES: 10
