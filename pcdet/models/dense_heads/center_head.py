@@ -493,6 +493,7 @@ class CenterHead(nn.Module):
                         nms_config=post_process_cfg.NMS_CONFIG,
                         score_thresh=None
                     )
+                    batch_dict['rois'] = final_dict['pred_boxes'].unsqueeze(0)
 
                 elif post_process_cfg.NMS_CONFIG.NMS_TYPE == 'class_specific_nms':
                     selected, selected_scores = model_nms_utils.class_specific_nms(
@@ -522,13 +523,13 @@ class CenterHead(nn.Module):
                     selected, selected_scores = model_nms_utils.point_nms(
                         box_scores=final_dict['pred_scores'][selected_iou],box_preds=final_dict['pred_boxes'][selected_iou],points=points[:,1:],
                     box_labels = final_dict['pred_labels'][selected_iou],nms_config = post_process_cfg.NMS_CONFIG)
-
+                    selected = selected_iou[selected]
                 elif post_process_cfg.NMS_CONFIG.NMS_TYPE == 'circle_nms':
                     raise NotImplementedError
 
-                final_dict['pred_boxes'] = final_dict['pred_boxes'][selected_iou][selected]
+                final_dict['pred_boxes'] = final_dict['pred_boxes'][selected]
                 final_dict['pred_scores'] = selected_scores
-                final_dict['pred_labels'] = final_dict['pred_labels'][selected_iou][selected]
+                final_dict['pred_labels'] = final_dict['pred_labels'][selected]
 
                 ret_dict[k]['pred_boxes'].append(final_dict['pred_boxes'])
                 ret_dict[k]['pred_scores'].append(final_dict['pred_scores'])
