@@ -18,7 +18,7 @@ DATA_CONFIG:
 
     USE_PREDBOX: True
     ROI_BOXES_PATH: {
-        'train': '../output/waymo_models/centerpoint_4frames/default/eval/epoch_0/train/default/result.pkl',  # example: predicted boxes of RPN in training set
+        'train': '../output/waymo_models/centerpoint_4frames/default/eval/epoch_0/train/pointnms_Interval1/result.pkl',  # example: predicted boxes of RPN in training set
         'test': '../output/waymo_models/centerpoint_4frames/default/eval/epoch_0/val/Interval1/result.pkl',  # example: predicted boxes of RPN in evalulation set
     }
     CONCAT: False
@@ -107,7 +107,7 @@ MODEL:
 
         TARGET_CONFIG:
             BOX_CODER: ResidualCoder
-            ROI_PER_IMAGE: 16
+            ROI_PER_IMAGE: 96
             FG_RATIO: 0.5
             REG_AUG_METHOD: single
             ROI_FG_AUG_TIMES: 10
