@@ -5,7 +5,7 @@ DATA_CONFIG:
 
     SAMPLED_INTERVAL: {
         'train': 10,
-        'test': 100
+        'test': 1
     }
 
 

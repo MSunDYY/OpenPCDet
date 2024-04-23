@@ -493,7 +493,7 @@ class CenterHead(nn.Module):
                         nms_config=post_process_cfg.NMS_CONFIG,
                         score_thresh=None
                     )
-                    batch_dict['rois'] = final_dict['pred_boxes'].unsqueeze(0)
+                    # batch_dict['rois'] = final_dict['pred_boxes'].unsqueeze(0)
 
                 elif post_process_cfg.NMS_CONFIG.NMS_TYPE == 'class_specific_nms':
                     selected, selected_scores = model_nms_utils.class_specific_nms(
@@ -503,27 +503,31 @@ class CenterHead(nn.Module):
                     )
 
                 elif post_process_cfg.NMS_CONFIG.NMS_TYPE == 'point_nms':
-                    print(final_dict['pred_scores'].shape[0],end='   ')
-                    selected_iou, selected_scores_iou = model_nms_utils.class_agnostic_nms(
-                        box_scores=final_dict['pred_scores'], box_preds=final_dict['pred_boxes'],
-                        nms_config=post_process_cfg.NMS_CONFIG,
-                        score_thresh=None
-                    )
-                    print(selected_iou.shape[0],end='   ')
+                    # print(final_dict['pred_scores'].shape[0],end='   ')
+                    # selected_iou, selected_scores_iou = model_nms_utils.class_agnostic_nms(
+                    #     box_scores=final_dict['pred_scores'], box_preds=final_dict['pred_boxes'],
+                    #     nms_config=post_process_cfg.NMS_CONFIG,
+                    #     score_thresh=None
+                    # )
+                    # print(selected_iou.shape[0],end='   ')
                     # post_process_cfg.NMS_CONFIG.NMS_THRESH=0.9
-                    selected_iou, selected_scores_iou = model_nms_utils.class_agnostic_nms(
+                    selected, selected_scores = model_nms_utils.class_agnostic_nms(
                         box_scores=final_dict['pred_scores'], box_preds=final_dict['pred_boxes'],
                         nms_config=post_process_cfg.NMS_CONFIG,
                         score_thresh=None
                     )
-                    print(selected_iou.shape[0], end='   ')
+                    # print(selected_iou.shape[0], end='   ')
                     # post_process_cfg.NMS_CONFIG.NMS_THRESH = 0.7
-                    batch_dict['rois'] = final_dict['pred_boxes'][selected_iou].unsqueeze(0)
+                    # batch_dict['rois'] = final_dict['pred_boxes'][selected_iou].unsqueeze(0)
                     points = batch_dict['points'][(batch_dict['points'][:,0]==idx) ]
-                    selected, selected_scores = model_nms_utils.point_nms(
-                        box_scores=final_dict['pred_scores'][selected_iou],box_preds=final_dict['pred_boxes'][selected_iou],points=points[:,1:],
-                    box_labels = final_dict['pred_labels'][selected_iou],nms_config = post_process_cfg.NMS_CONFIG)
-                    selected = selected_iou[selected]
+                    selected_nms, selected_scores_nms = model_nms_utils.point_nms(
+                        box_scores=final_dict['pred_scores'][selected],box_preds=final_dict['pred_boxes'][selected],points=points[:,1:],
+                    box_labels = final_dict['pred_labels'][selected],nms_config = post_process_cfg.NMS_CONFIG)
+                    # selected = selected_iou[selected]
+                    point_nms_idx = selected.new_zeros(final_dict['pred_scores'].shape[0],1)
+                    point_nms_idx[selected] = 1
+                    point_nms_idx[selected] *=selected_nms.unsqueeze(-1)
+                    final_dict['pred_boxes'] = torch.concat([final_dict['pred_boxes'],point_nms_idx],dim=-1)
                 elif post_process_cfg.NMS_CONFIG.NMS_TYPE == 'circle_nms':
                     raise NotImplementedError
 

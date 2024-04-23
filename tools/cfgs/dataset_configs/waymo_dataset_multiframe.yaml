@@ -6,7 +6,7 @@ POINT_CLOUD_RANGE: [-75.2, -75.2, -2, 75.2, 75.2, 4]
 
 DATA_SPLIT: {
     'train': train,
-    'test': val
+    'test': train
 }
 
 SAMPLED_INTERVAL: {
