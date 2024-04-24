@@ -1187,11 +1187,11 @@ class VelocityHead(RoIHeadTemplate):
         tb_dict = {} if tb_dict is None else tb_dict
         rcnn_loss = 0
         rcnn_loss_cls, cls_tb_dict = self.get_box_cls_layer_loss(self.forward_ret_dict)
-        rcnn_loss += rcnn_loss_cls
+        rcnn_loss =rcnn_loss_cls+rcnn_loss_cls
         tb_dict.update(cls_tb_dict)
 
         rcnn_loss_reg, reg_tb_dict = self.get_box_reg_layer_loss(self.forward_ret_dict)
-        rcnn_loss += rcnn_loss_reg
+        rcnn_loss =rcnn_loss+ rcnn_loss_reg
         tb_dict.update(reg_tb_dict)
         tb_dict['rcnn_loss'] = rcnn_loss.item()
         return rcnn_loss, tb_dict
@@ -1258,7 +1258,7 @@ class VelocityHead(RoIHeadTemplate):
                         point_loss_reg = point_loss_reg * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight'] * \
                                          loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][2]
 
-                        point_loss_regs += point_loss_reg
+                        point_loss_regs =point_loss_regs+ point_loss_reg
                     point_loss_regs = point_loss_regs / groups
                     tb_dict['point_loss_reg'] = point_loss_regs.item()
                     rcnn_loss_reg += point_loss_regs
@@ -1299,7 +1299,7 @@ class VelocityHead(RoIHeadTemplate):
                 rcnn_boxes3d = common_utils.rotate_points_along_z(
                     rcnn_boxes3d.unsqueeze(dim=1), roi_ry
                 ).squeeze(dim=1)
-                rcnn_boxes3d[:, 0:3] += roi_xyz
+                rcnn_boxes3d[:, 0:3] =rcnn_boxes3d[:,:3]+ roi_xyz
 
                 corner_loss_func = loss_utils.get_corner_loss_lidar
 
@@ -1389,7 +1389,7 @@ class VelocityHead(RoIHeadTemplate):
             batch_box_preds.unsqueeze(dim=1), roi_ry
         ).squeeze(dim=1)
 
-        batch_box_preds[:, 0:3] += roi_xyz
+        batch_box_preds[:, 0:3] =batch_box_preds[:,:3]+ roi_xyz
         batch_box_preds = batch_box_preds.view(batch_size, -1, code_size)
         batch_box_preds = torch.cat([batch_box_preds, rois[:, :, 7:]], -1)
         return batch_cls_preds, batch_box_preds
