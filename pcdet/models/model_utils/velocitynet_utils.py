@@ -326,7 +326,7 @@ class vector_attention(nn.Module):
             x = (w*v).sum(0).unsqueeze(0)
             x_list.append(x)
             w_all = w.sum(-1) if i==0 else w_all+w.sum(-1)
-
+        # w_all = w_all/w_all.sum(0)[None,:]
         x =self.MLP(torch.concat(x_list,dim=-1))
         return x,w_all
 
@@ -345,7 +345,7 @@ class TransformerEncoderLayer(nn.Module):
         self.num_point = num_points
         self.num_groups = num_groups
         self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-        self.self_attn = vector_attention(d_model,nhead = 2)
+        self.self_attn = vector_attention(d_model,nhead = 2 )
 
         self.linear1 = nn.Linear(d_model, dim_feedforward)
         self.dropout = nn.Dropout(dropout)

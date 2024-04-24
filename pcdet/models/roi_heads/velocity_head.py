@@ -354,7 +354,7 @@ class biocrossattention_layer(nn.Module):
         self.nhead = model_cfg.nhead
         self.forward_attention = nn.MultiheadAttention(d_model, self.nhead, dropout=dropout)
         self.back_attention = nn.MultiheadAttention(d_model, self.nhead, dropout=dropout)
-
+        self.num_pre_ratio=model_cfg.num_pre_ratio
         self.pos_encoding_pre = nn.Linear(3, d_model)
         self.pos_encoding_cur = nn.Linear(3, d_model)
 
@@ -401,10 +401,10 @@ class biocrossattention_layer(nn.Module):
         src_pre = torch.concat([src_pre, src_pre_xyz], dim=-1)
         src_cur = torch.concat([src_cur, src_cur_xyz], dim=-1)
 
-        weight_pre = weight_pre.squeeze()+weight_pre2cur.sum(1).transpose(0,1)
-        selected_pre_mask, selected_pre = torch.topk(weight_pre, dim=0, k=weight_cur2pre.shape[-1] // 2)
+        weight_pre = F.normalize(weight_pre.squeeze(),dim=0,p=1)+F.normalize(weight_pre2cur.sum(1).transpose(0,1),p=1,dim=0)
+        selected_pre_mask, selected_pre = torch.topk(weight_pre, dim=0, k=int(weight_cur2pre.shape[-1] *self.num_pre_ratio))
         selected_pre = selected_pre.unsqueeze(-1).repeat(1, 1, src_pre.shape[-1])
-        selected_cur_mask, selected_cur = torch.topk(weight_cur.squeeze(), dim=0, k=weight_pre2cur.shape[-1] // 2)
+        selected_cur_mask, selected_cur = torch.topk(weight_cur.squeeze(), dim=0, k=weight_pre2cur.shape[-1]-int(weight_cur2pre.shape[1]*self.num_pre_ratio))
         selected_cur = selected_cur.unsqueeze(-1).repeat(1, 1, src_cur.shape[-1])
 
         src = torch.concat([torch.gather(src_cur, dim=0, index=selected_cur) * (selected_cur_mask > 1)[
@@ -1178,8 +1178,7 @@ class VelocityHead(RoIHeadTemplate):
             targets_dict['box_reg'] = box_reg
             targets_dict['point_reg'] = point_reg
             targets_dict['point_cls'] = point_cls
-            if not self.training:
-                targets_dict['idx'] = idx
+
             self.forward_ret_dict = targets_dict
 
         return batch_dict
@@ -1188,7 +1187,7 @@ class VelocityHead(RoIHeadTemplate):
         tb_dict = {} if tb_dict is None else tb_dict
         rcnn_loss = 0
         rcnn_loss_cls, cls_tb_dict = self.get_box_cls_layer_loss(self.forward_ret_dict)
-        rcnn_loss =rcnn_loss_cls+rcnn_loss_cls
+        rcnn_loss =rcnn_loss+rcnn_loss_cls
         tb_dict.update(cls_tb_dict)
 
         rcnn_loss_reg, reg_tb_dict = self.get_box_reg_layer_loss(self.forward_ret_dict)

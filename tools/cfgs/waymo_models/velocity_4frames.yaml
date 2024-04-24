@@ -81,7 +81,7 @@ MODEL:
             nhead: 4
             dim_feedforward: 512
             dropout: 0.1
-
+            num_pre_ratio: 0.3
 
         Transformer:
 
