@@ -553,7 +553,8 @@ class VoxelSampler(nn.Module):
             iou3d = iou3d_nms_utils.boxes_iou3d_gpu(cur_boxes[:,:7],next_boxes[:,:7])
 
             roi_mask = iou3d.sum(-1)>0
-            cur_mask = roi_mask
+            if roi_mask.sum().item()==0:
+                roi_mask[:] = True
             # next_radiis = torch.norm(next_boxes[:, 3:5] / 2, dim=-1) * gamma**next_idx
             # sampled_points = sampled_points.reshape(-1,sampled_points.shape[-1])
             # dis = torch.norm(
@@ -565,7 +566,7 @@ class VoxelSampler(nn.Module):
             # sampled_points = sampled_points.reshape(cur_mask.shape[0],num_sample,sampled_points.shape[-1])
             # temp = roi_mask.clone()
             # roi_mask[temp] = temp[temp]*cur_mask
-            return sampled_points[cur_mask], rois_new[cur_mask], roi_mask
+            return sampled_points[roi_mask], rois_new[roi_mask], roi_mask
         return sampled_points, rois_new,roi_mask
 
     def select_points(self, point_mask, num_sampled_per_box, num_sampled_per_point=2):
