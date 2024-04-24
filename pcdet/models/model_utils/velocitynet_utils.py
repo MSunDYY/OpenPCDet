@@ -10,7 +10,7 @@ from spconv.pytorch.utils import PointToVoxel
 from pcdet.ops.pointnet2.pointnet2_stack.pointnet2_utils import ball_query, grouping_operation, QueryAndGroup
 from pcdet import device
 from pcdet.ops.box2map.box2map import points2box_gpu,points2box
-
+from pcdet.ops.iou3d_nms import iou3d_nms_utils
 
 class PointNetfeat(nn.Module):
     def __init__(self, input_dim, x=1, outchannel=512):
@@ -266,12 +266,12 @@ class Transformer(nn.Module):
         src = torch.cat([token_list.repeat(1, src.shape[1], 1), src[:,:,:-5]], dim=0)
 
         # src = src.permute(1, 0, 2)
-        src = self.encoder(src, pos=pos)
+        src,weight = self.encoder(src, pos=pos)
         token = [src[:1][:,num_groups[i*num_frames]:num_groups[i*num_frames+1]] for i in range(batch_size)]
         src = torch.concat([src[1:],xyz_vel],dim=-1)
         
         # memory = torch.cat(memory[0:1].chunk(4, 1), 0)
-        return src,torch.concat(token,1)
+        return src,torch.concat(token,1),weight
 
 
 class TransformerEncoder(nn.Module):
@@ -289,12 +289,12 @@ class TransformerEncoder(nn.Module):
         token_list = []
         output = src
         for layer in self.layers:
-            output = layer(output, pos=pos)
+            output,weight = layer(output, pos=pos)
             # token_list.append(tokens)
         if self.norm is not None:
             output = self.norm(output)
 
-        return output
+        return output,weight
 class vector_attention(nn.Module):
     def __init__(self,d_model,nhead):
         super().__init__()
@@ -317,6 +317,7 @@ class vector_attention(nn.Module):
             self.MLP = MLP(d_model*nhead,hidden_dim=d_model,output_dim=d_model,num_layers=3)
     def forward(self,q,k,v,pos=None):
         x_list = []
+        w_all=0
         for i in range(self.nhead):
             q,k,v = self.linear_q[i](q),self.linear_k[i](k),self.linear_v[i](v)
             w = k -q
@@ -324,10 +325,12 @@ class vector_attention(nn.Module):
             w = self.softmax(w)
             x = (w*v).sum(0).unsqueeze(0)
             x_list.append(x)
-        x =self.MLP(torch.concat(x_list,dim=-1))
-        return x
+            w_all = w.sum(-1) if i==0 else w_all+w.sum(-1)
 
-        return x
+        x =self.MLP(torch.concat(x_list,dim=-1))
+        return x,w_all
+
+
 
 
 class TransformerEncoderLayer(nn.Module):
@@ -385,7 +388,7 @@ class TransformerEncoderLayer(nn.Module):
         else:
             key = src_intra_group_fusion
 
-        src_summary = self.self_attn(token, key, src_intra_group_fusion)
+        src_summary,weight = self.self_attn(token, key, src_intra_group_fusion)
 
         token = token + self.dropout1(src_summary)
         token = self.norm1(token)
@@ -415,7 +418,7 @@ class TransformerEncoderLayer(nn.Module):
 
             src = torch.cat([src[:1], src_inter_group_fusion], 0)
         
-        return src
+        return src,weight
 
     def forward_pre(self, src,
                     pos: Optional[Tensor] = None):
@@ -545,17 +548,23 @@ class VoxelSampler(nn.Module):
         sampled_points[sampled_mask == 0, :] = 0
         if next_boxes is not None:
             next_boxes = next_boxes[next_boxes[:,:3].sum(-1)!=0]
-            next_radiis = torch.norm(next_boxes[:, 3:5] / 2, dim=-1) * gamma**next_idx
-            sampled_points = sampled_points.reshape(-1,sampled_points.shape[-1])
-            dis = torch.norm(
-                ((sampled_points[:, :2]-sampled_points[:,-2:]*next_idx).unsqueeze(1) - next_boxes[:, :2].unsqueeze(0).repeat(sampled_points.shape[0],1, 1)),
-                dim=2)
-            point_mask = (dis <= next_radiis.unsqueeze(0))
-            point_mask = point_mask.reshape(-1,num_sample,dis.shape[-1])
-            cur_mask = (point_mask.reshape(point_mask.shape[0],-1).sum(-1)>1)
-            sampled_points = sampled_points.reshape(cur_mask.shape[0],num_sample,sampled_points.shape[-1])
-            temp = roi_mask.clone()
-            roi_mask[temp] = temp[temp]*cur_mask
+            cur_boxes = cur_boxes.clone()
+            cur_boxes[:,:2]-=cur_boxes[:,-2:]*next_idx
+            iou3d = iou3d_nms_utils.boxes_iou3d_gpu(cur_boxes[:,:7],next_boxes[:,:7])
+
+            roi_mask = iou3d.sum(-1)>0
+            cur_mask = roi_mask
+            # next_radiis = torch.norm(next_boxes[:, 3:5] / 2, dim=-1) * gamma**next_idx
+            # sampled_points = sampled_points.reshape(-1,sampled_points.shape[-1])
+            # dis = torch.norm(
+            #     ((sampled_points[:, :2]-sampled_points[:,-2:]*next_idx).unsqueeze(1) - next_boxes[:, :2].unsqueeze(0).repeat(sampled_points.shape[0],1, 1)),
+            #     dim=2)
+            # point_mask = (dis <= next_radiis.unsqueeze(0))
+            # point_mask = point_mask.reshape(-1,num_sample,dis.shape[-1])
+            # cur_mask = (point_mask.reshape(point_mask.shape[0],-1).sum(-1)>1)
+            # sampled_points = sampled_points.reshape(cur_mask.shape[0],num_sample,sampled_points.shape[-1])
+            # temp = roi_mask.clone()
+            # roi_mask[temp] = temp[temp]*cur_mask
             return sampled_points[cur_mask], rois_new[cur_mask], roi_mask
         return sampled_points, rois_new,roi_mask
 
@@ -603,9 +612,10 @@ class VoxelSampler(nn.Module):
                     cur_frame_scores = batch_dict['roi_scores_cur'][bs_idx]
                     cur_frame_labels = batch_dict['roi_labels_cur'][bs_idx]
                 else:
-                    cur_frame_boxes = trajectory_rois[bs_idx,idx]
-                    cur_frame_scores = trajectory_scores[bs_idx,idx]
-                    cur_frame_labels = trajectory_labels[bs_idx,idx]
+                    mask = trajectory_scores[bs_idx,idx]!=0
+                    cur_frame_boxes = trajectory_rois[bs_idx,idx][mask]
+                    cur_frame_scores = trajectory_scores[bs_idx,idx][mask]
+                    cur_frame_labels = trajectory_labels[bs_idx,idx][mask]
 
                 voxel, coords, num_points = self.gen(cur_time_points)
                 coords = coords[:, [2, 1]].contiguous()
@@ -663,7 +673,7 @@ class VoxelSampler(nn.Module):
                 key_points = key_points[point_mask]
                 key_points = key_points[torch.randperm(len(key_points)), :]
                 assign_list = [0,0,0,2,0,4,4,6]
-                key_points, rois_new,roi_mask = self.cylindrical_pool(key_points, cur_frame_boxes, num_sample, gamma,pool='even' if idx==0 else 'pointnms',next_boxes=None if idx==0 else rois_single_batch[assign_list[idx]],next_idx=idx-assign_list[idx])
+                key_points, rois_new,roi_mask = self.cylindrical_pool(key_points, cur_frame_boxes, num_sample, gamma,pool='even',next_boxes=None if idx==0 else rois_single_batch[assign_list[idx]],next_idx=idx-assign_list[idx])
 
                 src_single_batch.append(key_points)
                 rois_single_batch.append(rois_new)
