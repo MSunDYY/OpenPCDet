@@ -869,8 +869,8 @@ class VelocityHead(RoIHeadTemplate):
 
         cur_radiis = torch.norm(boxes[:, 3:5] / 2, dim=-1) * gamma
         features = features.reshape(-1, features.shape[-1])
-        xyz = features[:, -5:-2]
-        xyz[:, :2] =xyz[:,:2]- features[:, -2:]
+        xyz = torch.concat([features[:,-5:-3]-features[:,-2:],features[:,-3:-2]],dim=-1)
+
 
         dis = torch.norm(xyz[None, :, :2] - boxes[:, None, :2], dim=2)
         point_mask = dis <= cur_radiis.unsqueeze(-1)
@@ -880,7 +880,8 @@ class VelocityHead(RoIHeadTemplate):
         sampled_idx = sampled_idx.view(-1, 1).repeat(1, features.shape[-1])
         sampled_points = torch.gather(features, 0, sampled_idx.long()).view(boxes.shape[0],
                                                                             num_sample, -1)
-        sampled_points[sampled_mask == 0] = 0
+
+        sampled_points = sampled_points*(sampled_mask==0)[:,:,None]
         return sampled_points.permute(1, 0, 2)
 
     def forward(self, batch_dict):
