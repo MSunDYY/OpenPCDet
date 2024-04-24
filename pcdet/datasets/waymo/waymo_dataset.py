@@ -405,7 +405,7 @@ class WaymoDataset(DatasetTemplate):
                     pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
                     pred_boxes = load_pred_boxes_from_dict(sequence_name, sample_idx_pre)
                     if pred_boxes.shape[-1]==12:
-                        pred_boxes=pred_boxes[pred_boxes[:,9]==1]
+                        pred_boxes=pred_boxes[pred_boxes[:,9]==1] if (pred_boxes[:,9]==1).sum()>10 else pred_boxes
                         pred_boxes = np.concatenate((pred_boxes[:,:9],pred_boxes[:,10:]),axis=-1)
                     pred_boxes = self.transform_prebox_to_current(pred_boxes, pose_pre, pose_cur)
                     pred_boxes_all.append(pred_boxes)
