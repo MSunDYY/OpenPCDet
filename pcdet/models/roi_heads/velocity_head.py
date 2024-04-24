@@ -380,11 +380,13 @@ class biocrossattention_layer(nn.Module):
         src_cur_xyz = src_cur[:, :, self.d_model:]
         src_pre = src_pre[:, :, :self.d_model]
         src_cur = src_cur[:, :, :self.d_model]
+        mask = src_pre_xyz[:,:,0:1]!=0
+        pos_pre = self.pos_encoding_pre((src_pre_xyz[:, :, :3] - rois_cur[None, :, :3])*mask / torch.concat(
+            [torch.norm(rois_cur[:, 3:5] / 2+0.0001, dim=-1, keepdim=True).repeat(1, 2), rois_cur[:, 5:6]+0.0001], dim=-1)[None,:,:])
 
-        pos_pre = self.pos_encoding_pre((src_pre_xyz[:, :, :3] - rois_cur[None, :, :3]) / torch.concat(
-            [torch.norm(rois_cur[:, :2] / 2, dim=-1, keepdim=True).repeat(1, 2), rois_cur[:, 2:3]], dim=-1)[None,:,:])
-        pos_cur = self.pos_encoding_cur((src_cur_xyz[:, :, :3] - rois_cur[None, :, :3]) / torch.concat(
-                    [torch.norm(rois_cur[:,:2] /2 ,dim=1,keepdim=True).repeat(1,2),rois_cur[:,2:3]],dim=-1)[None,:,:])
+        mask = src_cur_xyz[:,:,0:1]!=0
+        pos_cur = self.pos_encoding_cur((src_cur_xyz[:, :, :3] - rois_cur[None, :, :3])*mask / torch.concat(
+                    [torch.norm(rois_cur[:,3:5] /2 ,dim=1,keepdim=True).repeat(1,2)+0.0001,rois_cur[:,5:6]+0.0001],dim=-1)[None,:,:])
 
         src_pre2cur, weight_pre2cur = self.forward_attention(src_pre + pos_pre, src_cur + pos_cur, src_cur)
         src_cur2pre, weight_cur2pre = self.back_attention(src_cur + pos_cur, src_pre + pos_pre, src_pre)
