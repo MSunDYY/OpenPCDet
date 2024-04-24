@@ -203,7 +203,7 @@ class MPPNet(Detector3DTemplate):
         for index in range(batch_size):
             pred_boxes = pred_dicts[index]['pred_boxes']
             recall_dict = self.generate_recall_record(
-                box_preds=final_boxes,
+                box_preds=pred_boxes,
                 recall_dict=recall_dict, batch_index=index, data_dict=batch_dict,
                 thresh_list=post_process_cfg.RECALL_THRESH_LIST
             )

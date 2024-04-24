@@ -752,7 +752,7 @@ class VelocityHead(RoIHeadTemplate):
             for i in range(1, num_frames):
                 # time_stamp[:, i, :] = i * 0.1
                 roi_pre = trajectory_rois[b * num_frames + i].clone()
-                roi_pre[:,:2] -=roi_pre[:,7:]*i
+                roi_pre[:,:2] = roi_pre[:,:2]-roi_pre[:,7:]*i
                 iou3d = iou3d_nms_utils.boxes_iou3d_gpu(roi_cur[:, :7], roi_pre[:, :7])
                 values, sampled_inds = torch.topk(iou3d, k=1, dim=1)
                 sampled_inds = (sampled_inds[values.squeeze()>0.5]).repeat(1, roi_pre.shape[-1])
@@ -870,7 +870,7 @@ class VelocityHead(RoIHeadTemplate):
         cur_radiis = torch.norm(boxes[:, 3:5] / 2, dim=-1) * gamma
         features = features.reshape(-1, features.shape[-1])
         xyz = features[:, -5:-2]
-        xyz[:, :2] -= features[:, -2:]
+        xyz[:, :2] =xyz[:,:2]- features[:, -2:]
 
         dis = torch.norm(xyz[None, :, :2] - boxes[:, None, :2], dim=2)
         point_mask = dis <= cur_radiis.unsqueeze(-1)

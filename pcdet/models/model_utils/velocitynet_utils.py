@@ -549,7 +549,7 @@ class VoxelSampler(nn.Module):
         if next_boxes is not None:
             next_boxes = next_boxes[next_boxes[:,:3].sum(-1)!=0]
             cur_boxes = cur_boxes.clone()
-            cur_boxes[:,:2]-=cur_boxes[:,-2:]*next_idx
+            cur_boxes[:,:2]=cur_boxes[:,:2]-cur_boxes[:,-2:]*next_idx
             iou3d = iou3d_nms_utils.boxes_iou3d_gpu(cur_boxes[:,:7],next_boxes[:,:7])
 
             roi_mask = iou3d.sum(-1)>0
