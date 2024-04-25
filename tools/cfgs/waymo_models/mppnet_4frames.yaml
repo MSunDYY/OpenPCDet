@@ -6,7 +6,7 @@ DATA_CONFIG:
     POINT_CLOUD_RANGE: [-75.2, -75.2, -2, 75.2, 75.2, 4]
     SAMPLED_INTERVAL: {
         'train': 1,
-        'test': 1
+        'test': 200
     }
     FILTER_EMPTY_BOXES_FOR_TRAIN: False
     DISABLE_NLZ_FLAG_ON_POINTS: True
