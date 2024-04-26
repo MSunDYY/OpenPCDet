@@ -346,6 +346,6 @@ class DatasetTemplate(torch_data.Dataset):
             except:
                 print('Error in collate_batch: key=%s' % key)
                 raise TypeError
-
+        ret['num_frames'] = len(data_dict['points'])
         ret['batch_size'] = batch_size * batch_size_ratio
         return ret
