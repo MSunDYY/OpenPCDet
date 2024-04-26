@@ -264,8 +264,8 @@ class TransformerEncoderLayer(nn.Module):
         self.config = config
         self.num_point = num_points
         self.num_groups= num_groups
-        # self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-        self.self_attn = vector_attention(d_model, nhead=4)
+        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+        # self.self_attn = vector_attention(d_model, nhead=4)
         self.linear1 = nn.Linear(d_model, dim_feedforward)
         self.dropout = nn.Dropout(dropout)
         self.linear2 = nn.Linear(dim_feedforward, d_model)
