@@ -105,7 +105,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
 
         batch_trajectory_rois = rois.new_zeros(batch_size, trajectory_rois.shape[1],self.roi_sampler_cfg.ROI_PER_IMAGE,trajectory_rois.shape[-1])
         batch_backward_rois = rois.new_zeros(batch_size ,backward_rois.shape[1],self.roi_sampler_cfg.ROI_PER_IMAGE,backward_rois.shape[-1])
-        valid_length = batch_dict['valid_length']
+        valid_length = batch_dict['valid_length'].to(device)
         batch_valid_length = rois.new_zeros((batch_size, batch_dict['trajectory_rois'].shape[1], self.roi_sampler_cfg.ROI_PER_IMAGE))
 
         for index in range(batch_size):
