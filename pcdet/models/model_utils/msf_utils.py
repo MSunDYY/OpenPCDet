@@ -468,7 +468,7 @@ class VoxelSampler(nn.Module):
         for bs_idx in range(batch_size):
             
             cur_points = batch_dict['points'][(batch_dict['points'][:, 0] == bs_idx)][:,1:]
-            cur_batch_boxes = trajectory_rois[bs_idx]
+            cur_batch_boxes = rois[bs_idx]
 
             src_points = list()
             for idx in range(trajectory_rois.shape[1]):
