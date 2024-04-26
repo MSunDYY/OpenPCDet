@@ -310,7 +310,7 @@ class TransformerEncoderLayer(nn.Module):
             key = src_intra_group_fusion
 
       
-        src_summary = self.self_attn(token, key,src_intra_group_fusion)
+        src_summary = self.self_attn(token, key,src_intra_group_fusion)[0]
         token = token + self.dropout1(src_summary)
         token = self.norm1(token)
         src_summary = self.linear2(self.dropout(self.activation(self.linear1(token))))
