@@ -220,7 +220,39 @@ class TransformerEncoder(nn.Module):
             output = self.norm(output)
 
         return output,token_list
+class vector_attention(nn.Module):
+    def __init__(self,d_model,nhead):
+        super().__init__()
+        self.d_model = d_model
+        self.nhead = nhead
+        self.linear_q = nn.ModuleList()
+        self.linear_w = nn.ModuleList()
+        self.linear_k = nn.ModuleList()
+        self.linear_v = nn.ModuleList()
+        for i in range(nhead):
 
+            self.linear_w.append(nn.Sequential(nn.BatchNorm1d(d_model),nn.ReLU(inplace=True),
+                                          nn.Linear(d_model,d_model),
+                                          nn.BatchNorm1d(d_model),nn.ReLU(inplace=True),
+                                          nn.Linear(d_model,d_model)))
+            self.softmax = nn.Softmax(dim=0)
+            self.linear_q.append(nn.Linear(d_model,d_model))
+            self.linear_k.append(nn.Linear(d_model, d_model))
+            self.linear_v.append(nn.Linear(d_model, d_model))
+            self.MLP = MLP(d_model*nhead,hidden_dim=d_model,output_dim=d_model,num_layers=3)
+    def forward(self,q,k,v,pos=None):
+        x_list = []
+
+        for i in range(self.nhead):
+            q,k,v = self.linear_q[i](q),self.linear_k[i](k),self.linear_v[i](v)
+            w = k -q
+            for j,layer in enumerate(self.linear_w[i]): w =layer(w.permute(1,2,0).contiguous()).permute(2,0,1).contiguous() if j%3==0 else layer(w)
+            w = self.softmax(w)
+            x = (w*v).sum(0).unsqueeze(0)
+            x_list.append(x)
+        # w_all = w_all/w_all.sum(0)[None,:]
+        x =self.MLP(torch.concat(x_list,dim=-1))
+        return x
 
 class TransformerEncoderLayer(nn.Module):
     count = 0
@@ -233,6 +265,7 @@ class TransformerEncoderLayer(nn.Module):
         self.num_point = num_points
         self.num_groups= num_groups
         self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+        # self.self_attn = vector_attention(d_model, nhead=4)
         self.linear1 = nn.Linear(d_model, dim_feedforward)
         self.dropout = nn.Dropout(dropout)
         self.linear2 = nn.Linear(dim_feedforward, d_model)
@@ -277,7 +310,7 @@ class TransformerEncoderLayer(nn.Module):
             key = src_intra_group_fusion
 
       
-        src_summary = self.self_attn(token, key, value=src_intra_group_fusion)[0]
+        src_summary = self.self_attn(token, key,src_intra_group_fusion)[0]
         token = token + self.dropout1(src_summary)
         token = self.norm1(token)
         src_summary = self.linear2(self.dropout(self.activation(self.linear1(token))))
@@ -290,6 +323,7 @@ class TransformerEncoderLayer(nn.Module):
     
             src_all_groups = src[1:].view((src.shape[0]-1)*4,-1,src.shape[-1])
             src_groups_list = src_all_groups.chunk(self.num_groups,0)
+            src_groups_list = [src_all_groups[torch.arange(128)*4+i] for i in range(4)]
 
             src_all_groups = torch.stack(src_groups_list, 0)
 
@@ -424,13 +458,18 @@ class VoxelSampler(nn.Module):
         return sampled_points
 
 
-    def forward(self, batch_size, trajectory_rois, num_sample, batch_dict): 
+    def forward(self, batch_size, trajectory_rois,backward_rois, num_sample, batch_dict):
         
         src = list()
+
+        rois = trajectory_rois.clone()
+        rois[:,:,:,:2] = (rois[:,:,:,:2]+backward_rois[:,:,:,:2])/2
+
         for bs_idx in range(batch_size):
             
             cur_points = batch_dict['points'][(batch_dict['points'][:, 0] == bs_idx)][:,1:]
-            cur_batch_boxes = trajectory_rois[bs_idx]
+            cur_batch_boxes = rois[bs_idx]
+
             src_points = list()
             for idx in range(trajectory_rois.shape[1]):
                 gamma = self.GAMMA # ** (idx+1)
@@ -446,7 +485,7 @@ class VoxelSampler(nn.Module):
                 query_coords = ( cur_frame_boxes[:, :2] - self.pc_start ) // self.voxel_size
     
                 radiis = torch.ceil( 
-                   torch.norm(cur_frame_boxes[:, 3:5]/2, dim=-1) * gamma / self.voxel_size )
+                   torch.norm(cur_frame_boxes[:, 3:5]/2 + (trajectory_rois[bs_idx,idx,:,:2]-backward_rois[bs_idx,idx,:,:2]).abs()/2, dim=-1) * gamma / self.voxel_size )
 
 
                 # h_table = torch.zeros(self.grid_x*self.grid_y).fill_(-1).to(coords)

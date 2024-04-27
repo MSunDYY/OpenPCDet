@@ -19,6 +19,7 @@ from .mynet import MyNet
 from .centerspeed import CenterSpeed
 from .velocity import VelocityNet
 from .denet import DENet
+from .msf import MSF
 __all__ = {
     'Detector3DTemplate': Detector3DTemplate,
     'SECONDNet': SECONDNet,
@@ -41,7 +42,8 @@ __all__ = {
     'MyNet': MyNet,
     'CenterSpeed': CenterSpeed,
     'VelocityNet': VelocityNet,
-    'DENet': DENet
+    'DENet': DENet,
+    'MSF': MSF,
 }
 
 
