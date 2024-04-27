@@ -325,7 +325,7 @@ class DENetHead(RoIHeadTemplate):
         self.conv = nn.Sequential(
             nn.Conv1d(self.hidden_dim*2,self.hidden_dim,kernel_size=1,stride=1,padding=0),
             nn.BatchNorm1d(self.hidden_dim),
-            nn.ReLU(),
+            # nn.ReLU(inplace=False),
         )
 
         self.seqboxembed = PointNet(8,model_cfg=self.model_cfg)
