@@ -91,7 +91,7 @@ class WaymoDataset(DatasetTemplate):
         self.infos.extend(waymo_infos[:])
         self.logger.info('Total skipped info %s' % num_skipped_infos)
         self.logger.info('Total samples for Waymo dataset: %d' % (len(waymo_infos)))
-
+        
         if self.dataset_cfg['SAMPLED_INTERVAL'][mode] > 1:
             sampled_waymo_infos = []
             for k in range(0, len(self.infos), self.dataset_cfg['SAMPLED_INTERVAL'][mode]):
