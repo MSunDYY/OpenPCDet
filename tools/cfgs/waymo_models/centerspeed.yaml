@@ -4,8 +4,8 @@ DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/waymo_dataset_multiframe.yaml
     GET_FLOW_VOXELS: True
     SAMPLED_INTERVAL: {
-        'train': 5,
-        'test': 50
+        'train': 1,
+        'test': 20
     }
     CONCAT: False
 
@@ -126,7 +126,7 @@ MODEL:
           WITH_TIME_STAMP: True
           CONCAT: False
           GET_FLOW_VOXELS: 0.2
-          MARGIN: 0.05
+          MARGIN: -5
           FILTER_GROUND: True
           RM_BK_RATIO: {
             'train': 0.3,
@@ -156,7 +156,7 @@ MODEL:
     DENSE_HEAD:
         NAME: CenterSpeedHead
         CLASS_AGNOSTIC: False
-        TRAIN_BOX: True
+        TRAIN_BOX: False
         BALANCE_SPEED: True
         CLASS_NAMES_EACH_HEAD: [
             ['Vehicle', 'Pedestrian', 'Cyclist']
@@ -215,7 +215,7 @@ MODEL:
 
 OPTIMIZATION:
     BATCH_SIZE_PER_GPU: 4
-    NUM_EPOCHS: 36
+    NUM_EPOCHS: 6
 
     OPTIMIZER: adam_onecycle
     LR: 0.003

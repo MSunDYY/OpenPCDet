@@ -33,7 +33,7 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
     end = time.time()
     import GPUtil
     if GPUtil.getGPUs()[0].name.endswith('3080'):
-        delay_time = 0.5
+        delay_time = 0.8
     else:
         delay_time = 0
     for cur_it in range(start_it, total_it_each_epoch):

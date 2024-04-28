@@ -320,10 +320,10 @@ class TransformerEncoderLayer(nn.Module):
 
 
         if self.layer_count <= self.config.enc_layers-1:
-    
+            num_points = src.shape[0]-1
             src_all_groups = src[1:].view((src.shape[0]-1)*4,-1,src.shape[-1])
             src_groups_list = src_all_groups.chunk(self.num_groups,0)
-            src_groups_list = [src_all_groups[torch.arange(128)*4+i] for i in range(4)]
+            src_groups_list = [src_all_groups[torch.arange(num_points)*4+i] for i in range(4)]
 
             src_all_groups = torch.stack(src_groups_list, 0)
 
@@ -418,7 +418,10 @@ def build_transformer(args):
 
 
 
-class VoxelSampler(nn.Module):
+
+
+
+class VoxelSampler_denet(nn.Module):
     GAMMA = 1.1
     def __init__(self, device, voxel_size, pc_range, max_points_per_voxel, num_point_features=5):
         super().__init__()
@@ -547,7 +550,7 @@ class VoxelSampler(nn.Module):
         return torch.stack(src).permute(0, 2, 1, 3, 4).flatten(2, 3)
         
 
-def build_voxel_sampler(device):
+def build_voxel_sampler_denet(device):
     return VoxelSampler(
         device,
         voxel_size=0.4,

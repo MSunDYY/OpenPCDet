@@ -7,7 +7,9 @@ import torch.nn.functional as F
 from pcdet.ops.iou3d_nms import iou3d_nms_utils
 from ...utils import common_utils, loss_utils
 from .roi_head_template import RoIHeadTemplate
-from ..model_utils.denet_utils import build_transformer, PointNet, MLP, build_voxel_sampler
+from ..model_utils.denet_utils import build_transformer, PointNet, MLP, build_voxel_sampler_denet
+from ..model_utils.msf_utils import build_voxel_sampler
+
 from .target_assigner.proposal_target_layer import ProposalTargetLayer
 from pcdet.ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_stack_modules
 from pcdet import device
@@ -332,9 +334,13 @@ class DENetHead(RoIHeadTemplate):
         self.jointembed = MLP(self.hidden_dim*(self.num_groups+1), model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
 
         self.up_dimension_traj = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
-        self.up_dimension_back = MLP(input_dim = 30, hidden_dim = 64, output_dim = hidden_dim, num_layers = 3)
+        self.up_dimension_back = MLP(input_dim = 29, hidden_dim = 64, output_dim = hidden_dim, num_layers = 3)
+        self.up_dimension_traj_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
+        self.up_dimension_back_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
 
-        self.transformer = build_transformer(model_cfg.Transformer)
+        
+        self.transformer1 = build_transformer(model_cfg.Transformer)
+        self.transformer2 = build_transformer(model_cfg.Transformer)
         self.voxel_sampler = None
   
         self.class_embed = nn.ModuleList()
@@ -433,6 +439,67 @@ class DENetHead(RoIHeadTemplate):
         
         return src_gemoetry
 
+    def get_proposal_aware_trajectory_motion(self, proxy_point, batch_size, trajectory_rois, num_rois):
+
+        time_stamp = torch.ones([proxy_point.shape[0], proxy_point.shape[1], 1]).cuda()
+        padding_zero = torch.zeros([proxy_point.shape[0], proxy_point.shape[1], 2]).cuda()
+        point_time_padding = torch.cat([padding_zero, time_stamp], -1)
+
+        num_frames = trajectory_rois.shape[1]
+
+        for i in range(num_frames):
+            point_time_padding[:, i * self.num_lidar_points:(i + 1) * self.num_lidar_points, -1] = i * 0.1
+
+        corner_points, _ = self.get_corner_points_of_roi(trajectory_rois[:, 0, :, :].contiguous())
+        corner_points = corner_points.view(batch_size, num_rois, -1, corner_points.shape[-1])
+        corner_points = corner_points.view(batch_size * num_rois, -1)
+        trajectory_roi_center = trajectory_rois[:, 0, :, :].reshape(batch_size * num_rois, -1)[:, :3]
+        corner_add_center_points = torch.cat([corner_points, trajectory_roi_center], dim=-1)
+
+        proposal_aware_feat = proxy_point[:, :, :3].repeat(1, 1, 9) - corner_add_center_points.unsqueeze(1)
+
+        lwh = trajectory_rois[:, 0, :, :].reshape(batch_size * num_rois, -1)[:, 3:6].unsqueeze(1).repeat(1,
+                                                                                                         proxy_point.shape[
+                                                                                                             1], 1)
+        diag_dist = (lwh[:, :, 0] ** 2 + lwh[:, :, 1] ** 2 + lwh[:, :, 2] ** 2) ** 0.5
+        proposal_aware_feat = self.spherical_coordinate(proposal_aware_feat, diag_dist=diag_dist.unsqueeze(-1))
+
+        proposal_aware_feat = torch.cat([proposal_aware_feat, point_time_padding], -1)
+        proxy_point_motion_feat = self.up_dimension_traj_motion(proposal_aware_feat)
+
+        return proxy_point_motion_feat
+
+    def get_proposal_aware_backward_motion(self, proxy_point, batch_size, trajectory_rois, num_rois):
+
+        time_stamp = torch.ones([proxy_point.shape[0], proxy_point.shape[1], 1]).cuda()
+        padding_zero = torch.zeros([proxy_point.shape[0], proxy_point.shape[1], 2]).cuda()
+        point_time_padding = torch.cat([padding_zero, time_stamp], -1)
+
+        num_frames = trajectory_rois.shape[1]
+
+        for i in range(num_frames):
+            point_time_padding[:, i * self.num_lidar_points:(i + 1) * self.num_lidar_points, -1] = i * 0.1
+
+        corner_points, _ = self.get_corner_points_of_roi(trajectory_rois[:, 0, :, :].contiguous())
+        corner_points = corner_points.view(batch_size, num_rois, -1, corner_points.shape[-1])
+        corner_points = corner_points.view(batch_size * num_rois, -1)
+        trajectory_roi_center = trajectory_rois[:, 0, :, :].reshape(batch_size * num_rois, -1)[:, :3]
+        corner_add_center_points = torch.cat([corner_points, trajectory_roi_center], dim=-1)
+
+        proposal_aware_feat = proxy_point[:, :, :3].repeat(1, 1, 9) - corner_add_center_points.unsqueeze(1)
+
+        lwh = trajectory_rois[:, 0, :, :].reshape(batch_size * num_rois, -1)[:, 3:6].unsqueeze(1).repeat(1,
+                                                                                                         proxy_point.shape[
+                                                                                                             1], 1)
+        diag_dist = (lwh[:, :, 0] ** 2 + lwh[:, :, 1] ** 2 + lwh[:, :, 2] ** 2) ** 0.5
+        proposal_aware_feat = self.spherical_coordinate(proposal_aware_feat, diag_dist=diag_dist.unsqueeze(-1))
+
+        proposal_aware_feat = torch.cat([proposal_aware_feat, point_time_padding], -1)
+        proxy_point_motion_feat = self.up_dimension_back_motion(proposal_aware_feat)
+
+        return proxy_point_motion_feat
+    
+    
     def get_proposal_aware_backward_feature(self,src, batch_size, trajectory_rois, num_rois):
 
         proposal_aware_feat_list = []
@@ -454,10 +521,10 @@ class DENetHead(RoIHeadTemplate):
             diag_dist = (lwh[:, :, 0] ** 2 + lwh[:, :, 1] ** 2 + lwh[:, :, 2] ** 2) ** 0.5
             proposal_aware_feat = self.spherical_coordinate(proposal_aware_feat, diag_dist=diag_dist.unsqueeze(-1))
             proposal_aware_feat_list.append(proposal_aware_feat)
-        time_stamp = [proposal_aware_feat.new_ones(proposal_aware_feat.shape[0],self.num_lidar_points,1)*i*0.1 for i in range(self.num_groups)]
-        time_stamp = torch.concat(time_stamp,1)
+        # time_stamp = [proposal_aware_feat.new_ones(proposal_aware_feat.shape[0],self.num_lidar_points,1)*i*0.1 for i in range(self.num_groups)]
+        # time_stamp = torch.concat(time_stamp,1)
         proposal_aware_feat = torch.cat(proposal_aware_feat_list, dim=1)
-        proposal_aware_feat = torch.cat([proposal_aware_feat, src[:, :, 3:],time_stamp], dim=-1)
+        proposal_aware_feat = torch.cat([proposal_aware_feat, src[:, :, 3:]], dim=-1)
         
         src_gemoetry = self.up_dimension_back(proposal_aware_feat)
 
@@ -490,7 +557,52 @@ class DENetHead(RoIHeadTemplate):
         
         return box_reg, box_feat
 
-    def generate_trajectory_msf(self,cur_batch_boxes,proposals_list, batch_dict):
+    def generate_trajectory_msf(self, cur_batch_boxes, batch_dict):
+        num_frames = batch_dict['num_frames']
+        trajectory_rois = cur_batch_boxes[:, None, :, :].repeat(1, num_frames, 1, 1)
+        trajectory_rois[:, 0, :, :] = cur_batch_boxes
+        batch_dict['valid_length'] = torch.ones([batch_dict['batch_size'], num_frames, trajectory_rois.shape[2]])
+        batch_dict['roi_scores'] = batch_dict['roi_scores'][:, :, None].repeat(1, 1, num_frames)
+
+        # simply propagate proposal based on velocity
+        for i in range(1, num_frames):
+            frame = torch.zeros_like(cur_batch_boxes)
+            frame[:, :, 0:2] = cur_batch_boxes[:, :, 0:2] + i * cur_batch_boxes[:, :, 7:9]
+            frame[:, :, 2:] = cur_batch_boxes[:, :, 2:]
+
+            trajectory_rois[:, i, :, :] = frame
+
+        return trajectory_rois
+
+    def generate_trajectory_mppnet(self, cur_batch_boxes, proposals_list, batch_dict):
+
+        trajectory_rois = cur_batch_boxes[:, None, :, :].repeat(1, batch_dict['roi_boxes'].shape[1], 1, 1)
+        trajectory_rois[:, 0, :, :] = cur_batch_boxes
+        valid_length = torch.zeros([batch_dict['batch_size'], batch_dict['roi_boxes'].shape[1], trajectory_rois.shape[2]])
+        valid_length[:, 0] = 1
+        num_frames = batch_dict['roi_boxes'].shape[1]
+        for i in range(1, num_frames):
+            frame = torch.zeros_like(cur_batch_boxes)
+            frame[:, :, 0:2] = trajectory_rois[:, i - 1, :, 0:2] + trajectory_rois[:, i - 1, :, 7:9]
+            frame[:, :, 2:] = trajectory_rois[:, i - 1, :, 2:]
+
+            for bs_idx in range(batch_dict['batch_size']):
+                iou3d = iou3d_nms_utils.boxes_iou3d_gpu(frame.cuda()[bs_idx, :, :7],
+                                                        proposals_list.cuda()[bs_idx, i, :, :7]).to(device)
+
+                max_overlaps, traj_assignment = torch.max(iou3d, dim=1)
+
+                fg_inds = ((max_overlaps >= 0.5)).nonzero().view(-1)
+
+                valid_length[bs_idx, i, fg_inds] = 1
+
+                trajectory_rois[bs_idx, i, fg_inds, :] = proposals_list[bs_idx, i, traj_assignment[fg_inds]]
+
+            batch_dict['valid_length'] = valid_length
+
+        return trajectory_rois, valid_length
+
+    def generate_trajectory_denet(self,cur_batch_boxes,proposals_list, batch_dict):
         num_frames = batch_dict['num_frames']
         backward_rois = cur_batch_boxes[:,None,:,:].repeat(1, num_frames, 1, 1)
         backward_rois[:, 0, :, :]= cur_batch_boxes[:,:,:]
@@ -543,7 +655,8 @@ class DENetHead(RoIHeadTemplate):
         cur_batch_boxes = copy.deepcopy(batch_dict['roi_boxes'].detach())[:,0,:]
         batch_dict['cur_frame_idx'] = 0
         proposals_list = batch_dict['roi_boxes']
-        backward_rois,trajectory_rois = self.generate_trajectory_msf(cur_batch_boxes,proposals_list, batch_dict)
+        trajectory_rois,valid = self.generate_trajectory_mppnet(cur_batch_boxes,proposals_list, batch_dict)
+        backward_rois = self.generate_trajectory_msf(cur_batch_boxes,batch_dict)
 
         batch_dict['traj_memory'] = trajectory_rois
         batch_dict['has_class_labels'] = True
@@ -570,42 +683,45 @@ class DENetHead(RoIHeadTemplate):
         if self.voxel_sampler is None:
             self.voxel_sampler = build_voxel_sampler(rois.device)
         
-        src = self.voxel_sampler(batch_size, trajectory_rois,backward_rois, num_sample, batch_dict)
+        src1 = self.voxel_sampler(batch_size, trajectory_rois, num_sample, batch_dict)
+        src2 = self.voxel_sampler(batch_size,backward_rois,num_sample,batch_dict)
+        src1 = src1.view(batch_size * num_rois, -1, src1.shape[-1])
+        src2 = src2.view(batch_size * num_rois,-1,src2.shape[-1])
+        src_trajectory_feature = self.get_proposal_aware_trajectory_feature(src1, batch_size, trajectory_rois, num_rois)
 
-        src = src.view(batch_size * num_rois, -1, src.shape[-1]) 
+        src_backward_feature = self.get_proposal_aware_backward_feature(src2,batch_size,backward_rois,num_rois)
+        src_motion_feature1 = self.get_proposal_aware_trajectory_motion(src1, batch_size, trajectory_rois, num_rois)
+        src_motion_feature2 = self.get_proposal_aware_backward_motion(src2,batch_size,backward_rois,num_rois)
         
-        src_trajectory_feature = self.get_proposal_aware_trajectory_feature(src, batch_size, trajectory_rois, num_rois)
-
-        src_backward_feature = self.get_proposal_aware_backward_feature(src,batch_size,backward_rois,num_rois)
-        # src_motion_feature = self.get_proposal_aware_motion_feature(src, batch_size, trajectory_rois, num_rois)
-
+        src1 = src_trajectory_feature+src_motion_feature1
+        src2 = src_backward_feature+src_motion_feature2
         # src = src_geometry_feature + src_motion_feature
-        src = self.conv(torch.concat([src_trajectory_feature,src_backward_feature],dim=-1).permute(0,2,1)).permute(0,2,1)
+        # src = self.conv(torch.concat([src_trajectory_feature,src_backward_feature],dim=-1).permute(0,2,1)).permute(0,2,1)
         box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
         
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK',None):
-            src[empty_mask.view(-1)] = 0
-
+            src1[empty_mask.view(-1)] = 0
+            src2[empty_mask.view(-1)] = 0
     
-        hs, tokens = self.transformer(src,pos=None)
-       
+        hs1, tokens1 = self.transformer1(src1,pos=None)
+        hs2,tokens2 = self.transformer2(src2,pos=None)
  
         point_cls_list = []
         point_reg_list = []
 
         for i in range(self.num_enc_layer):
-            point_cls_list.append(self.class_embed[0](tokens[i][0]))
+            point_cls_list.append(self.class_embed[0](tokens2[i][0]))
 
-        for i in range(hs.shape[0]):
+        for i in range(hs1.shape[0]):
             for j in range(self.num_enc_layer):
-                point_reg_list.append(self.bbox_embed[i](tokens[j][i]))
+                point_reg_list.append(self.bbox_embed[i](tokens1[j][i]))
 
         point_cls = torch.cat(point_cls_list,0)
 
         point_reg = torch.cat(point_reg_list,0)
-        hs = hs.permute(1,0,2).reshape(hs.shape[1],-1)
-
-        joint_reg = self.jointembed(torch.cat([hs,feat_box],-1))
+        hs1 = hs1.permute(1,0,2).reshape(hs1.shape[1],-1)
+        # hs2 = hs2.permute(1,0,2).reshape(hs2.shape[1],-1)
+        joint_reg = self.jointembed(torch.cat([hs1,feat_box],-1))
 
         rcnn_cls = point_cls
         rcnn_reg = joint_reg

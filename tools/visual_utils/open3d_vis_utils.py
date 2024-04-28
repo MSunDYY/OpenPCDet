@@ -195,7 +195,7 @@ def draw_scenes(points, file_name=None, gt_boxes=None, gt_labels=None, ref_boxes
         pts.colors = open3d.utility.Vector3dVector(point_colors)
 
     if gt_boxes is not None:
-        vis = draw_box(vis, gt_boxes, (0, 0, 1), gt_labels)
+        vis = draw_box(vis, gt_boxes, (0, 0.5, 1), gt_labels)
 
     if ref_boxes is not None:
         vis = draw_box(vis, ref_boxes, (0, 1, 0), ref_labels, ref_scores)
