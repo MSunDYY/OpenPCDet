@@ -794,7 +794,8 @@ class DENetHead(RoIHeadTemplate):
     
         hs1, tokens1 = self.transformer1(src1,pos=None)
         hs2,tokens2 = self.transformer2(src2,pos=None)
- 
+        hs1 = hs1+hs2
+        
         point_cls_list = []
         point_reg_list = []
 
@@ -803,6 +804,7 @@ class DENetHead(RoIHeadTemplate):
 
         for i in range(hs1.shape[0]):
             for j in range(self.num_enc_layer):
+                tokens1[j][i] = tokens1[j][i]+tokens2[j][i]
                 point_reg_list.append(self.bbox_embed[i](tokens1[j][i]))
 
         point_cls = torch.cat(point_cls_list,0)

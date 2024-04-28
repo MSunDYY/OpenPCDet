@@ -156,7 +156,7 @@ MODEL:
     DENSE_HEAD:
         NAME: CenterSpeedHead
         CLASS_AGNOSTIC: False
-        TRAIN_BOX: False
+        TRAIN_BOX: True
         BALANCE_SPEED: True
         CLASS_NAMES_EACH_HEAD: [
             ['Vehicle', 'Pedestrian', 'Cyclist']
