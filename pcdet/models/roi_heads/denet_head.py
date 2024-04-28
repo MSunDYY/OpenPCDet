@@ -557,11 +557,97 @@ class DENetHead(RoIHeadTemplate):
         
         return box_reg, box_feat
 
+    def crop_current_frame_points(self, src, batch_size, trajectory_rois, num_rois, batch_dict):
+
+        for bs_idx in range(batch_size):
+            cur_batch_boxes = trajectory_rois[bs_idx, 0, :, :7].view(-1, 7)
+            cur_radiis = torch.sqrt((cur_batch_boxes[:, 3] / 2) ** 2 + (cur_batch_boxes[:, 4] / 2) ** 2) * 1.1
+            cur_points = batch_dict['points'][(batch_dict['points'][:, 0] == bs_idx)][:, 1:]
+            dis = torch.norm((cur_points[:, :2].unsqueeze(0) - cur_batch_boxes[:, :2].unsqueeze(1).repeat(1,
+                                                                                                          cur_points.shape[
+                                                                                                              0], 1)),
+                             dim=2)
+            point_mask = (dis <= cur_radiis.unsqueeze(-1))
+
+            sampled_idx = torch.topk(point_mask.float(), self.num_lidar_points)[1]
+            sampled_idx_buffer = sampled_idx[:, 0:1].repeat(1, self.num_lidar_points)
+            roi_idx = torch.arange(num_rois)[:, None].repeat(1, self.num_lidar_points)
+            sampled_mask = point_mask[roi_idx, sampled_idx]
+            sampled_idx_buffer[sampled_mask] = sampled_idx[sampled_mask]
+
+            src[bs_idx] = cur_points[sampled_idx_buffer][:, :, :5]
+            empty_flag = sampled_mask.sum(-1) == 0
+            src[bs_idx, empty_flag] = 0
+
+        src = src.repeat([1, 1, trajectory_rois.shape[1], 1])
+
+        return src
+
+    def crop_previous_frame_points(self, src, batch_size, trajectory_rois, num_rois, valid_length, batch_dict):
+        for bs_idx in range(batch_size):
+
+            cur_points = batch_dict['points'][(batch_dict['points'][:, 0] == bs_idx)][:, 1:]
+
+            for idx in range(1, trajectory_rois.shape[1]):
+
+                time_mask = (cur_points[:, -1] - idx * 0.1).abs() < 1e-3
+                cur_time_points = cur_points[time_mask]
+                cur_batch_boxes = trajectory_rois[bs_idx, idx, :, :7].view(-1, 7)
+
+                cur_radiis = torch.sqrt((cur_batch_boxes[:, 3] / 2) ** 2 + (cur_batch_boxes[:, 4] / 2) ** 2) * 1.1
+                if not self.training and cur_batch_boxes.shape[0] > 32:
+                    length_iter = cur_batch_boxes.shape[0] // 32
+                    dis_list = []
+                    for i in range(length_iter + 1):
+                        dis = torch.norm((cur_time_points[:, :2].unsqueeze(0) - \
+                                          cur_batch_boxes[32 * i:32 * (i + 1), :2].unsqueeze(1).repeat(1,
+                                                                                                       cur_time_points.shape[
+                                                                                                           0], 1)),
+                                         dim=2)
+                        dis_list.append(dis)
+                    dis = torch.cat(dis_list, 0)
+                else:
+                    dis = torch.norm((cur_time_points[:, :2].unsqueeze(0) - \
+                                      cur_batch_boxes[:, :2].unsqueeze(1).repeat(1, cur_time_points.shape[0], 1)),
+                                     dim=2)
+
+                point_mask = (dis <= cur_radiis.unsqueeze(-1)).view(trajectory_rois.shape[2], -1)
+
+                for roi_box_idx in range(0, num_rois):
+
+                    if not valid_length[bs_idx, idx, roi_box_idx]:
+                        continue
+
+                    cur_roi_points = cur_time_points[point_mask[roi_box_idx]]
+
+                    if cur_roi_points.shape[0] > self.num_lidar_points:
+                        np.random.seed(0)
+                        choice = np.random.choice(cur_roi_points.shape[0], self.num_lidar_points, replace=True)
+                        cur_roi_points_sample = cur_roi_points[choice]
+
+                    elif cur_roi_points.shape[0] == 0:
+                        cur_roi_points_sample = cur_roi_points.new_zeros(self.num_lidar_points, 6)
+
+                    else:
+                        empty_num = self.num_lidar_points - cur_roi_points.shape[0]
+                        add_zeros = cur_roi_points.new_zeros(empty_num, 6)
+                        add_zeros = cur_roi_points[0].repeat(empty_num, 1)
+                        cur_roi_points_sample = torch.cat([cur_roi_points, add_zeros], dim=0)
+
+                    if not self.use_time_stamp:
+                        cur_roi_points_sample = cur_roi_points_sample[:, :-1]
+
+                    src[bs_idx, roi_box_idx, self.num_lidar_points * idx:self.num_lidar_points * (idx + 1),
+                    :] = cur_roi_points_sample
+
+        return src
+    
+    
     def generate_trajectory_msf(self, cur_batch_boxes, batch_dict):
         num_frames = batch_dict['num_frames']
         trajectory_rois = cur_batch_boxes[:, None, :, :].repeat(1, num_frames, 1, 1)
         trajectory_rois[:, 0, :, :] = cur_batch_boxes
-        batch_dict['valid_length'] = torch.ones([batch_dict['batch_size'], num_frames, trajectory_rois.shape[2]])
+        # batch_dict['valid_length'] = torch.ones([batch_dict['batch_size'], num_frames, trajectory_rois.shape[2]])
         batch_dict['roi_scores'] = batch_dict['roi_scores'][:, :, None].repeat(1, 1, num_frames)
 
         # simply propagate proposal based on velocity
@@ -671,7 +757,7 @@ class DENetHead(RoIHeadTemplate):
             trajectory_rois = targets_dict['trajectory_rois']
             backward_rois = targets_dict['backward_rois']
             empty_mask = batch_dict['roi_boxes'][:,:,:6].sum(-1)==0
-
+            valid_length = targets_dict['valid_length']
         else:
             empty_mask = batch_dict['roi_boxes'][:,:,:6].sum(-1)==0
             batch_dict['valid_traj_mask'] = ~empty_mask
@@ -682,8 +768,11 @@ class DENetHead(RoIHeadTemplate):
 
         if self.voxel_sampler is None:
             self.voxel_sampler = build_voxel_sampler(rois.device)
-        
-        src1 = self.voxel_sampler(batch_size, trajectory_rois, num_sample, batch_dict)
+
+        src1 = rois.new_zeros(batch_size, num_rois, num_sample, 5)
+
+        src1 = self.crop_current_frame_points(src1, batch_size, trajectory_rois, num_rois, batch_dict)
+        src1 = self.crop_previous_frame_points(src1, batch_size,trajectory_rois, num_rois,valid_length,batch_dict)
         src2 = self.voxel_sampler(batch_size,backward_rois,num_sample,batch_dict)
         src1 = src1.view(batch_size * num_rois, -1, src1.shape[-1])
         src2 = src2.view(batch_size * num_rois,-1,src2.shape[-1])
@@ -792,7 +881,7 @@ class DENetHead(RoIHeadTemplate):
         tb_dict.update(reg_tb_dict)
         tb_dict['rcnn_loss'] = rcnn_loss.item()
         return rcnn_loss, tb_dict
-
+    
     def get_box_reg_layer_loss(self, forward_ret_dict):
         loss_cfgs = self.model_cfg.LOSS_CONFIG
         code_size = self.box_coder.code_size
