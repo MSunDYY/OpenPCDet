@@ -411,7 +411,9 @@ class VoxelSampler(nn.Module):
     def cylindrical_pool(cur_points, cur_boxes, num_sample, gamma=1.):   
         if len(cur_points) < num_sample:
             cur_points = F.pad(cur_points, [0, 0, 0, num_sample-len(cur_points)])
-        cur_radiis = torch.norm(cur_boxes[:, 3:5]/2, dim=-1) * gamma
+
+
+        cur_radiis = torch.norm(cur_boxes[:, 3:5] / 2, dim=-1) * gamma
         dis = torch.norm((cur_points[:,:2].unsqueeze(0) - cur_boxes[:,:2].unsqueeze(1).repeat(1,cur_points.shape[0],1)), dim = 2)
         point_mask = (dis <= cur_radiis.unsqueeze(-1))
 

@@ -784,29 +784,31 @@ class DENetHead(RoIHeadTemplate):
         
         src1 = src_trajectory_feature+src_motion_feature1
         src2 = src_backward_feature+src_motion_feature2
+        src = torch.concat([src1,src2],0)
+        num_rois_all = src1.shape[0]
         # src = src_geometry_feature + src_motion_feature
         # src = self.conv(torch.concat([src_trajectory_feature,src_backward_feature],dim=-1).permute(0,2,1)).permute(0,2,1)
         box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
         
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK',None):
-            src1[empty_mask.view(-1)] = 0
-            src2[empty_mask.view(-1)] = 0
+            src[:num_rois_all][empty_mask.view(-1)] = 0
+            # src2[empty_mask.view(-1)] = 0
     
-        hs1, tokens1 = self.transformer1(src1,pos=None)
-        hs2,tokens2 = self.transformer2(src2,pos=None)
-        hs = hs1+hs2
+        hs, tokens = self.transformer1(src,pos=None)
+        # hs2,tokens2 = self.transformer2(src2,pos=None)
+        hs = hs[:,:num_rois_all]
         
         point_cls_list = []
         point_reg_list = []
 
         for i in range(self.num_enc_layer):
-            point_cls_list.append(self.class_embed[0](tokens2[i][0]))
+            point_cls_list.append(self.class_embed[0](tokens[i][0,num_rois_all:]))
 
-        for i in range(hs1.shape[0]):
+        for i in range(hs.shape[0]):
             for j in range(self.num_enc_layer):
                 # tokens1[j][i] = tokens1[j][i]+tokens2[j][i]
-                point_reg_list.append(self.bbox_embed[i](tokens1[j][i]))
-                point_reg_list.append(self.bbox_embed[i](tokens1[j][i]))
+                point_reg_list.append(self.bbox_embed[i](tokens[j][i,:num_rois_all]))
+                # point_reg_list.append(self.bbox_embed[i](tokens[j][i]))
 
         point_cls = torch.cat(point_cls_list,0)
 

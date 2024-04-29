@@ -85,7 +85,7 @@ MODEL:
             
 
         Transformer:
-            num_lidar_points: 80
+            num_lidar_points: 96
             pos_hidden_dim: 64
             enc_layers: 3
             dim_feedforward: 512
