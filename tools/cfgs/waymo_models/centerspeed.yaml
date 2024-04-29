@@ -7,7 +7,7 @@ DATA_CONFIG:
         'train': 1,
         'test': 20
     }
-    CONCAT: False
+    CONCAT: True
 
     REMOVE_FIRST_FRAME: 3
     SEQUENCE_CONFIG:
