@@ -61,9 +61,9 @@ DATA_CONFIG:
         - NAME: mask_points_and_boxes_outside_range
           REMOVE_OUTSIDE_BOXES: True
 
-        - NAME: select_trajectory_boxes
-          DIS_THRE: 0.8
-          DIS_THRE2: 2
+#        - NAME: select_trajectory_boxes
+#          DIS_THRE: 0.8
+#          DIS_THRE2: 2
         - NAME: shuffle_points
           SHUFFLE_ENABLED: {
               'train': True,
@@ -156,7 +156,7 @@ MODEL:
     DENSE_HEAD:
         NAME: CenterSpeedHead
         CLASS_AGNOSTIC: False
-        TRAIN_BOX: True
+        TRAIN_BOX: False
         BALANCE_SPEED: True
         CLASS_NAMES_EACH_HEAD: [
             ['Vehicle', 'Pedestrian', 'Cyclist']

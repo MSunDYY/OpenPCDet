@@ -28,9 +28,7 @@ class CenterSpeed(Detector3DTemplate):
 
         if not model_cfg.DENSE_HEAD.TRAIN_BOX:
             if dataset.training:
-                for obj in dataset.data_augmentor.data_augmentor_queue:
-                    if isinstance(obj, DataBaseSampler):
-                        dataset.data_augmentor.data_augmentor_queue.remove(obj)
+
                 for obj in dataset.data_processor.data_processor_queue:
                     if obj.keywords['config'].NAME == 'transform_points_to_voxels':
                         dataset.data_processor.data_processor_queue.remove(obj)

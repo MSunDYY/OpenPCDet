@@ -67,26 +67,26 @@ MODEL:
                 'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 0.2]
             }
 
-#        POST_PROCESSING:
-#            SCORE_THRESH: 0.1
-#            POST_CENTER_LIMIT_RANGE: [-75.2, -75.2, -2, 75.2, 75.2, 4]
-#            MAX_OBJ_PER_SAMPLE: 500
-#            NMS_CONFIG:
-#                NMS_TYPE: nms_gpu
-#                NMS_THRESH: 0.7
-#                NMS_PRE_MAXSIZE: 4096
-#                NMS_POST_MAXSIZE: 500
         POST_PROCESSING:
             SCORE_THRESH: 0.1
-            POST_CENTER_LIMIT_RANGE: [ -75.2, -75.2, -2, 75.2, 75.2, 4 ]
+            POST_CENTER_LIMIT_RANGE: [-75.2, -75.2, -2, 75.2, 75.2, 4]
             MAX_OBJ_PER_SAMPLE: 500
             NMS_CONFIG:
-                NMS_TYPE: point_nms
-                MAX_NUM_POINTS: 1
-                MIN_NUM_POINTS: 1
+                NMS_TYPE: nms_gpu
+                NMS_THRESH: 0.7
                 NMS_PRE_MAXSIZE: 4096
                 NMS_POST_MAXSIZE: 500
-                NMS_THRESH: 0.7
+#        POST_PROCESSING:
+#            SCORE_THRESH: 0.1
+#            POST_CENTER_LIMIT_RANGE: [ -75.2, -75.2, -2, 75.2, 75.2, 4 ]
+#            MAX_OBJ_PER_SAMPLE: 500
+#            NMS_CONFIG:
+#                NMS_TYPE: point_nms
+#                MAX_NUM_POINTS: 1
+#                MIN_NUM_POINTS: 1
+#                NMS_PRE_MAXSIZE: 4096
+#                NMS_POST_MAXSIZE: 500
+#                NMS_THRESH: 0.7
 
 
     POST_PROCESSING:

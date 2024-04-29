@@ -366,20 +366,20 @@ class WaymoDataset(DatasetTemplate):
                                                       axis=-1)
             points_pre2cur = np.dot(expand_points_pre_global, np.linalg.inv(pose_cur.T))[:, :3]
             points_pre = np.concatenate([points_pre2cur, points_pre[:, 3:]], axis=-1)
-            if not concat:
-                info_pre = sequence_info[sample_idx_pre]
-                annos_all.append(info_pre['annos'])
-                gt_boxes_pre = info_pre['annos']['gt_boxes_lidar']
-                box_xyz = gt_boxes_pre[:, :3]
-                expand_box_xyz = np.concatenate([box_xyz, np.ones((box_xyz.shape[0], 1))], axis=-1)
-                pose_pre2cur = np.dot(np.linalg.inv(pose_cur), pose_pre)
-                gt_boxes_pre[:, :3] = np.dot(expand_box_xyz, pose_pre2cur.T)[:, :3]
-
-                del_theta = np.arccos(np.clip(pose_pre2cur[0, 0],a_min=-1,a_max=1))
-                gt_boxes_pre[:, 6] -= del_theta
-                gt_boxes_pre[:, 7:9] = np.dot(gt_boxes_pre[:, 7:9], pose_pre2cur[:2, :2].T)
-                gt_boxes_pre = np.concatenate([gt_boxes_pre, np.full((gt_boxes_pre.shape[0], 1), idx + 2)], axis=-1)
-                gt_boxes.append(gt_boxes_pre)
+            # if not concat:
+            #     info_pre = sequence_info[sample_idx_pre]
+            #     annos_all.append(info_pre['annos'])
+            #     gt_boxes_pre = info_pre['annos']['gt_boxes_lidar']
+            #     box_xyz = gt_boxes_pre[:, :3]
+            #     expand_box_xyz = np.concatenate([box_xyz, np.ones((box_xyz.shape[0], 1))], axis=-1)
+            #     pose_pre2cur = np.dot(np.linalg.inv(pose_cur), pose_pre)
+            #     gt_boxes_pre[:, :3] = np.dot(expand_box_xyz, pose_pre2cur.T)[:, :3]
+            #
+            #     del_theta = np.arccos(np.clip(pose_pre2cur[0, 0],a_min=-1,a_max=1))
+            #     gt_boxes_pre[:, 6] -= del_theta
+            #     gt_boxes_pre[:, 7:9] = np.dot(gt_boxes_pre[:, 7:9], pose_pre2cur[:2, :2].T)
+            #     gt_boxes_pre = np.concatenate([gt_boxes_pre, np.full((gt_boxes_pre.shape[0], 1), idx + 2)], axis=-1)
+            #     gt_boxes.append(gt_boxes_pre)
             if get_gt:
                 points_pre, points_gt_pre = np.split(points_pre, [num_points_pre_temp])
                 points_gt_all.append(points_gt_pre)

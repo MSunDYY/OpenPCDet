@@ -181,7 +181,7 @@ class CenterSpeedHead(nn.Module):
             speed = gt_boxes.new_zeros((gt_boxes.shape[0], 5)).contiguous()
             speed[:, :2] = gt_boxes[:, 7:9]
             speed[:, 2:4] = boxes[:, :2]
-            speed[:, 4] = gt_boxes[:, 9]
+            speed[:, 4] = torch.arange(speed.shape[0])
             # speed[:, 2] = torch.arange(speed.shape[0]) + 1
             speed_map_shape = (round((self.point_cloud_range[3] - self.point_cloud_range[0]) / self.pillar_size[0]),
                                round((self.point_cloud_range[4] - self.point_cloud_range[1]) / self.pillar_size[1]),
@@ -745,14 +745,13 @@ class CenterSpeedHead(nn.Module):
             FRAME = 4
             num_gt_boxes = torch.tensor([(gt_box[:, -2] == i + 1).sum() for gt_box in gt_boxes for i in range(FRAME)])
             # print('num gt_boxes {:d}'.format(num_gt_boxes.sum().item()), end='  ')
-            gt_boxes_new = gt_boxes.new_zeros(
-                (data_dict['batch_size'], num_gt_boxes.max(), gt_boxes.shape[-1] - 1))  # remove vx,vy,frame_id
-            for b in range(gt_boxes.shape[0]):
-                for f in range(FRAME):
-                    temp = gt_boxes[b][gt_boxes[b][:, -2] == f + 1]
-                    temp = torch.concat([temp[:, :-2], temp[:, -1:]], dim=-1)
-                    gt_boxes_new[b * FRAME + f, :temp.shape[0]] = temp
-
+             # remove vx,vy,frame_id
+            # for b in range(gt_boxes.shape[0]):
+            #     for f in range(FRAME):
+            #         temp = gt_boxes[b][gt_boxes[b][:, -2] == f + 1]
+            #         temp = torch.concat([temp[:, :-2], temp[:, -1:]], dim=-1)
+            #         gt_boxes_new[b * FRAME + f, :temp.shape[0]] = temp
+            gt_boxes_new = gt_boxes.reshape(-1,gt_boxes.shape[-2],gt_boxes.shape[-1])
             if self.training:
 
                 target_dict = self.assign_targets(

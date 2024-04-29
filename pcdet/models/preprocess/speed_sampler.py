@@ -788,7 +788,10 @@ class SpeedSampler(nn.Module):
         # voxels = torch.concat(voxels)
         # coordinates = torch.concat(coordinates)
         # voxel_num_points = torch.concat(nums_points_voxels)
-
+        gt_boxes = batch_dict['gt_boxes'][:,None,:,:].repeat(1,frame_num,1,1)
+        for i in range(1,frame_num):
+            gt_boxes[:,i,:,:2] = gt_boxes[:,i,:,:2]-gt_boxes[:,i,:,7:9]*0.1*i
+        batch_dict['gt_boxes'] = gt_boxes
         batch_dict = self.transform_points_to_pillars(batch_dict, self.model_cfg.transform_points_to_pillars)
         voxel_features = batch_dict['pillars']
         voxels = voxel_features
