@@ -334,8 +334,8 @@ class WaymoDataset(DatasetTemplate):
         annos_all = [info['annos']]
 
         gt_boxes_cur = info['annos']['gt_boxes_lidar']
-        if not concat:
-            gt_boxes_cur = np.concatenate([gt_boxes_cur, np.ones((gt_boxes_cur.shape[0], 1))], axis=-1)
+
+
         gt_boxes = [gt_boxes_cur]
 
         for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
