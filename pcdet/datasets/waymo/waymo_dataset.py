@@ -270,7 +270,7 @@ class WaymoDataset(DatasetTemplate):
         return ordered_bboxes
 
     def get_sequence_data(self, info, points, sequence_name, sample_idx, sequence_cfg, load_pred_boxes=False,
-                          get_gt=False, concat=True):
+                          get_gt=False, concat=True,transformed_points = False):
         """
         Args:
             info:
@@ -302,12 +302,14 @@ class WaymoDataset(DatasetTemplate):
             sample_idx + np.arange(sequence_cfg.SAMPLE_OFFSET[0], sequence_cfg.SAMPLE_OFFSET[1]), 0, 0x7FFFFFFF)
         sample_idx_pre_list = sample_idx_pre_list[::-1]
 
-        if sequence_cfg.get('ONEHOT_TIMESTAMP', False):
-            onehot_cur = np.zeros((points.shape[0], len(sample_idx_pre_list) + 1)).astype(points.dtype)
-            onehot_cur[:, 0] = 1
-            points = np.hstack([points, onehot_cur])
-        else:
-            points = np.hstack([points, np.zeros((points.shape[0], 1)).astype(points.dtype)])
+        if not transformed_points:
+            if sequence_cfg.get('ONEHOT_TIMESTAMP', False):
+                onehot_cur = np.zeros((points.shape[0], len(sample_idx_pre_list) + 1)).astype(points.dtype)
+                onehot_cur[:, 0] = 1
+                points = np.hstack([points, onehot_cur])
+            else:
+                points = np.hstack([points, np.zeros((points.shape[0], 1)).astype(points.dtype)])
+
         if get_gt:
             label = np.zeros((points.shape[0]))
             gt_boxes_cur = info['annos']['gt_boxes_lidar']
@@ -337,88 +339,99 @@ class WaymoDataset(DatasetTemplate):
 
 
         gt_boxes = [gt_boxes_cur]
+        if not transformed_points:
+            for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
+
+                if self.use_shared_memory and os.path.exists('/dev/shm/' + sequence_name + '___' + str(sample_idx)):
+                    sa_key = f'{sequence_name}___{sample_idx}'
+                    points_pre = SharedArray.attach(f"shm://{sa_key}").copy()
+                else:
+                    # import time
+                    # s = time.time()
+                    points_pre = self.get_lidar(sequence_name, sample_idx_pre)
+                    # print(' {:.3f}'.format(time.time()-st),end='')
+                if get_gt:
+                    num_points_pre_temp = points_pre.shape[0]
+                    info_pre = sequence_info[sample_idx_pre]
+                    gt_boxes_pre = info_pre['annos']['gt_boxes_lidar']
+                    box_idxs_of_pts = roiaware_pool3d_utils.points_in_boxes_gpu(
+                        torch.from_numpy(points_pre[:, 0:3]).unsqueeze(dim=0).float().cuda(),
+                        torch.from_numpy(gt_boxes_pre[:, 0:7]).unsqueeze(dim=0).float().cuda()
+                    ).long().squeeze(dim=0).cpu().numpy()
+                    points_gt_pre = points_pre[box_idxs_of_pts >= 0]
+                    points_pre = np.concatenate([points_pre, points_gt_pre])
+
+                pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
+                expand_points_pre = np.concatenate([points_pre[:, :3], np.ones((points_pre.shape[0], 1))], axis=-1)
+                points_pre_global = np.dot(expand_points_pre, pose_pre.T)[:, :3]
+                expand_points_pre_global = np.concatenate([points_pre_global, np.ones((points_pre_global.shape[0], 1))],
+                                                          axis=-1)
+                points_pre2cur = np.dot(expand_points_pre_global, np.linalg.inv(pose_cur.T))[:, :3]
+                points_pre = np.concatenate([points_pre2cur, points_pre[:, 3:]], axis=-1)
+                # if not concat:
+                #     info_pre = sequence_info[sample_idx_pre]
+                #     annos_all.append(info_pre['annos'])
+                #     gt_boxes_pre = info_pre['annos']['gt_boxes_lidar']
+                #     box_xyz = gt_boxes_pre[:, :3]
+                #     expand_box_xyz = np.concatenate([box_xyz, np.ones((box_xyz.shape[0], 1))], axis=-1)
+                #     pose_pre2cur = np.dot(np.linalg.inv(pose_cur), pose_pre)
+                #     gt_boxes_pre[:, :3] = np.dot(expand_box_xyz, pose_pre2cur.T)[:, :3]
+                #
+                #     del_theta = np.arccos(np.clip(pose_pre2cur[0, 0],a_min=-1,a_max=1))
+                #     gt_boxes_pre[:, 6] -= del_theta
+                #     gt_boxes_pre[:, 7:9] = np.dot(gt_boxes_pre[:, 7:9], pose_pre2cur[:2, :2].T)
+                #     gt_boxes_pre = np.concatenate([gt_boxes_pre, np.full((gt_boxes_pre.shape[0], 1), idx + 2)], axis=-1)
+                #     gt_boxes.append(gt_boxes_pre)
+                if get_gt:
+                    points_pre, points_gt_pre = np.split(points_pre, [num_points_pre_temp])
+                    points_gt_all.append(points_gt_pre)
+
+                if sequence_cfg.get('ONEHOT_TIMESTAMP', False):
+                    onehot_vector = np.zeros((points_pre.shape[0], len(sample_idx_pre_list) + 1))
+                    onehot_vector[:, idx + 1] = 1
+                    points_pre = np.hstack([points_pre, onehot_vector])
+                else:
+                    # add timestamp
+                    points_pre = np.hstack([points_pre,
+                                            0.1 * (idx+1) * np.ones((points_pre.shape[0], 1)).astype(
+                                                points_pre.dtype)])  # one frame 0.1s
+
+                points_pre = remove_ego_points(points_pre, 1.0)
+                points_pre_all.append(points_pre)
+                num_points_pre.append(points_pre.shape[0])
+                pose_all.append(pose_pre)
+            points = np.concatenate([points] + points_pre_all, axis=0).astype(np.float32)
+
+            num_points_all = np.array([num_pts_cur] + num_points_pre).astype(np.int32)
+            poses = np.concatenate(pose_all, axis=0).astype(np.float32)
+
+        else:
+            for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
+                pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
+                num_points_pre
+                pose_all.append(pose_pre)
+            num_points_all = [(points[:,-1]==0.1*i).sum() for i in range(len(sample_idx_pre_list)+1)]
+            poses = np.concatenate(pose_all, axis=0).astype(np.float32)
+            num_points_all = np.array(num_points_all)
 
         for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
-
-            if self.use_shared_memory and os.path.exists('/dev/shm/' + sequence_name + '___' + str(sample_idx)):
-                sa_key = f'{sequence_name}___{sample_idx}'
-                points_pre = SharedArray.attach(f"shm://{sa_key}").copy()
-            else:
-                # import time
-                # s = time.time()
-                points_pre = self.get_lidar(sequence_name, sample_idx_pre)
-                # print(' {:.3f}'.format(time.time()-st),end='')
-            if get_gt:
-                num_points_pre_temp = points_pre.shape[0]
-                info_pre = sequence_info[sample_idx_pre]
-                gt_boxes_pre = info_pre['annos']['gt_boxes_lidar']
-                box_idxs_of_pts = roiaware_pool3d_utils.points_in_boxes_gpu(
-                    torch.from_numpy(points_pre[:, 0:3]).unsqueeze(dim=0).float().cuda(),
-                    torch.from_numpy(gt_boxes_pre[:, 0:7]).unsqueeze(dim=0).float().cuda()
-                ).long().squeeze(dim=0).cpu().numpy()
-                points_gt_pre = points_pre[box_idxs_of_pts >= 0]
-                points_pre = np.concatenate([points_pre, points_gt_pre])
-
-            pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
-            expand_points_pre = np.concatenate([points_pre[:, :3], np.ones((points_pre.shape[0], 1))], axis=-1)
-            points_pre_global = np.dot(expand_points_pre, pose_pre.T)[:, :3]
-            expand_points_pre_global = np.concatenate([points_pre_global, np.ones((points_pre_global.shape[0], 1))],
-                                                      axis=-1)
-            points_pre2cur = np.dot(expand_points_pre_global, np.linalg.inv(pose_cur.T))[:, :3]
-            points_pre = np.concatenate([points_pre2cur, points_pre[:, 3:]], axis=-1)
-            # if not concat:
-            #     info_pre = sequence_info[sample_idx_pre]
-            #     annos_all.append(info_pre['annos'])
-            #     gt_boxes_pre = info_pre['annos']['gt_boxes_lidar']
-            #     box_xyz = gt_boxes_pre[:, :3]
-            #     expand_box_xyz = np.concatenate([box_xyz, np.ones((box_xyz.shape[0], 1))], axis=-1)
-            #     pose_pre2cur = np.dot(np.linalg.inv(pose_cur), pose_pre)
-            #     gt_boxes_pre[:, :3] = np.dot(expand_box_xyz, pose_pre2cur.T)[:, :3]
-            #
-            #     del_theta = np.arccos(np.clip(pose_pre2cur[0, 0],a_min=-1,a_max=1))
-            #     gt_boxes_pre[:, 6] -= del_theta
-            #     gt_boxes_pre[:, 7:9] = np.dot(gt_boxes_pre[:, 7:9], pose_pre2cur[:2, :2].T)
-            #     gt_boxes_pre = np.concatenate([gt_boxes_pre, np.full((gt_boxes_pre.shape[0], 1), idx + 2)], axis=-1)
-            #     gt_boxes.append(gt_boxes_pre)
-            if get_gt:
-                points_pre, points_gt_pre = np.split(points_pre, [num_points_pre_temp])
-                points_gt_all.append(points_gt_pre)
-
-            if sequence_cfg.get('ONEHOT_TIMESTAMP', False):
-                onehot_vector = np.zeros((points_pre.shape[0], len(sample_idx_pre_list) + 1))
-                onehot_vector[:, idx + 1] = 1
-                points_pre = np.hstack([points_pre, onehot_vector])
-            else:
-                # add timestamp
-                points_pre = np.hstack([points_pre,
-                                        0.1 * (idx+1) * np.ones((points_pre.shape[0], 1)).astype(
-                                            points_pre.dtype)])  # one frame 0.1s
-
-            points_pre = remove_ego_points(points_pre, 1.0)
-            points_pre_all.append(points_pre)
-            num_points_pre.append(points_pre.shape[0])
-            pose_all.append(pose_pre)
-
             if load_pred_boxes:
-                if pred_boxes_all[0].shape[-1]==11:
+                if pred_boxes_all[0].shape[-1] == 11:
 
                     pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
                     pred_boxes = load_pred_boxes_from_dict(sequence_name, sample_idx_pre)
-                    if pred_boxes.shape[-1]==12:
-                        pred_boxes=pred_boxes[pred_boxes[:,9]==1] if (pred_boxes[:,9]==1).sum()>10 else pred_boxes
-                        pred_boxes = np.concatenate((pred_boxes[:,:9],pred_boxes[:,10:]),axis=-1)
+                    if pred_boxes.shape[-1] == 12:
+                        pred_boxes = pred_boxes[pred_boxes[:, 9] == 1] if (pred_boxes[:, 9] == 1).sum() > 10 else pred_boxes
+                        pred_boxes = np.concatenate((pred_boxes[:, :9], pred_boxes[:, 10:]), axis=-1)
                     pred_boxes = self.transform_prebox_to_current(pred_boxes, pose_pre, pose_cur)
                     pred_boxes_all.append(pred_boxes)
                 else:
-                    pred_boxes_all.append(pred_boxes_all[0][pred_boxes_all[0][:,-3]==idx+1])
+                    pred_boxes_all.append(pred_boxes_all[0][pred_boxes_all[0][:, -3] == idx + 1])
 
         if get_gt:
             points_gt_all.append(points_gt_cur[:, :5])
 
-        points = np.concatenate([points] + points_pre_all, axis=0).astype(np.float32)
 
-        num_points_all = np.array([num_pts_cur] + num_points_pre).astype(np.int32)
-        poses = np.concatenate(pose_all, axis=0).astype(np.float32)
 
         if load_pred_boxes:
             if pred_boxes_all[0].shape[1]==12:
@@ -477,13 +490,17 @@ class WaymoDataset(DatasetTemplate):
         }
 
         import time
-        st = time.time()
-        if self.use_shared_memory and index < self.shared_memory_file_limit:
-            sa_key = f'{sequence_name}___{sample_idx}'
-            points = SharedArray.attach(f"shm://{sa_key}").copy()
+
+        if self.dataset_cfg.get('TRANSFORMED_POINTS',False):
+            file_name = self.root_path/'waymo_processed_data_v0_5_0_full'/sequence_name/('%04d.npy'%sample_idx)
+            points = np.load(file_name)
         else:
-            points = self.get_lidar(sequence_name, sample_idx)
-        et = time.time()
+            if self.use_shared_memory and index < self.shared_memory_file_limit:
+                sa_key = f'{sequence_name}___{sample_idx}'
+                points = SharedArray.attach(f"shm://{sa_key}").copy()
+            else:
+                points = self.get_lidar(sequence_name, sample_idx)
+
         # print('loading time is',et-st)
 
         if self.dataset_cfg.get('SEQUENCE_CONFIG', None) is not None and self.dataset_cfg[
@@ -497,7 +514,7 @@ class WaymoDataset(DatasetTemplate):
                 points, num_points_all, sample_idx_pre_list, gt_boxes, annos, poses, pred_boxes, pred_scores, pred_labels = self.get_sequence_data(
                     info, points, sequence_name, sample_idx, self.dataset_cfg['SEQUENCE_CONFIG'],
                     load_pred_boxes=self.dataset_cfg.get('USE_PREDBOX', False),
-                    concat=self.dataset_cfg.get('CONCAT', True)
+                    concat=self.dataset_cfg.get('CONCAT', True),transformed_points=self.dataset_cfg.get('TRANSFORMED_POINTS',False),
                 )
 
             input_dict['num_points_all'] = num_points_all
