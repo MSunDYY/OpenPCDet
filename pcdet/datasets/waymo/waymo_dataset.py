@@ -706,6 +706,32 @@ class WaymoDataset(DatasetTemplate):
 
                 np.save(save_data_path / ('%s_%03d_label' % (sequence_name, sample_idx)), label)
 
+
+
+    def create_transform_database(self,info_path,save_path):
+        with open(info_path, 'rb') as f:
+            infos = pickle.load(f)
+        save_path = save_path/'waymo_processed_data_v0_5_0_full'
+        save_path.mkdir(parents=True,exist_ok=True)
+        point_offset_cnt = 0
+        stacked_gt_points = []
+        for k in tqdm(range(0, len(infos), 1)):
+            # print('gt_database sample: %d/%d' % (k + 1, len(infos)))
+            info = infos[k]
+
+            pc_info = info['point_cloud']
+            sequence_name = pc_info['lidar_sequence']
+            sample_idx = pc_info['sample_idx']
+            (save_path/sequence_name).mkdir(parents=True,exist_ok=True)
+
+            points = self.get_lidar(sequence_name, sample_idx)
+
+            points, num_points_all, sample_idx_pre_list, _, _, _, _, _, _ = self.get_sequence_data(
+                    info, points, sequence_name, sample_idx, self.dataset_cfg.SEQUENCE_CONFIG
+                )
+            np.save(save_path/sequence_name/('{:0>4}'.format(sample_idx)+'.npy'),points)
+
+
     def create_groundtruth_database(self, info_path, save_path, used_classes=None, split='train', sampled_interval=10,
                                     processed_data_tag=None):
 
@@ -991,23 +1017,23 @@ def create_waymo_infos(dataset_cfg, class_names, data_path, save_path,
     print('---------------Start to generate data infos---------------')
 
     dataset.set_split(train_split)
-    waymo_infos_train = dataset.get_infos(
-        raw_data_path=data_path / raw_data_tag,
-        save_path=save_path / processed_data_tag, num_workers=workers, has_label=True,
-        sampled_interval=1, update_info_only=update_info_only
-    )
-    with open(train_filename, 'wb') as f:
-        pickle.dump(waymo_infos_train, f)
-    print('----------------Waymo info train file is saved to %s----------------' % train_filename)
-
-    dataset.set_split(val_split)
-    waymo_infos_val = dataset.get_infos(
-        raw_data_path=data_path / raw_data_tag.replace('training', 'validating'),
-        save_path=save_path / processed_data_tag, num_workers=workers, has_label=True,
-        sampled_interval=1, update_info_only=update_info_only
-    )
-    with open(val_filename, 'wb') as f:
-        pickle.dump(waymo_infos_val, f)
+    # waymo_infos_train = dataset.get_infos(
+    #     raw_data_path=data_path / raw_data_tag,
+    #     save_path=save_path / processed_data_tag, num_workers=workers, has_label=True,
+    #     sampled_interval=1, update_info_only=update_info_only
+    # )
+    # with open(train_filename, 'wb') as f:
+    #     pickle.dump(waymo_infos_train, f)
+    # print('----------------Waymo info train file is saved to %s----------------' % train_filename)
+    #
+    # dataset.set_split(val_split)
+    # waymo_infos_val = dataset.get_infos(
+    #     raw_data_path=data_path / raw_data_tag.replace('training', 'validating'),
+    #     save_path=save_path / processed_data_tag, num_workers=workers, has_label=True,
+    #     sampled_interval=1, update_info_only=update_info_only
+    # )
+    # with open(val_filename, 'wb') as f:
+    #     pickle.dump(waymo_infos_val, f)
     print('----------------Waymo info val file is saved to %s----------------' % val_filename)
 
     if update_info_only:
@@ -1016,10 +1042,11 @@ def create_waymo_infos(dataset_cfg, class_names, data_path, save_path,
     print('---------------Start create groundtruth database for data augmentation---------------')
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     dataset.set_split(train_split)
-    dataset.create_groundtruth_database(
-        info_path=train_filename, save_path=save_path, split='train', sampled_interval=1,
-        used_classes=['Vehicle', 'Pedestrian', 'Cyclist'], processed_data_tag=processed_data_tag
-    )
+    dataset.create_transform_database(info_path=train_filename,save_path=save_path)
+    # dataset.create_groundtruth_database(
+    #     info_path=train_filename, save_path=save_path, split='train', sampled_interval=1,
+    #     used_classes=['Vehicle', 'Pedestrian', 'Cyclist'], processed_data_tag=processed_data_tag
+    # )
     print('---------------Data preparation Done---------------')
 
 
