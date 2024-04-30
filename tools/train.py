@@ -124,10 +124,10 @@ def main(args, cfgs):
     if cfg.LOCAL_RANK == 0:
         os.system('cp %s %s' % (args.cfg_file, output_dir))
 
-    if cfg.LOCAL_RANK == 0 and os.path.exists(output_dir/'tensorboard'):
-
-        for file_name in os.listdir(output_dir/'tensorboard'):
-            os.remove(output_dir/'tensorboard'/file_name)
+    # if cfg.LOCAL_RANK == 0 and os.path.exists(output_dir/'tensorboard'):
+    #
+    #     for file_name in os.listdir(output_dir/'tensorboard'):
+    #         os.remove(output_dir/'tensorboard'/file_name)
 
     tb_log = SummaryWriter(log_dir=str(output_dir / 'tensorboard')) if cfg.LOCAL_RANK == 0 else None
 
