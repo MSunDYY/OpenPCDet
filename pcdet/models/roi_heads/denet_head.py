@@ -8,7 +8,7 @@ from pcdet.ops.iou3d_nms import iou3d_nms_utils
 from ...utils import common_utils, loss_utils
 from .roi_head_template import RoIHeadTemplate
 from ..model_utils.denet_utils import build_transformer, PointNet, MLP, build_voxel_sampler_denet
-from ..model_utils.msf_utils import build_voxel_sampler
+# from ..model_utils.msf_utils import build_voxel_sampler
 
 from .target_assigner.proposal_target_layer import ProposalTargetLayer
 from pcdet.ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_stack_modules
@@ -767,7 +767,7 @@ class DENetHead(RoIHeadTemplate):
         num_sample = self.num_lidar_points 
 
         if self.voxel_sampler is None:
-            self.voxel_sampler = build_voxel_sampler(rois.device)
+            self.voxel_sampler = build_voxel_sampler_denet(rois.device)
 
         src1 = rois.new_zeros(batch_size, num_rois, num_sample, 5)
 

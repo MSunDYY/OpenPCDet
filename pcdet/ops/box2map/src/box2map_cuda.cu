@@ -281,6 +281,29 @@ __global__ void points2box_kernel(const int N,const int P,const int *points_mask
         }
     }
 }
+__global__ void distrituted_sample_points_kernel<<<blocks,threads>>>(const int B,const int N,const int n,const int num_points,float *voxels,bool *voxels_mask,float *srces,float *boxes)
+
+{
+    const int idx = blockIdx.x*THREADS_PER_BLOCK_P+threadIdx.x;
+    id(idx>=B)
+    {return;}
+    const bool voxel_mask* = voxels_mask+N*idx;
+    const float box* = boxes+2*idx;
+    const float src* = srces+num_points*f*idx;
+    while()
+
+    for(i=0;i<N;i++)
+    {
+        if voxel_mask[i]==False
+        {continue;}
+        else
+        {
+            if
+        }
+    }
+
+}
+
 __global__ void box2map_kernel(const int N ,const int C,const int H,const int W,const float *boxes,const float *values,float * map )
 {
     const int idx =blockIdx.x*THREADS_PER_BLOCK+threadIdx.x;
@@ -384,3 +407,9 @@ void points2boxLauncher(const int N,const int P,int *points_mask_pr,int *sampled
 #endif
 }
 
+void distributed_sample_points_Launcher(const int B,const int N,const int n,const int f,const int num_points,float *voxel_pr,bool *voxel_mask_pr,float *src_pr,float *boxes_pr);
+{
+    dim3 blocks(DIVUP(B,THREADS_PER_BLOCK_P));
+    dim3 threads(THREADS_PER_BLOCK_P);
+    distrituted_sample_points_kernel<<<blocks,threads>>>(B,N,n,f,num_points,voxel_pr,voxel_mask_pr,src_pr,box_pr)
+}

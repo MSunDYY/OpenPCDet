@@ -11,4 +11,5 @@ int boxes_aligned_iou_bev_cpu(at::Tensor boxes_a_tensor, at::Tensor boxes_b_tens
 int box2map_gpu(at::Tensor boxes_tensor,at::Tensor map_tensor,at::Tensor values_tensor);
 int points2box_gpu(at::Tensor points_mask,at::Tensor sampled_mask,at::Tensor sampled_idx,at::Tensor point_sampled_num,const int num_sampled_per_box,const int num_sampled_per_point,const int num_threads);
 int points2box(at::Tensor points_mask,at::Tensor sampled_mask,at::Tensor sampled_idx,at::Tensor point_sampled_num,const int num_sampled_per_box,const int num_sampled_per_point);
+int distributed_sample_points(at::Tensor voxels,at::Tensor voxel_mask,at::Tensor src,at::Tensor boxes,const int num_points);
 #endif

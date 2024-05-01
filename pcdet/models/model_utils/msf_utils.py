@@ -490,7 +490,8 @@ class VoxelSampler(nn.Module):
                 dist = torch.abs(query_coords[:, None, :2] - coords[None, :, :] )
 
                 voxel_mask = torch.all(dist < radiis[:, None, None], dim=-1).any(0)
-            
+
+
                 num_points = num_points[voxel_mask]
                 key_points = voxel[voxel_mask, :]
 

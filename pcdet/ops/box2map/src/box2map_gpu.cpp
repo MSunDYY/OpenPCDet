@@ -41,6 +41,7 @@ const int THREADS_PER_BLOCK_NMS = sizeof(unsigned long long) * 8;
 
 void box2mapLauncher(const int N,const int C,const int H,const int W,const float *boxes,const float *values,float * map);
 void points2boxLauncher(const int N,const int P,int *points_mask_pr,int *sampled_mask_pr,int*sampled_idx_pr,int *point_sampled_num_pr,const int num_sampled_per_box,const int num_sampled_per_point,const int num_threads);
+void distributed_sample_points_Launcher(const int B,const int N,const int n,const int f,const int num_points,float *voxel_pr,bool *voxel_mask_pr,float *src_pr,float *boxes);
 
 
 int box2map_gpu(at::Tensor boxes_tensor, at::Tensor map_tensor, at::Tensor values_tensor)
@@ -62,6 +63,10 @@ int box2map_gpu(at::Tensor boxes_tensor, at::Tensor map_tensor, at::Tensor value
 
 int points2box_gpu(at::Tensor points_mask,at::Tensor sampled_mask,at::Tensor sampled_idx,at::Tensor point_sampled_num,const int num_sampled_per_box,const int num_sampled_per_point,const int num_threads)
 {
+    CHECK_INPUT(points_mask);
+    CHECK_INPUT(sampled_mask);
+    CHECK_INPUT(sampled_idx);
+    CHECK_INPUT(point_sampled_num);
     int N = points_mask.size(0);
     int P = points_mask.size(1);
     CHECK_INPUT(points_mask);
@@ -75,5 +80,20 @@ int points2box_gpu(at::Tensor points_mask,at::Tensor sampled_mask,at::Tensor sam
     return 1;
 }
 
+int distributed_sample_points(at::Tensor voxels,at::Tensor voxel_mask,at::Tensor src,at::Tensor boxes,const int num_points);
+{
+    CHECK_INPUT(voxels);
+    CHECK_INPUT(voxel_mask);
+    CHECK_INPUT(src);
+    int B=src.size(0);
+    int N=voxel_mask.size(0);
+    int n=voxels.size(1);
+    int f=voxels.size(2);
+    float *voxel_pr = voxels.data<float>();
+    bool *voxel_mask_pr = voxel_mask.data<bool>();
+    float *src_pr = src.data<float>();
+    float *boxes_pr = boxes.data<float>();
+    distributed_sample_points_Launcher(B,N,n,f,num_points,voxel_pr,voxel_mask_pr,src_pr,boxes_pr);
+}
 
 
