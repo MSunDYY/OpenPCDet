@@ -80,7 +80,7 @@ int points2box_gpu(at::Tensor points_mask,at::Tensor sampled_mask,at::Tensor sam
     return 1;
 }
 
-int distributed_sample_points(at::Tensor voxels,at::Tensor voxel_mask,at::Tensor src,at::Tensor boxes,const int num_points);
+int distributed_sample_points(at::Tensor voxels,at::Tensor voxel_mask,at::Tensor src,at::Tensor boxes,const int num_points)
 {
     CHECK_INPUT(voxels);
     CHECK_INPUT(voxel_mask);

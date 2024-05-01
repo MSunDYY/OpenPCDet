@@ -268,10 +268,7 @@ __global__ void points2box_kernel(const int N,const int P,const int *points_mask
             *(sampled_idx_pr+*(points_mask_pr+idx+i*P)+num_sampled_per_box*i)=idx;
             point_sampled_num+=1;
             }
-            else
-            {
 
-            }
         }
 
 
@@ -281,24 +278,24 @@ __global__ void points2box_kernel(const int N,const int P,const int *points_mask
         }
     }
 }
-__global__ void distrituted_sample_points_kernel<<<blocks,threads>>>(const int B,const int N,const int n,const int num_points,float *voxels,bool *voxels_mask,float *srces,float *boxes)
 
+__global__ void distrituted_sample_points_kernel(const int B,const int N,const int n,const int f,const int num_points,float *voxels,bool *voxels_mask,float *srces,float *boxes)
 {
     const int idx = blockIdx.x*THREADS_PER_BLOCK_P+threadIdx.x;
-    id(idx>=B)
+    if(idx>=B)
     {return;}
-    const bool voxel_mask* = voxels_mask+N*idx;
-    const float box* = boxes+2*idx;
-    const float src* = srces+num_points*f*idx;
-    while()
+    const bool *voxel_mask = voxels_mask+N*idx;
+    const float *box = boxes+2*idx;
+    const float *src = srces+num_points*f*idx;
 
-    for(i=0;i<N;i++)
+
+    for(int i=0;i<N;i++)
     {
-        if voxel_mask[i]==False
+        if (voxel_mask[i]==0)
         {continue;}
         else
         {
-            if
+            continue;
         }
     }
 
@@ -407,9 +404,9 @@ void points2boxLauncher(const int N,const int P,int *points_mask_pr,int *sampled
 #endif
 }
 
-void distributed_sample_points_Launcher(const int B,const int N,const int n,const int f,const int num_points,float *voxel_pr,bool *voxel_mask_pr,float *src_pr,float *boxes_pr);
+void distributed_sample_points_Launcher(const int B,const int N,const int n,const int f,const int num_points,float *voxel_pr,bool *voxel_mask_pr,float *src_pr,float *boxes_pr)
 {
     dim3 blocks(DIVUP(B,THREADS_PER_BLOCK_P));
     dim3 threads(THREADS_PER_BLOCK_P);
-    distrituted_sample_points_kernel<<<blocks,threads>>>(B,N,n,f,num_points,voxel_pr,voxel_mask_pr,src_pr,box_pr)
+    distrituted_sample_points_kernel<<<blocks,threads>>>(B,N,n,f,num_points,voxel_pr,voxel_mask_pr,src_pr,boxes_pr);
 }
