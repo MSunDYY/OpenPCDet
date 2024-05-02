@@ -53,7 +53,7 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
     det_annos = []
     import GPUtil
     if GPUtil.getGPUs()[0].name.endswith('3080'):
-        delay_time = 0.5
+        delay_time = 0.2
     else:
         delay_time = 0
     if getattr(args, 'infer_time', False):

@@ -10,7 +10,7 @@ from .roi_head_template import RoIHeadTemplate
 from ..model_utils.msf_utils import build_transformer, PointNet, MLP, build_voxel_sampler
 from .target_assigner.proposal_target_layer import ProposalTargetLayer
 from pcdet.ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_stack_modules
-
+from pcdet import device
 
 class ProposalTargetLayerMPPNet(ProposalTargetLayer):
     def __init__(self, roi_sampler_cfg):
@@ -111,7 +111,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
             cur_roi, cur_gt, cur_roi_labels, cur_roi_scores = rois[index],gt_boxes[index], roi_labels[index], roi_scores[index]
 
             if 'valid_length' in batch_dict.keys():
-                cur_valid_length = valid_length[index]
+                cur_valid_length = valid_length[index].to(device)
 
 
 
