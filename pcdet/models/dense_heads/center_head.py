@@ -404,7 +404,7 @@ class CenterHead(nn.Module):
                                                           1 - IOU_RECTIFIER[final_dict['pred_labels']]) * torch.pow(
                         pred_iou, IOU_RECTIFIER[final_dict['pred_labels']])
 
-                if post_process_cfg.NMS_CONFIG.NMS_TYPE not in ['circle_nms', 'class_specific_nms']:
+                if post_process_cfg.NMS_CONFIG.NMS_TYPE not in ['circle_nms', 'class_specific_nms','point_nms']:
                     selected, selected_scores = model_nms_utils.class_agnostic_nms(
                         box_scores=final_dict['pred_scores'], box_preds=final_dict['pred_boxes'],
                         nms_config=post_process_cfg.NMS_CONFIG,
@@ -417,6 +417,19 @@ class CenterHead(nn.Module):
                         box_labels=final_dict['pred_labels'], nms_config=post_process_cfg.NMS_CONFIG,
                         score_thresh=post_process_cfg.NMS_CONFIG.get('SCORE_THRESH', None)
                     )
+                elif post_process_cfg.NMS_CONFIG.NMS_TYPE == 'point_nms':
+                    selected,selected_scores = model_nms_utils.class_agnostic_nms(
+                        box_scores=final_dict['pred_scores'], box_preds=final_dict['pred_boxes'],
+                        nms_config=post_process_cfg.NMS_CONFIG,
+                        score_thresh=post_process_cfg.NMS_CONFIG.get('SCORE_THRESH', None)
+                    )
+                    selected_mask, selected_scores = model_nms_utils.point_nms(
+                        box_scores=final_dict['pred_scores'][selected], box_preds=final_dict['pred_boxes'][selected],
+                        nms_config=post_process_cfg.NMS_CONFIG,
+
+                    )
+                    selected = selected*selected_mask
+
                 elif post_process_cfg.NMS_CONFIG.NMS_TYPE == 'circle_nms':
                     raise NotImplementedError
 
@@ -523,11 +536,14 @@ class CenterHead(nn.Module):
                     selected_nms, selected_scores_nms = model_nms_utils.point_nms(
                         box_scores=final_dict['pred_scores'][selected],box_preds=final_dict['pred_boxes'][selected],points=points[:,1:],
                     box_labels = final_dict['pred_labels'][selected],nms_config = post_process_cfg.NMS_CONFIG)
-                    # selected = selected_iou[selected]
+
                     point_nms_idx = selected.new_zeros(final_dict['pred_scores'].shape[0],1)
                     point_nms_idx[selected] = 1
                     point_nms_idx[selected] *=selected_nms.unsqueeze(-1)
                     final_dict['pred_boxes'] = torch.concat([final_dict['pred_boxes'],point_nms_idx],dim=-1)
+                    selected = selected[selected_nms]
+                    selected_scores = selected_scores_nms
+
                 elif post_process_cfg.NMS_CONFIG.NMS_TYPE == 'circle_nms':
                     raise NotImplementedError
 

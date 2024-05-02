@@ -53,7 +53,7 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
     det_annos = []
     import GPUtil
     if GPUtil.getGPUs()[0].name.endswith('3080'):
-        delay_time = 0.2
+        delay_time = 0.4
     else:
         delay_time = 0
     if getattr(args, 'infer_time', False):
@@ -137,7 +137,8 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
         total_pred_objects += anno['name'].__len__()
     logger.info('Average predicted number of objects(%d samples): %.3f'
                 % (len(det_annos), total_pred_objects / max(1, len(det_annos))))
-    logger.info('Average infer time %.4f/frame'%(infer_time_meter.avg))
+    if getattr(args, 'infer_time', False):
+        logger.info('Average infer time %.4f/frame'%(infer_time_meter.avg))
     with open(result_dir / 'result.pkl', 'wb') as f:
         pickle.dump(det_annos, f)
 

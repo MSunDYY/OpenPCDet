@@ -514,7 +514,7 @@ class VoxelSampler_denet(nn.Module):
                 cur_radiis = torch.norm(cur_frame_boxes[:, 3:5] / 2, dim=-1) * gamma
                 voxel_mask = torch.all(dist < radiis[:, None, None], dim=-1)
                 # dist_mask = torch.all(dist < radiis[:, None, None], dim=-1)
-                sampled_mask, sampled_idx = torch.topk(voxel_mask.float(), num_sample)
+                sampled_mask, sampled_idx = torch.topk(voxel_mask.float(), min(num_sample,voxel_mask.shape[-1]))
                 sampled_voxel = torch.gather(voxel,0,sampled_idx.view(-1,1,1).repeat(1,voxel.shape[-2],voxel.shape[-1]))
                 sampled_voxel = sampled_voxel.view(sampled_mask.shape[0],-1,sampled_voxel.shape[-2],voxel.shape[-1]).permute(0,2,1,3)
                 sampled_voxel = sampled_voxel.reshape(sampled_voxel.shape[0],-1,sampled_voxel.shape[-1])
