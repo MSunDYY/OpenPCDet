@@ -489,9 +489,7 @@ class WaymoDataset(DatasetTemplate):
             'sample_idx': sample_idx
         }
 
-        import time
-
-        if self.dataset_cfg.get('TRANSFORMED_POINTS',False):
+        if self.dataset_cfg.get('TRANSFORMED_POINTS',False) and self.training:
             file_name = self.root_path/'waymo_processed_data_v0_5_0_full'/sequence_name/('%04d.npy'%sample_idx)
             points = np.load(file_name)
         else:
