@@ -1058,8 +1058,8 @@ def create_waymo_infos(dataset_cfg, class_names, data_path, save_path,
 
     print('---------------Start create groundtruth database for data augmentation---------------')
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-    dataset.set_split(train_split)
-    dataset.create_transform_database(info_path=train_filename,save_path=save_path)
+    dataset.set_split(val_split)
+    dataset.create_transform_database(info_path=val_filename,save_path=save_path)
     # dataset.create_groundtruth_database(
     #     info_path=train_filename, save_path=save_path, split='train', sampled_interval=1,
     #     used_classes=['Vehicle', 'Pedestrian', 'Cyclist'], processed_data_tag=processed_data_tag
