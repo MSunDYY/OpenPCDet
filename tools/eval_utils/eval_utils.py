@@ -82,7 +82,7 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
 
         with torch.no_grad():
             pred_dicts, ret_dict = model(batch_dict)
-        time.sleep(delay_time)
+
         disp_dict = {}
 
         if getattr(args, 'infer_time', False):
@@ -90,7 +90,7 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
             infer_time_meter.update(inference_time * 1000)
             # use ms to measure inference time
             disp_dict['infer_time'] = f'{infer_time_meter.val:.2f}({infer_time_meter.avg:.2f})'
-
+        time.sleep(delay_time)
         statistics_info(cfg, ret_dict, metric, disp_dict)
         annos = dataset.generate_prediction_dicts(
             batch_dict, pred_dicts, class_names,
@@ -137,7 +137,7 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
         total_pred_objects += anno['name'].__len__()
     logger.info('Average predicted number of objects(%d samples): %.3f'
                 % (len(det_annos), total_pred_objects / max(1, len(det_annos))))
-
+    logger.info('Average infer time %.4f/frame'%(infer_time_meter.avg))
     with open(result_dir / 'result.pkl', 'wb') as f:
         pickle.dump(det_annos, f)
 
