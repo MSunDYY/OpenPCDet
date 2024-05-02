@@ -52,6 +52,8 @@ class WaymoDataset(DatasetTemplate):
             )
         else:
             self.pred_boxes_dict = {}
+        if not self.training:
+            self.dataset_cfg.TRANSFORMED_POINTS=False
 
     def set_split(self, split):
         super().__init__(
@@ -489,7 +491,7 @@ class WaymoDataset(DatasetTemplate):
             'sample_idx': sample_idx
         }
 
-        if self.dataset_cfg.get('TRANSFORMED_POINTS',False) and self.training:
+        if self.dataset_cfg.get('TRANSFORMED_POINTS',False):
             file_name = self.root_path/'waymo_processed_data_v0_5_0_full'/sequence_name/('%04d.npy'%sample_idx)
             points = np.load(file_name)
         else:
