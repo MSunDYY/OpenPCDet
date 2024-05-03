@@ -87,7 +87,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
         """
         cur_frame_idx = 0
         batch_size = batch_dict['batch_size']
-        rois = batch_dict['trajectory_rois'][:,cur_frame_idx,:,:]
+        rois = batch_dict['backward_rois'][:,cur_frame_idx,:,:]
 
         roi_scores = batch_dict['roi_scores'][:,:,cur_frame_idx]
         roi_labels = batch_dict['roi_labels']
@@ -758,7 +758,7 @@ class DENetHead(RoIHeadTemplate):
             trajectory_rois = targets_dict['trajectory_rois']
             backward_rois = targets_dict['backward_rois']
             empty_mask = batch_dict['roi_boxes'][:,:,:6].sum(-1)==0
-            valid_length = targets_dict['valid_length']
+            # valid_length = targets_dict['valid_length']
         else:
             empty_mask = batch_dict['roi_boxes'][:,:,:6].sum(-1)==0
             batch_dict['valid_traj_mask'] = ~empty_mask
