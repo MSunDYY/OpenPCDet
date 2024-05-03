@@ -471,9 +471,9 @@ class VoxelSampler_denet(nn.Module):
         return sampled_points
 
 
-    def forward(self, batch_size, trajectory_rois, num_sample, batch_dict):
-        
-        src = list()
+    def forward(self, batch_size, trajectory_rois, num_sample, batch_dict,valid_length):
+        src1 = trajectory_rois.new_zeros(batch_size,trajectory_rois.shape[1],num_sample,5)
+        src2 = list()
 
         rois = trajectory_rois.clone()
 
@@ -483,7 +483,7 @@ class VoxelSampler_denet(nn.Module):
             cur_points = batch_dict['points'][(batch_dict['points'][:, 0] == bs_idx)][:,1:]
             cur_batch_boxes = rois[bs_idx]
 
-            src_points = list()
+            src2_points = list()
             for idx in range(trajectory_rois.shape[1]):
                 gamma = self.GAMMA # ** (idx+1)
 
@@ -526,7 +526,7 @@ class VoxelSampler_denet(nn.Module):
                     point_mask = ((sampled_voxel[:,:,:2]-cur_frame_boxes[:,None,:2])**2).sum(-1)<cur_radiis[:,None]**2
                     # point_mask = point_mask*(sampled_voxel[:,:,2]<cur_frame_boxes[:,None,2]+cur_frame_boxes[:,None,5]*0.6)
                     point_mask = point_mask*(sampled_voxel[:,:,2]<=(cur_frame_boxes[:,2]+cur_frame_boxes[:,5]*0.6)[:,None])
-                    sampled_mask, sampled_idx = torch.topk(point_mask.float(), num_sample)
+                    sampled_mask, sampled_idx = torch.topk(point_mask.float(), min(num_sample,point_mask.shape[-1]))
                     sampled_idx = sampled_idx[:,:,None].repeat(1, 1,sampled_voxel.shape[-1])
                     sampled_points = torch.gather(sampled_voxel, 1, sampled_idx).view(len(sampled_mask), num_sample, -1)
 
@@ -548,11 +548,11 @@ class VoxelSampler_denet(nn.Module):
                 # key_points = key_points[ torch.randperm(len(key_points)), :]
                 #
                 # key_points = self.cylindrical_pool(key_points, cur_frame_boxes, num_sample, gamma)
-                src_points.append(sampled_points)
+                src2_points.append(sampled_points)
                 
-            src.append(torch.stack(src_points))
+            src2.append(torch.stack(src_points))
 
-        return torch.stack(src).permute(0, 2, 1, 3, 4).flatten(2, 3)
+        return torch.stack(src2).permute(0, 2, 1, 3, 4).flatten(2, 3)
         
 
 def build_voxel_sampler_denet(device):

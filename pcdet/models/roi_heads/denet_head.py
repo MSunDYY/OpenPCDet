@@ -773,7 +773,7 @@ class DENetHead(RoIHeadTemplate):
 
         src1 = self.crop_current_frame_points(src1, batch_size, trajectory_rois, num_rois, batch_dict)
         src1 = self.crop_previous_frame_points(src1, batch_size,trajectory_rois, num_rois,valid_length,batch_dict)
-        src2 = self.voxel_sampler(batch_size,backward_rois,num_sample,batch_dict)
+        src2 = self.voxel_sampler(batch_size,backward_rois,num_sample,batch_dict,valid_length)
         src1 = src1.view(batch_size * num_rois, -1, src1.shape[-1])
         src2 = src2.view(batch_size * num_rois,-1,src2.shape[-1])
         src_trajectory_feature = self.get_proposal_aware_trajectory_feature(src1, batch_size, trajectory_rois, num_rois)
