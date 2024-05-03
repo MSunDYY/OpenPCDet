@@ -779,11 +779,11 @@ class DENetHead(RoIHeadTemplate):
         src_trajectory_feature = self.get_proposal_aware_trajectory_feature(src1, batch_size, trajectory_rois, num_rois)
 
         src_backward_feature = self.get_proposal_aware_trajectory_feature(src2,batch_size,backward_rois,num_rois)
-        src_motion_feature1 = self.get_proposal_aware_trajectory_motion(src1, batch_size, trajectory_rois, num_rois)
-        src_motion_feature2 = self.get_proposal_aware_trajectory_motion(src2,batch_size,backward_rois,num_rois)
+        # src_motion_feature1 = self.get_proposal_aware_trajectory_motion(src1, batch_size, trajectory_rois, num_rois)
+        # src_motion_feature2 = self.get_proposal_aware_trajectory_motion(src2,batch_size,backward_rois,num_rois)
         
-        src1 = src_trajectory_feature+src_motion_feature1
-        src2 = src_backward_feature+src_motion_feature2
+        src1 = src_trajectory_feature
+        src2 = src_backward_feature
         src = torch.concat([src1,src2],0)
         num_rois_all = src1.shape[0]
         # src = src_geometry_feature + src_motion_feature
