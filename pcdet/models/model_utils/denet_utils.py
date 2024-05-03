@@ -550,7 +550,7 @@ class VoxelSampler_denet(nn.Module):
                 # key_points = self.cylindrical_pool(key_points, cur_frame_boxes, num_sample, gamma)
                 src2_points.append(sampled_points)
                 
-            src2.append(torch.stack(src_points))
+            src2.append(torch.stack(src2_points))
 
         return torch.stack(src2).permute(0, 2, 1, 3, 4).flatten(2, 3)
         
