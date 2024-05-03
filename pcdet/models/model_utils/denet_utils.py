@@ -427,7 +427,8 @@ class VoxelSampler_denet(nn.Module):
         super().__init__()
         
         self.voxel_size = voxel_size
-        
+
+
         self.gen = PointToVoxel(
                         vsize_xyz=[voxel_size, voxel_size, pc_range[5]-pc_range[2]],
                         coors_range_xyz=pc_range,
@@ -438,7 +439,7 @@ class VoxelSampler_denet(nn.Module):
                     )
 
         self.gen1 = PointToVoxel(
-            vsize_xyz=[voxel_size,voxel_size,voxel_size],
+            vsize_xyz=[voxel_size/2,voxel_size/2,voxel_size/2],
             coors_range_xyz=pc_range,
             num_point_features=num_point_features,
             max_num_voxels=50000,
@@ -507,18 +508,21 @@ class VoxelSampler_denet(nn.Module):
                 point_mask = num_points[:, None] > point_mask
                 key_points = key_points[point_mask]
                 if key_points.shape[0]!=0:
+                    voxel_size = self.voxel_size/2
                     voxel,coords,num_points = self.gen1(key_points)
                     coords = coords[:, [2, 1]].contiguous()
+                    query_coords = (cur_frame_boxes[:, :2] - self.pc_start) // voxel_size
+
                     dist = torch.abs(query_coords[:, None, :2] - coords[None, :, :])
 
-                    cur_radiis = torch.norm(cur_frame_boxes[:, 3:5] / 2, dim=-1) * gamma
+                    radiis = radiis*2
                     voxel_mask = torch.all(dist < radiis[:, None, None], dim=-1)
                     # dist_mask = torch.all(dist < radiis[:, None, None], dim=-1)
                     sampled_mask, sampled_idx = torch.topk(voxel_mask.float(), min(num_sample,voxel_mask.shape[-1]))
                     sampled_voxel = torch.gather(voxel,0,sampled_idx.view(-1,1,1).repeat(1,voxel.shape[-2],voxel.shape[-1]))
                     sampled_voxel = sampled_voxel.view(sampled_mask.shape[0],-1,sampled_voxel.shape[-2],voxel.shape[-1]).permute(0,2,1,3)
                     sampled_voxel = sampled_voxel.reshape(sampled_voxel.shape[0],-1,sampled_voxel.shape[-1])
-                    # cur_radiis = torch.norm(cur_frame_boxes[:, 3:5]/2, dim=-1) * gamma
+                    cur_radiis = torch.norm(cur_frame_boxes[:, 3:5]/2, dim=-1) * gamma
                     point_mask = ((sampled_voxel[:,:,:2]-cur_frame_boxes[:,None,:2])**2).sum(-1)<cur_radiis[:,None]**2
                     # point_mask = point_mask*(sampled_voxel[:,:,2]<cur_frame_boxes[:,None,2]+cur_frame_boxes[:,None,5]*0.6)
                     point_mask = point_mask*(sampled_voxel[:,:,2]<=(cur_frame_boxes[:,2]+cur_frame_boxes[:,5]*0.6)[:,None])
