@@ -532,11 +532,13 @@ class DENetHead(RoIHeadTemplate):
         batch_size = batch_dict['batch_size']
         cur_batch_boxes = copy.deepcopy(batch_dict['roi_boxes'].detach())
         batch_dict['cur_frame_idx'] = 0
+        proposals_list = batch_dict['roi_boxes']
         new_trajectory_rois,valid = self.generate_trajectory_mppnet(cur_batch_boxes,proposals_list, batch_dict)
 
         trajectory_rois = self.generate_trajectory_msf(cur_batch_boxes, batch_dict)
 
         batch_dict['traj_memory'] = trajectory_rois
+        batch_dict['new_trajectory_rois'] = new_trajectory_rois
         batch_dict['has_class_labels'] = True
         batch_dict['trajectory_rois'] = trajectory_rois
 
