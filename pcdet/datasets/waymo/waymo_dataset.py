@@ -53,7 +53,7 @@ class WaymoDataset(DatasetTemplate):
         else:
             self.pred_boxes_dict = {}
         import GPUtil
-        if GPUtil.getGPUs()[0].name.endswith('3080') and self.training:
+        if (GPUtil.getGPUs()[0].name.endswith('3080') and self.training) or (GPUtil.getGPUs()[0].name.endswith('1650')):
             self.dataset_cfg.TRANSFORMED_POINTS=False
 
     def set_split(self, split):

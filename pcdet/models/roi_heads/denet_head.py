@@ -739,6 +739,7 @@ class DENetHead(RoIHeadTemplate):
         batch_dict['roi_scores'] = batch_dict['roi_scores'][:,0]
         batch_size = batch_dict['batch_size']
         cur_batch_boxes = copy.deepcopy(batch_dict['roi_boxes'].detach())[:,0,:]
+
         batch_dict['cur_frame_idx'] = 0
         proposals_list = batch_dict['roi_boxes']
         trajectory_rois,valid = self.generate_trajectory_mppnet(cur_batch_boxes,proposals_list, batch_dict)
@@ -788,7 +789,7 @@ class DENetHead(RoIHeadTemplate):
         # num_rois_all = src1.shape[0]
         # src = src_geometry_feature + src_motion_feature
         # src = self.conv(torch.concat([src_trajectory_feature,src_backward_feature],dim=-1).permute(0,2,1)).permute(0,2,1)
-        box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
+        box_reg, feat_box = self.trajectories_auxiliary_branch(backward_rois)
         
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK',None):
             src[empty_mask.view(-1)] = 0
