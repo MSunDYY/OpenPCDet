@@ -771,19 +771,19 @@ class DENetHead(RoIHeadTemplate):
 
         src1 = rois.new_zeros(batch_size, num_rois, num_sample, 5)
 
-        src1 = self.crop_current_frame_points(src1, batch_size, trajectory_rois, num_rois, batch_dict)
-        src1 = self.crop_previous_frame_points(src1, batch_size,trajectory_rois, num_rois,valid_length,batch_dict)
+        # src1 = self.crop_current_frame_points(src1, batch_size, trajectory_rois, num_rois, batch_dict)
+        # src1 = self.crop_previous_frame_points(src1, batch_size,trajectory_rois, num_rois,valid_length,batch_dict)
         src2 = self.voxel_sampler(batch_size,backward_rois,num_sample,batch_dict)
-        src1 = src1.view(batch_size * num_rois, -1, src1.shape[-1])
+        # src1 = src1.view(batch_size * num_rois, -1, src1.shape[-1])
         src2 = src2.view(batch_size * num_rois,-1,src2.shape[-1])
         src_trajectory_feature = self.get_proposal_aware_trajectory_feature(src1, batch_size, trajectory_rois, num_rois)
 
         src_backward_feature = self.get_proposal_aware_trajectory_feature(src2,batch_size,backward_rois,num_rois)
         # src_motion_feature1 = self.get_proposal_aware_trajectory_motion(src1, batch_size, trajectory_rois, num_rois)
-        # src_motion_feature2 = self.get_proposal_aware_trajectory_motion(src2,batch_size,backward_rois,num_rois)
+        src_motion_feature2 = self.get_proposal_aware_trajectory_motion(src2,batch_size,backward_rois,num_rois)
         
-        src1 = src_trajectory_feature
-        src2 = src_backward_feature
+        # src1 = src_trajectory_feature
+        src2 = src_backward_feature+src_motion_feature2
         src = torch.concat([src1,src2],0)
         num_rois_all = src1.shape[0]
         # src = src_geometry_feature + src_motion_feature
@@ -796,18 +796,18 @@ class DENetHead(RoIHeadTemplate):
     
         hs, tokens = self.transformer1(src,pos=None)
         # hs2,tokens2 = self.transformer2(src2,pos=None)
-        hs = hs[:,:num_rois_all]
+        # hs = hs[:,:num_rois_all]
         
         point_cls_list = []
         point_reg_list = []
 
         for i in range(self.num_enc_layer):
-            point_cls_list.append(self.class_embed[0](tokens[i][0,num_rois_all:]))
+            point_cls_list.append(self.class_embed[0](tokens[i][0]))
 
         for i in range(hs.shape[0]):
             for j in range(self.num_enc_layer):
                 # tokens1[j][i] = tokens1[j][i]+tokens2[j][i]
-                point_reg_list.append(self.bbox_embed[i](tokens[j][i,:num_rois_all]))
+                point_reg_list.append(self.bbox_embed[i](tokens[j][i]))
                 # point_reg_list.append(self.bbox_embed[i](tokens[j][i]))
 
         point_cls = torch.cat(point_cls_list,0)
