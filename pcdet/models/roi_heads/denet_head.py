@@ -776,7 +776,7 @@ class DENetHead(RoIHeadTemplate):
         src2 = self.voxel_sampler(batch_size,backward_rois,num_sample,batch_dict)
         # src1 = src1.view(batch_size * num_rois, -1, src1.shape[-1])
         src2 = src2.view(batch_size * num_rois,-1,src2.shape[-1])
-        src_trajectory_feature = self.get_proposal_aware_trajectory_feature(src1, batch_size, trajectory_rois, num_rois)
+        # src_trajectory_feature = self.get_proposal_aware_trajectory_feature(src1, batch_size, trajectory_rois, num_rois)
 
         src_backward_feature = self.get_proposal_aware_trajectory_feature(src2,batch_size,backward_rois,num_rois)
         # src_motion_feature1 = self.get_proposal_aware_trajectory_motion(src1, batch_size, trajectory_rois, num_rois)
@@ -784,14 +784,14 @@ class DENetHead(RoIHeadTemplate):
         
         # src1 = src_trajectory_feature
         src2 = src_backward_feature+src_motion_feature2
-        src = torch.concat([src1,src2],0)
-        num_rois_all = src1.shape[0]
+        src = torch.concat([src2],0)
+        # num_rois_all = src1.shape[0]
         # src = src_geometry_feature + src_motion_feature
         # src = self.conv(torch.concat([src_trajectory_feature,src_backward_feature],dim=-1).permute(0,2,1)).permute(0,2,1)
         box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
         
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK',None):
-            src[:num_rois_all][empty_mask.view(-1)] = 0
+            src[empty_mask.view(-1)] = 0
             # src2[empty_mask.view(-1)] = 0
     
         hs, tokens = self.transformer1(src,pos=None)
