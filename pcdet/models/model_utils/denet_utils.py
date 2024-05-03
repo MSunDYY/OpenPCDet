@@ -506,28 +506,29 @@ class VoxelSampler_denet(nn.Module):
                 point_mask = torch.arange(self.k)[None, :].repeat(len(key_points), 1).type_as(num_points)
                 point_mask = num_points[:, None] > point_mask
                 key_points = key_points[point_mask]
+                if key_points.shape[0]!=0:
+                    voxel,coords,num_points = self.gen1(key_points)
+                    coords = coords[:, [2, 1]].contiguous()
+                    dist = torch.abs(query_coords[:, None, :2] - coords[None, :, :])
 
-                voxel,coords,num_points = self.gen1(key_points)
-                coords = coords[:, [2, 1]].contiguous()
-                dist = torch.abs(query_coords[:, None, :2] - coords[None, :, :])
+                    cur_radiis = torch.norm(cur_frame_boxes[:, 3:5] / 2, dim=-1) * gamma
+                    voxel_mask = torch.all(dist < radiis[:, None, None], dim=-1)
+                    # dist_mask = torch.all(dist < radiis[:, None, None], dim=-1)
+                    sampled_mask, sampled_idx = torch.topk(voxel_mask.float(), min(num_sample,voxel_mask.shape[-1]))
+                    sampled_voxel = torch.gather(voxel,0,sampled_idx.view(-1,1,1).repeat(1,voxel.shape[-2],voxel.shape[-1]))
+                    sampled_voxel = sampled_voxel.view(sampled_mask.shape[0],-1,sampled_voxel.shape[-2],voxel.shape[-1]).permute(0,2,1,3)
+                    sampled_voxel = sampled_voxel.reshape(sampled_voxel.shape[0],-1,sampled_voxel.shape[-1])
+                    # cur_radiis = torch.norm(cur_frame_boxes[:, 3:5]/2, dim=-1) * gamma
+                    point_mask = ((sampled_voxel[:,:,:2]-cur_frame_boxes[:,None,:2])**2).sum(-1)<cur_radiis[:,None]**2
+                    # point_mask = point_mask*(sampled_voxel[:,:,2]<cur_frame_boxes[:,None,2]+cur_frame_boxes[:,None,5]*0.6)
+                    point_mask = point_mask*(sampled_voxel[:,:,2]<=(cur_frame_boxes[:,2]+cur_frame_boxes[:,5]*0.6)[:,None])
+                    sampled_mask, sampled_idx = torch.topk(point_mask.float(), num_sample)
+                    sampled_idx = sampled_idx[:,:,None].repeat(1, 1,sampled_voxel.shape[-1])
+                    sampled_points = torch.gather(sampled_voxel, 1, sampled_idx).view(len(sampled_mask), num_sample, -1)
 
-                cur_radiis = torch.norm(cur_frame_boxes[:, 3:5] / 2, dim=-1) * gamma
-                voxel_mask = torch.all(dist < radiis[:, None, None], dim=-1)
-                # dist_mask = torch.all(dist < radiis[:, None, None], dim=-1)
-                sampled_mask, sampled_idx = torch.topk(voxel_mask.float(), min(num_sample,voxel_mask.shape[-1]))
-                sampled_voxel = torch.gather(voxel,0,sampled_idx.view(-1,1,1).repeat(1,voxel.shape[-2],voxel.shape[-1]))
-                sampled_voxel = sampled_voxel.view(sampled_mask.shape[0],-1,sampled_voxel.shape[-2],voxel.shape[-1]).permute(0,2,1,3)
-                sampled_voxel = sampled_voxel.reshape(sampled_voxel.shape[0],-1,sampled_voxel.shape[-1])
-                # cur_radiis = torch.norm(cur_frame_boxes[:, 3:5]/2, dim=-1) * gamma
-                point_mask = ((sampled_voxel[:,:,:2]-cur_frame_boxes[:,None,:2])**2).sum(-1)<cur_radiis[:,None]**2
-                # point_mask = point_mask*(sampled_voxel[:,:,2]<cur_frame_boxes[:,None,2]+cur_frame_boxes[:,None,5]*0.6)
-                point_mask = point_mask*(sampled_voxel[:,:,2]<=(cur_frame_boxes[:,2]+cur_frame_boxes[:,5]*0.6)[:,None])
-                sampled_mask, sampled_idx = torch.topk(point_mask.float(), num_sample)
-                sampled_idx = sampled_idx[:,:,None].repeat(1, 1,sampled_voxel.shape[-1])
-                sampled_points = torch.gather(sampled_voxel, 1, sampled_idx).view(len(sampled_mask), num_sample, -1)
-
-                sampled_points[sampled_mask == 0, :] = 0
-
+                    sampled_points[sampled_mask == 0, :] = 0
+                else:
+                    sampled_points = cur_points.new_zeros(cur_frame_boxes.shape[0],num_sample,cur_time_points.shape[-1])
                 # voxel_mask = dist_mask.any(0)
                 # dist_mask = dist_mask[:,voxel_mask]
                 #
