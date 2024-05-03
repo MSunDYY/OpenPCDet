@@ -8,7 +8,7 @@ from pcdet.ops.iou3d_nms import iou3d_nms_utils
 from ...utils import common_utils, loss_utils
 from .roi_head_template import RoIHeadTemplate
 from ..model_utils.denet_utils import build_transformer, PointNet, MLP, build_voxel_sampler_denet
-# from ..model_utils.msf_utils import build_voxel_sampler
+from ..model_utils.msf_utils import build_voxel_sampler
 
 from .target_assigner.proposal_target_layer import ProposalTargetLayer
 from pcdet.ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_stack_modules
@@ -767,7 +767,7 @@ class DENetHead(RoIHeadTemplate):
         num_sample = self.num_lidar_points 
 
         if self.voxel_sampler is None:
-            self.voxel_sampler = build_voxel_sampler_denet(rois.device)
+            self.voxel_sampler = build_voxel_sampler(rois.device)
 
         src1 = rois.new_zeros(batch_size, num_rois, num_sample, 5)
 
@@ -778,9 +778,9 @@ class DENetHead(RoIHeadTemplate):
         src2 = src2.view(batch_size * num_rois,-1,src2.shape[-1])
         src_trajectory_feature = self.get_proposal_aware_trajectory_feature(src1, batch_size, trajectory_rois, num_rois)
 
-        src_backward_feature = self.get_proposal_aware_backward_feature(src2,batch_size,backward_rois,num_rois)
+        src_backward_feature = self.get_proposal_aware_trajectory_feature(src2,batch_size,backward_rois,num_rois)
         src_motion_feature1 = self.get_proposal_aware_trajectory_motion(src1, batch_size, trajectory_rois, num_rois)
-        src_motion_feature2 = self.get_proposal_aware_backward_motion(src2,batch_size,backward_rois,num_rois)
+        src_motion_feature2 = self.get_proposal_aware_trajectory_motion(src2,batch_size,backward_rois,num_rois)
         
         src1 = src_trajectory_feature+src_motion_feature1
         src2 = src_backward_feature+src_motion_feature2

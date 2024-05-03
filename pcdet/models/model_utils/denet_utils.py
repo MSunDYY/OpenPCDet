@@ -471,12 +471,12 @@ class VoxelSampler_denet(nn.Module):
         return sampled_points
 
 
-    def forward(self, batch_size, trajectory_rois, num_sample, batch_dict,valid_length):
-        src1 = trajectory_rois.new_zeros(batch_size,trajectory_rois.shape[1],num_sample,5)
+    def forward(self, batch_size, trajectory_rois,backward_rois, num_sample, batch_dict,valid_length):
+        src1 = trajectory_rois.new_zeros(batch_size,trajectory_rois.shape[2],num_sample,5)
         src2 = list()
 
-        rois = trajectory_rois.clone()
-
+        rois = backward_rois.clone()
+        rois[valid_length][:,:2] = (trajectory_rois[valid_length][:,:2]+backward_rois[valid_length][:,:2])/2
 
         for bs_idx in range(batch_size):
             
@@ -529,7 +529,6 @@ class VoxelSampler_denet(nn.Module):
                     sampled_mask, sampled_idx = torch.topk(point_mask.float(), min(num_sample,point_mask.shape[-1]))
                     sampled_idx = sampled_idx[:,:,None].repeat(1, 1,sampled_voxel.shape[-1])
                     sampled_points = torch.gather(sampled_voxel, 1, sampled_idx).view(len(sampled_mask), num_sample, -1)
-
                     sampled_points[sampled_mask == 0, :] = 0
                 else:
                     sampled_points = cur_points.new_zeros(cur_frame_boxes.shape[0],num_sample,cur_time_points.shape[-1])
