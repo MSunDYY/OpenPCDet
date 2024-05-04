@@ -373,7 +373,7 @@ class DENetHead(RoIHeadTemplate):
             nn.BatchNorm1d(self.hidden_dim),
             # nn.ReLU(inplace=False),
         )
-        self.cross = CrossAttention(3,4,256,None)
+        self.cross = nn.ModuleList([CrossAttention(3,4,256,None) for i in range(4)])
         self.seqboxembed = PointNet(8,model_cfg=self.model_cfg)
         self.jointembed = MLP(self.hidden_dim*(self.num_groups+1), model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
 
@@ -660,8 +660,7 @@ class DENetHead(RoIHeadTemplate):
                 for roi_box_idx in range(0, num_rois):
 
                     if not valid_length[bs_idx, idx, roi_box_idx]:
-                        src[bs_idx,roi_box_idx,self.num_lidar_points*idx:self.num_lidar_points*(idx++1),:2]+=trajectory_rois[bs_idx,idx,roi_box_idx,7:9]
-
+                        continue
                     cur_roi_points = cur_time_points[point_mask[roi_box_idx]]
 
                     if cur_roi_points.shape[0] > self.num_lidar_points:
@@ -778,7 +777,7 @@ class DENetHead(RoIHeadTemplate):
         :param input_data: input dict
         :return:
         """
-
+        num_frames = batch_dict['num_points_all'].shape[-1]
         roi_scores = batch_dict['roi_scores'][:, 0, :]
         batch_dict['roi_scores'] = roi_scores[:,roi_scores.sum(0)>0]
         batch_dict['proposals_list'] = batch_dict['roi_boxes']
@@ -840,9 +839,10 @@ class DENetHead(RoIHeadTemplate):
         
         src1 = src_trajectory_feature + src_motion_feature1
         src2 = src_backward_feature+src_motion_feature2
-
-        src = self.cross(src1.reshape(-1,num_sample,src1.shape[-1]),src2.reshape(-1,num_sample,src2.shape[-1]),xyz1.reshape(-1,num_sample,xyz1.shape[-1]),xyz2.reshape(-1,num_sample,xyz2.shape[-1])).reshape(src1.shape[0],-1,src1.shape[-1])
-
+        src = []
+        for i in range(num_frames):
+            src.append(self.cross[i-1](src1[:,num_sample*i:num_sample*(i+1)],src2[:,num_sample*i:num_sample*(i+1)],xyz1[:,num_sample*i:num_sample*(i+1)],xyz2[:,num_sample*i:num_sample*(i+1)]))
+        src = torch.concat(src,dim=1)
         # num_rois_all = src1.shape[0]
         # src = src_geometry_feature + src_motion_feature
         # src = self.conv(torch.concat([src_trajectory_feature,src_backward_feature],dim=-1).permute(0,2,1)).permute(0,2,1)
