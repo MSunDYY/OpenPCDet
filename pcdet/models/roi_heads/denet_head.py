@@ -326,6 +326,7 @@ class CrossAttention(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
         self.norm = nn.LayerNorm(channels)
+        self.pos_linear = nn.Linear(3,channels)
 
         self.norm_channel = nn.LayerNorm(channels)
         self.ffn = nn.Sequential(
@@ -337,9 +338,11 @@ class CrossAttention(nn.Module):
         self.config = config
         self.grid_size = grid_size
 
-    def forward(self, src1,src2):
-        src1 = src1.permute(1,0,2)
-        src2 = src2.permute(1,0,2)
+    def forward(self, src1,src2,xyz1,xyz2):
+        xyz1 = self.pos_linear(xyz1)
+        xyz2 = self.pos_linear(xyz2)
+        src1 = src1.permute(1,0,2)+xyz1.permute(1,0,2)
+        src2 = src2.permute(1,0,2)+xyz2.permute(1,0,2)
         src = self.mixer(src1, src2, src2)[0]
 
         src = src1 + self.dropout(src)
@@ -825,9 +828,11 @@ class DENetHead(RoIHeadTemplate):
         src1 = self.voxel_sampler(batch_size,backward_rois,num_sample,batch_dict)
         src2 = self.voxel_sampler(batch_size,trajectory_rois,num_sample,batch_dict)
 
+
         src1 = src1.view(batch_size * num_rois, -1, src1.shape[-1])
         src2 = src2.view(batch_size * num_rois,-1,src2.shape[-1])
-
+        xyz1 = src1[:, :, :3]
+        xyz2 = src2[:, :, :3]
         src_backward_feature = self.get_proposal_aware_backward_feature(src1,batch_size,backward_rois,num_rois)
         src_trajectory_feature = self.get_proposal_aware_trajectory_feature(src2, batch_size, trajectory_rois, num_rois)
 
@@ -837,7 +842,7 @@ class DENetHead(RoIHeadTemplate):
         src1 = src_trajectory_feature + src_motion_feature1
         src2 = src_backward_feature+src_motion_feature2
 
-        src = self.cross(src1.reshape(-1,num_sample,src1.shape[-1]),src2.reshape(-1,num_sample,src2.shape[-1])).reshape(src1.shape[0],-1,src1.shape[-1])
+        src = self.cross(src1.reshape(-1,num_sample,src1.shape[-1]),src2.reshape(-1,num_sample,src2.shape[-1]),xyz1.reshape(-1,num_sample,xyz1.shape[-1]),xyz2.reshape(-1,num_sample,xyz2.shape[-1])).reshape(src1.shape[0],-1,src1.shape[-1])
 
         # num_rois_all = src1.shape[0]
         # src = src_geometry_feature + src_motion_feature
