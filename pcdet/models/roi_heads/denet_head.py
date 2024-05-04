@@ -724,12 +724,17 @@ class DENetHead(RoIHeadTemplate):
         :param input_data: input dict
         :return:
         """
-        batch_dict['num_frames'] = 4
+
+        roi_scores = batch_dict['roi_scores'][:, 0, :]
+        batch_dict['roi_scores'] = roi_scores[:,roi_scores.sum(0)>0]
+        batch_dict['roi_boxes'] = batch_dict['roi_boxes'][:,0,:][:,roi_scores.sum(0)>0]
+        batch_dict['roi_labels'] = batch_dict['roi_labels'][:, 0, :][:, roi_scores.sum(0) > 0].long()
+        batch_dict['num_frames'] = batch_dict['num_points_all'].shape[-1]
         num_rois = batch_dict['roi_boxes'].shape[1]
-        batch_dict['roi_labels'] = batch_dict['roi_labels'][:,0].long()
-        batch_dict['roi_scores'] = batch_dict['roi_scores'][:,0]
+        # batch_dict['roi_labels'] = batch_dict['roi_labels'][:,0].long()
+        # batch_dict['roi_scores'] = batch_dict['roi_scores'][:,0]
         batch_size = batch_dict['batch_size']
-        cur_batch_boxes = copy.deepcopy(batch_dict['roi_boxes'].detach())[:,0,:]
+        cur_batch_boxes = copy.deepcopy(batch_dict['roi_boxes'].detach())
 
         batch_dict['cur_frame_idx'] = 0
         proposals_list = batch_dict['roi_boxes']
@@ -745,7 +750,7 @@ class DENetHead(RoIHeadTemplate):
             batch_dict['roi_boxes'] = targets_dict['rois']
             batch_dict['roi_scores'] = targets_dict['roi_scores']
             batch_dict['roi_labels'] = targets_dict['roi_labels']
-            # targets_dict['trajectory_rois'][:,batch_dict['cur_frame_idx'],:,:] = batch_dict['roi_boxes']
+            targets_dict['backward_rois'][:,batch_dict['cur_frame_idx'],:,:] = batch_dict['roi_boxes']
             # trajectory_rois = targets_dict['trajectory_rois']
             backward_rois = targets_dict['backward_rois']
             empty_mask = batch_dict['roi_boxes'][:,:,:6].sum(-1)==0
