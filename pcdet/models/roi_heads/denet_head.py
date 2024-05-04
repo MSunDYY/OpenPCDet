@@ -179,7 +179,12 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
                                                               aug_times=self.roi_sampler_cfg.ROI_FG_AUG_TIMES,
                                                               pos_thresh=self.roi_sampler_cfg.USE_TRAJ_AUG.THRESHOD)
                     bg_backs = cur_backward_rois[idx, bg_inds]
-                    fg_trajs = cur_trajectory_rois[idx,fg_inds]
+                    fg_trajs,_ = self.aug_roi_by_noise_torch(cur_trajectory_rois[idx,fg_inds],
+                                                             cur_trajectory_rois[idx,fg_inds][:,:8],
+                                                             max_overlaps[fg_inds],
+                                                             aug_times=self.roi_sampler_cfg.ROI_FG_AUG_TIMES,
+                                                             pos_thresh=self.roi_sampler_cfg.USE_TRAJ_AUG.THRESHOD
+                                                             )
                     bg_trajs = cur_trajectory_rois[idx,bg_inds]
 
                     batch_backward_rois_list.append(torch.cat([fg_backs, bg_backs], 0)[None, :, :])
