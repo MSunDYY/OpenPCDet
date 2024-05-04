@@ -623,8 +623,8 @@ class DENetHead(RoIHeadTemplate):
             empty_flag = sampled_mask.sum(-1) == 0
             src[bs_idx, empty_flag] = 0
 
-        src = src.repeat([1, 1, trajectory_rois.shape[1], 1])
-
+        # src = src.repeat([1, 1, trajectory_rois.shape[1], 1])
+        src = torch.concat([src,torch.zeros_like(src).repeat(1,1,trajectory_rois.shape[1]-1,1)],dim=-2)
         return src
 
     def crop_previous_frame_points(self, src, batch_size, trajectory_rois, num_rois, valid_length, batch_dict):
@@ -821,14 +821,13 @@ class DENetHead(RoIHeadTemplate):
         if self.voxel_sampler is None:
             self.voxel_sampler = build_voxel_sampler(rois.device)
 
-        src1 = rois.new_zeros(batch_size, num_rois, num_sample, 5)
+        src1 = self.voxel_sampler(batch_size, trajectory_rois, num_sample, batch_dict)
 
-        src1 = self.crop_current_frame_points(src1, batch_size, trajectory_rois, num_rois, batch_dict)
-        src1 = self.crop_previous_frame_points(src1, batch_size,trajectory_rois, num_rois,valid_length,batch_dict)
+        src2 = rois.new_zeros(batch_size, num_rois, num_sample, 5)
+        src2 = self.crop_current_frame_points(src2, batch_size, trajectory_rois, num_rois, batch_dict)
+        src2 = self.crop_previous_frame_points(src2, batch_size,trajectory_rois, num_rois,valid_length,batch_dict)
         # src1 = self.voxel_sampler(batch_size,backward_rois,num_sample,batch_dict)
-        src2 = self.voxel_sampler(batch_size,trajectory_rois,num_sample,batch_dict)
-
-
+        # src2[~valid_length]=0
         src1 = src1.view(batch_size * num_rois, -1, src1.shape[-1])
         src2 = src2.view(batch_size * num_rois,-1,src2.shape[-1])
         xyz1 = src1[:, :, :3]
