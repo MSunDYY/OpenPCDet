@@ -660,7 +660,7 @@ class DENetHead(RoIHeadTemplate):
                 for roi_box_idx in range(0, num_rois):
 
                     if not valid_length[bs_idx, idx, roi_box_idx]:
-                        continue
+                        src[bs_idx,roi_box_idx,self.num_lidar_points*idx:self.num_lidar_points*(idx++1),:2]+=trajectory_rois[bs_idx,idx,roi_box_idx,7:9]
 
                     cur_roi_points = cur_time_points[point_mask[roi_box_idx]]
 
@@ -691,7 +691,7 @@ class DENetHead(RoIHeadTemplate):
         num_frames = batch_dict['num_frames']
         trajectory_rois = cur_batch_boxes[:, None, :, :].repeat(1, num_frames, 1, 1)
         trajectory_rois[:, 0, :, :] = cur_batch_boxes
-        batch_dict['valid_length'] = torch.ones([batch_dict['batch_size'], num_frames, trajectory_rois.shape[2]])
+        # batch_dict['valid_length'] = torch.ones([batch_dict['batch_size'], num_frames, trajectory_rois.shape[2]])
         batch_dict['roi_scores'] = batch_dict['roi_scores'][:, :, None].repeat(1, 1, num_frames)
 
         # simply propagate proposal based on velocity
@@ -809,7 +809,7 @@ class DENetHead(RoIHeadTemplate):
             trajectory_rois = targets_dict['trajectory_rois']
             backward_rois = targets_dict['backward_rois']
             empty_mask = batch_dict['roi_boxes'][:,:,:6].sum(-1)==0
-            # valid_length = targets_dict['valid_length']
+            valid_length = targets_dict['valid_length']
         else:
             empty_mask = batch_dict['roi_boxes'][:,:,:6].sum(-1)==0
             batch_dict['valid_traj_mask'] = ~empty_mask
@@ -821,11 +821,11 @@ class DENetHead(RoIHeadTemplate):
         if self.voxel_sampler is None:
             self.voxel_sampler = build_voxel_sampler(rois.device)
 
-        # src1 = rois.new_zeros(batch_size, num_rois, num_sample, 5)
+        src1 = rois.new_zeros(batch_size, num_rois, num_sample, 5)
 
-        # src1 = self.crop_current_frame_points(src1, batch_size, trajectory_rois, num_rois, batch_dict)
-        # src1 = self.crop_previous_frame_points(src1, batch_size,trajectory_rois, num_rois,valid_length,batch_dict)
-        src1 = self.voxel_sampler(batch_size,backward_rois,num_sample,batch_dict)
+        src1 = self.crop_current_frame_points(src1, batch_size, trajectory_rois, num_rois, batch_dict)
+        src1 = self.crop_previous_frame_points(src1, batch_size,trajectory_rois, num_rois,valid_length,batch_dict)
+        # src1 = self.voxel_sampler(batch_size,backward_rois,num_sample,batch_dict)
         src2 = self.voxel_sampler(batch_size,trajectory_rois,num_sample,batch_dict)
 
 
