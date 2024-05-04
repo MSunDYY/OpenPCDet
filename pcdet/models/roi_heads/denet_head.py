@@ -458,7 +458,7 @@ class DENetHead(RoIHeadTemplate):
         src = torch.cat([dis, phi, the], dim = -1)
         return src
 
-    def get_proposal_aware_trajectory_feature(self, src, batch_size, trajectory_rois, num_rois):
+    def get_proposal_aware_trajectory_feature(self, src, batch_size, trajectory_rois, num_rois,valid_length):
         proposal_aware_feat_list = []
         
         for i in range(trajectory_rois.shape[1]):
@@ -479,7 +479,8 @@ class DENetHead(RoIHeadTemplate):
 
         proposal_aware_feat = torch.cat(proposal_aware_feat_list,dim=1)
         proposal_aware_feat = torch.cat([proposal_aware_feat, src[:,:,3:]], dim = -1)
-        src_gemoetry = self.up_dimension_traj(proposal_aware_feat) 
+
+        src_gemoetry = self.up_dimension_traj(proposal_aware_feat)
         
         return src_gemoetry
 
@@ -832,7 +833,7 @@ class DENetHead(RoIHeadTemplate):
         xyz1 = src1[:, :, :3]
         xyz2 = src2[:, :, :3]
         src_backward_feature = self.get_proposal_aware_backward_feature(src1,batch_size,backward_rois,num_rois)
-        src_trajectory_feature = self.get_proposal_aware_trajectory_feature(src2, batch_size, trajectory_rois, num_rois)
+        src_trajectory_feature = self.get_proposal_aware_trajectory_feature(src2, batch_size, trajectory_rois, num_rois,valid_length)
 
         src_motion_feature1 = self.get_proposal_aware_backward_motion(src1, batch_size, trajectory_rois, num_rois)
         src_motion_feature2 = self.get_proposal_aware_trajectory_motion(src2,batch_size,trajectory_rois,num_rois)
@@ -841,6 +842,8 @@ class DENetHead(RoIHeadTemplate):
         src2 = src_backward_feature+src_motion_feature2
         src = []
         for i in range(num_frames):
+            src2[:,num_sample*i:num_sample*(i+1)] = src2[:,num_sample*i:num_sample*(i+1)]*valid_length[:,i,:].view(batch_size*num_rois,1,1).repeat(1,num_sample,1)
+
             src.append(self.cross[i-1](src1[:,num_sample*i:num_sample*(i+1)],src2[:,num_sample*i:num_sample*(i+1)],xyz1[:,num_sample*i:num_sample*(i+1)],xyz2[:,num_sample*i:num_sample*(i+1)]))
         src = torch.concat(src,dim=1)
         # num_rois_all = src1.shape[0]
