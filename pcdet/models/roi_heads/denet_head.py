@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from pcdet.ops.iou3d_nms import iou3d_nms_utils
 from ...utils import common_utils, loss_utils
 from .roi_head_template import RoIHeadTemplate
-from ..model_utils.denet_utils import build_transformer, PointNet, MLP, build_voxel_sampler_denet
+from ..model_utils.denet_utils import build_transformer, PointNet, MLP,SpatialMixerBlock, build_voxel_sampler_denet
 from ..model_utils.msf_utils import build_voxel_sampler
 
 from .target_assigner.proposal_target_layer import ProposalTargetLayer
@@ -316,6 +316,40 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
         else:
             raise NotImplementedError
 
+
+class CrossAttention(nn.Module):
+
+    def __init__(self, hidden_dim, grid_size, channels, config=None, dropout=0.0):
+        super().__init__()
+
+        self.mixer = nn.MultiheadAttention(channels, 8, dropout=dropout)
+
+        self.dropout = nn.Dropout(dropout)
+        self.norm = nn.LayerNorm(channels)
+
+        self.norm_channel = nn.LayerNorm(channels)
+        self.ffn = nn.Sequential(
+            nn.Linear(channels, 2 * channels),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(2 * channels, channels),
+        )
+        self.config = config
+        self.grid_size = grid_size
+
+    def forward(self, src1,src2):
+        src1 = src1.permute(1,0,2)
+        src2 = src2.permute(1,0,2)
+        src = self.mixer(src1, src2, src2)[0]
+
+        src = src1 + self.dropout(src)
+        src_mixer = self.norm(src)
+
+        src_mixer = src_mixer + self.ffn(src_mixer)
+        src_mixer = self.norm_channel(src_mixer)
+
+        return src_mixer.permute(1,0,2)
+
 class DENetHead(RoIHeadTemplate):
     def __init__(self,model_cfg, num_class=1,**kwargs):
         super().__init__(num_class=num_class, model_cfg=model_cfg)
@@ -336,7 +370,7 @@ class DENetHead(RoIHeadTemplate):
             nn.BatchNorm1d(self.hidden_dim),
             # nn.ReLU(inplace=False),
         )
-
+        self.cross = CrossAttention(3,4,256,None)
         self.seqboxembed = PointNet(8,model_cfg=self.model_cfg)
         self.jointembed = MLP(self.hidden_dim*(self.num_groups+1), model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
 
@@ -784,26 +818,31 @@ class DENetHead(RoIHeadTemplate):
         if self.voxel_sampler is None:
             self.voxel_sampler = build_voxel_sampler(rois.device)
 
-        src1 = rois.new_zeros(batch_size, num_rois, num_sample, 5)
+        # src1 = rois.new_zeros(batch_size, num_rois, num_sample, 5)
 
         # src1 = self.crop_current_frame_points(src1, batch_size, trajectory_rois, num_rois, batch_dict)
         # src1 = self.crop_previous_frame_points(src1, batch_size,trajectory_rois, num_rois,valid_length,batch_dict)
+        src1 = self.voxel_sampler(batch_size,backward_rois,num_sample,batch_dict)
         src2 = self.voxel_sampler(batch_size,trajectory_rois,num_sample,batch_dict)
-        # src1 = src1.view(batch_size * num_rois, -1, src1.shape[-1])
-        src2 = src2.view(batch_size * num_rois,-1,src2.shape[-1])
-        # src_trajectory_feature = self.get_proposal_aware_trajectory_feature(src1, batch_size, trajectory_rois, num_rois)
 
-        src_backward_feature = self.get_proposal_aware_trajectory_feature(src2,batch_size,trajectory_rois,num_rois)
-        # src_motion_feature1 = self.get_proposal_aware_trajectory_motion(src1, batch_size, trajectory_rois, num_rois)
+        src1 = src1.view(batch_size * num_rois, -1, src1.shape[-1])
+        src2 = src2.view(batch_size * num_rois,-1,src2.shape[-1])
+
+        src_backward_feature = self.get_proposal_aware_backward_feature(src1,batch_size,backward_rois,num_rois)
+        src_trajectory_feature = self.get_proposal_aware_trajectory_feature(src2, batch_size, trajectory_rois, num_rois)
+
+        src_motion_feature1 = self.get_proposal_aware_backward_motion(src1, batch_size, trajectory_rois, num_rois)
         src_motion_feature2 = self.get_proposal_aware_trajectory_motion(src2,batch_size,trajectory_rois,num_rois)
         
-        # src1 = src_trajectory_feature
-        src = src_backward_feature+src_motion_feature2
+        src1 = src_trajectory_feature + src_motion_feature1
+        src2 = src_backward_feature+src_motion_feature2
+
+        src = self.cross(src1.reshape(-1,num_sample,src1.shape[-1]),src2.reshape(-1,num_sample,src2.shape[-1])).reshape(src1.shape[0],-1,src1.shape[-1])
 
         # num_rois_all = src1.shape[0]
         # src = src_geometry_feature + src_motion_feature
         # src = self.conv(torch.concat([src_trajectory_feature,src_backward_feature],dim=-1).permute(0,2,1)).permute(0,2,1)
-        box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
+        box_reg, feat_box = self.trajectories_auxiliary_branch(backward_rois)
         
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK',None):
             src[empty_mask.view(-1)] = 0
