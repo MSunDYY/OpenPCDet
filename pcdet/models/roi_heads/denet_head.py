@@ -838,8 +838,8 @@ class DENetHead(RoIHeadTemplate):
         src_motion_feature1 = self.get_proposal_aware_backward_motion(src1, batch_size, trajectory_rois, num_rois)
         src_motion_feature2 = self.get_proposal_aware_trajectory_motion(src2,batch_size,trajectory_rois,num_rois)
         
-        src1 = src_trajectory_feature + src_motion_feature1
-        src2 = src_backward_feature+src_motion_feature2
+        src1 = src_backward_feature + src_motion_feature1
+        src2 = src_trajectory_feature+src_motion_feature2
         src = []
         for i in range(num_frames):
             src2[:,num_sample*i:num_sample*(i+1)] = src2[:,num_sample*i:num_sample*(i+1)]*valid_length[:,i,:].reshape(batch_size*num_rois,1,1).repeat(1,num_sample,1)

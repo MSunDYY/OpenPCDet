@@ -658,8 +658,8 @@ class DENet2Head(RoIHeadTemplate):
             empty_flag = sampled_mask.sum(-1) == 0
             src[bs_idx, empty_flag] = 0
 
-        # src = src.repeat([1, 1, trajectory_rois.shape[1], 1])
-        src = torch.concat([src,torch.zeros_like(src).repeat(1,1,trajectory_rois.shape[1]-1,1)],dim=-2)
+        src = src.repeat([1, 1, trajectory_rois.shape[1], 1])
+        # src = torch.concat([src,torch.zeros_like(src).repeat(1,1,trajectory_rois.shape[1]-1,1)],dim=-2)
         return src
 
     def crop_previous_frame_points(self, src, batch_size, trajectory_rois, num_rois, valid_length, batch_dict):
@@ -746,7 +746,7 @@ class DENet2Head(RoIHeadTemplate):
         valid_length[:, 0] = 1
         num_frames = batch_dict['num_points_all'].shape[1]
         for i in range(1, num_frames):
-            trajectory_rois[:,i,:,:2]=trajectory_rois[:,0,:,:2]+trajectory_rois[:,0,:,7:9]*i
+            # trajectory_rois[:,i,:,:2]=trajectory_rois[:,0,:,:2]+trajectory_rois[:,0,:,7:9]*i
             frame = torch.zeros_like(cur_batch_boxes)
             frame[:, :, 0:2] = trajectory_rois[:, i - 1, :, 0:2] + trajectory_rois[:, i - 1, :, 7:9]
             frame[:, :, 2:] = trajectory_rois[:, i - 1, :, 2:]
