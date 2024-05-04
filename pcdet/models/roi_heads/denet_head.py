@@ -675,6 +675,7 @@ class DENetHead(RoIHeadTemplate):
         valid_length[:, 0] = 1
         num_frames = batch_dict['num_points_all'].shape[1]
         for i in range(1, num_frames):
+            trajectory_rois[:,i,:,:2]=trajectory_rois[:,0,:,:2]+trajectory_rois[:,0,:,7:9]*i
             frame = torch.zeros_like(cur_batch_boxes)
             frame[:, :, 0:2] = trajectory_rois[:, i - 1, :, 0:2] + trajectory_rois[:, i - 1, :, 7:9]
             frame[:, :, 2:] = trajectory_rois[:, i - 1, :, 2:]
@@ -802,7 +803,7 @@ class DENetHead(RoIHeadTemplate):
         # num_rois_all = src1.shape[0]
         # src = src_geometry_feature + src_motion_feature
         # src = self.conv(torch.concat([src_trajectory_feature,src_backward_feature],dim=-1).permute(0,2,1)).permute(0,2,1)
-        box_reg, feat_box = self.trajectories_auxiliary_branch(backward_rois)
+        box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
         
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK',None):
             src[empty_mask.view(-1)] = 0
