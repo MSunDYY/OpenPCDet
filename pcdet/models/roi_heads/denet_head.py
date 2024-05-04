@@ -842,7 +842,7 @@ class DENetHead(RoIHeadTemplate):
         src2 = src_backward_feature+src_motion_feature2
         src = []
         for i in range(num_frames):
-            src2[:,num_sample*i:num_sample*(i+1)] = src2[:,num_sample*i:num_sample*(i+1)]*valid_length[:,i,:].view(batch_size*num_rois,1,1).repeat(1,num_sample,1)
+            src2[:,num_sample*i:num_sample*(i+1)] = src2[:,num_sample*i:num_sample*(i+1)]*valid_length[:,i,:].reshape(batch_size*num_rois,1,1).repeat(1,num_sample,1)
 
             src.append(self.cross[i-1](src1[:,num_sample*i:num_sample*(i+1)],src2[:,num_sample*i:num_sample*(i+1)],xyz1[:,num_sample*i:num_sample*(i+1)],xyz2[:,num_sample*i:num_sample*(i+1)]))
         src = torch.concat(src,dim=1)
