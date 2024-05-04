@@ -690,7 +690,7 @@ class DENetHead(RoIHeadTemplate):
 
                 valid_length[bs_idx, i, fg_inds] = 1
 
-                trajectory_rois[bs_idx, i, fg_inds, :] = proposals_list[bs_idx, i, traj_assignment[fg_inds]]
+                # trajectory_rois[bs_idx, i, fg_inds, :] = proposals_list[bs_idx, i, traj_assignment[fg_inds]]
 
         batch_dict['valid_length'] = valid_length
 
