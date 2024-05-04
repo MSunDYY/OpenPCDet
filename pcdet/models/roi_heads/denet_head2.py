@@ -8,7 +8,7 @@ from pcdet.ops.iou3d_nms import iou3d_nms_utils
 from ...utils import common_utils, loss_utils
 from .roi_head_template import RoIHeadTemplate
 from ..model_utils.denet_utils import build_transformer, PointNet, MLP,SpatialMixerBlock, build_voxel_sampler_denet
-from ..model_utils.msf_utils import build_voxel_sampler
+from ..model_utils.msf_utils import build_voxel_sampler,build_voxel_sampler_traj
 
 from .target_assigner.proposal_target_layer import ProposalTargetLayer
 from pcdet.ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_stack_modules
@@ -854,12 +854,10 @@ class DENet2Head(RoIHeadTemplate):
 
         if self.voxel_sampler is None:
             self.voxel_sampler = build_voxel_sampler(rois.device)
-
+            self.voxel_sampler_traj = build_voxel_sampler_traj(rois.device)
         src1 = self.voxel_sampler(batch_size, trajectory_rois, num_sample, batch_dict)
 
-        src2 = rois.new_zeros(batch_size, num_rois, num_sample, 5)
-        src2 = self.crop_current_frame_points(src2, batch_size, trajectory_rois, num_rois, batch_dict)
-        src2 = self.crop_previous_frame_points(src2, batch_size,trajectory_rois, num_rois,valid_length,batch_dict)
+        src2 = self.voxel_sampler_traj(batch_size, trajectory_rois, num_sample, batch_dict,valid_length)
         # src1 = self.voxel_sampler(batch_size,backward_rois,num_sample,batch_dict)
         # src2[~valid_length]=0
         src1 = src1.view(batch_size * num_rois, -1, src1.shape[-1])
