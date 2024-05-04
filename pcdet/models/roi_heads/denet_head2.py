@@ -980,15 +980,20 @@ class DENet2Head(RoIHeadTemplate):
 
     def get_loss(self, tb_dict=None):
         tb_dict = {} if tb_dict is None else tb_dict
-        rcnn_loss = 0
-        rcnn_loss_cls, cls_tb_dict = self.get_box_cls_layer_loss(self.forward_ret_dict)
-        rcnn_loss += rcnn_loss_cls
+        rcnn_loss1 = 0
+        rcnn_loss2 = 0
+        rcnn_loss_cls1,rcnn_loss_cls2, cls_tb_dict = self.get_box_cls_layer_loss(self.forward_ret_dict)
+        rcnn_loss1 += rcnn_loss_cls1
+        rcnn_loss2 +=rcnn_loss_cls2
         tb_dict.update(cls_tb_dict)
 
-        rcnn_loss_reg, reg_tb_dict = self.get_box_reg_layer_loss(self.forward_ret_dict)
-        rcnn_loss += rcnn_loss_reg
+        rcnn_loss_reg1,rcnn_loss_reg2, reg_tb_dict = self.get_box_reg_layer_loss(self.forward_ret_dict)
+        rcnn_loss1 += rcnn_loss_reg1
+        rcnn_loss2+=  rcnn_loss_reg2
         tb_dict.update(reg_tb_dict)
-        tb_dict['rcnn_loss'] = rcnn_loss.item()/2
+        tb_dict['rcnn_loss1'] = rcnn_loss1
+        tb_dict['rcnn_loss2'] = rcnn_loss2
+        rcnn_loss = rcnn_loss1+rcnn_loss2
         return rcnn_loss, tb_dict
     
     def get_box_reg_layer_loss(self, forward_ret_dict):
@@ -1033,8 +1038,9 @@ class DENet2Head(RoIHeadTemplate):
                 fg_sum, 1)
             rcnn_loss_reg2 = rcnn_loss_reg2 * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight'] * \
                              loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][0]
-            rcnn_loss_reg = (rcnn_loss_reg1+rcnn_loss_reg2)
-            tb_dict['rcnn_loss_reg'] = rcnn_loss_reg.item()/2
+            # rcnn_loss_reg = (rcnn_loss_reg1+rcnn_loss_reg2)
+            tb_dict['rcnn_loss_reg1'] = rcnn_loss_reg1.item()
+            tb_dict['rcnn_loss_reg2'] = rcnn_loss_reg2.item()
   
             if self.model_cfg.USE_AUX_LOSS:
                 point_reg1 = forward_ret_dict['point_reg1']
@@ -1062,9 +1068,11 @@ class DENet2Head(RoIHeadTemplate):
                         point_loss_regs2 +=point_loss_reg2
                     point_loss_regs1 = point_loss_regs1 / groups
                     point_loss_regs2 = point_loss_regs2 / groups
-                    point_loss_regs = point_loss_regs1+point_loss_regs2
-                    tb_dict['point_loss_reg'] = point_loss_regs.item()/2
-                    rcnn_loss_reg += point_loss_regs 
+                    # point_loss_regs = point_loss_regs1+point_loss_regs2
+                    tb_dict['point_loss_reg1'] = point_loss_regs1.item()
+                    tb_dict['point_loss_reg2'] = point_loss_regs2.item()
+                    rcnn_loss_reg1 += point_loss_regs1
+                    rcnn_loss_reg2 += point_loss_regs2
 
                 else:
                     point_loss_reg = self.reg_loss_func(point_reg.view(rcnn_batch_size, -1).unsqueeze(dim=0),reg_targets.unsqueeze(dim=0),)  
@@ -1084,9 +1092,11 @@ class DENet2Head(RoIHeadTemplate):
                     dim=-1).float()).sum() / max(fg_sum, 1)
                 seqbox_loss_reg2 = seqbox_loss_reg2 * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight'] * \
                                    loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][1]
-                seqbox_loss_reg = (seqbox_loss_reg1+seqbox_loss_reg2)
-                tb_dict['seqbox_loss_reg'] = seqbox_loss_reg.item()/2
-                rcnn_loss_reg += seqbox_loss_reg
+                # seqbox_loss_reg = (seqbox_loss_reg1+seqbox_loss_reg2)
+                tb_dict['seqbox_loss_reg1'] = seqbox_loss_reg1.item()
+                tb_dict['seqbox_loss_reg2'] = seqbox_loss_reg2.item()
+                rcnn_loss_reg1 += seqbox_loss_reg1
+                rcnn_loss_reg2 +=seqbox_loss_reg2
 
             if loss_cfgs.CORNER_LOSS_REGULARIZATION and fg_sum > 0:
 
@@ -1131,14 +1141,16 @@ class DENet2Head(RoIHeadTemplate):
 
                 loss_corner2 = loss_corner2.mean()
                 loss_corner2 = loss_corner2 * loss_cfgs.LOSS_WEIGHTS['rcnn_corner_weight']
-                loss_corner = (loss_corner1+loss_corner2)
-                rcnn_loss_reg += loss_corner
-                tb_dict['rcnn_loss_corner'] = loss_corner.item()/2
+                # loss_corner = (loss_corner1+loss_corner2)
+                rcnn_loss_reg1 += loss_corner1
+                rcnn_loss_reg2 +=loss_corner2
+                tb_dict['rcnn_loss_corner1'] = loss_corner1.item()
+                tb_dict['rcnn_loss_corner2'] = loss_corner2.item()
 
         else:
             raise NotImplementedError
 
-        return rcnn_loss_reg, tb_dict
+        return rcnn_loss_reg1,rcnn_loss_reg2, tb_dict
 
     def get_box_cls_layer_loss(self, forward_ret_dict):
         loss_cfgs = self.model_cfg.LOSS_CONFIG
@@ -1184,9 +1196,9 @@ class DENet2Head(RoIHeadTemplate):
 
         rcnn_loss_cls1 = rcnn_loss_cls1 * loss_cfgs.LOSS_WEIGHTS['rcnn_cls_weight']
         rcnn_loss_cls2 = rcnn_loss_cls2 * loss_cfgs.LOSS_WEIGHTS['rcnn_cls_weight']
-        rcnn_loss_cls = rcnn_loss_cls1+rcnn_loss_cls2
-        tb_dict = {'rcnn_loss_cls': rcnn_loss_cls.item()/2}
-        return rcnn_loss_cls, tb_dict
+        # rcnn_loss_cls = rcnn_loss_cls1+rcnn_loss_cls2
+        tb_dict = {'rcnn_loss_cls1': rcnn_loss_cls1.item(),'rcnn_loss_cls2': rcnn_loss_cls2.item()}
+        return rcnn_loss_cls1,rcnn_loss_cls2, tb_dict
 
 
     def generate_predicted_boxes(self, batch_size, rois, cls_preds=None, box_preds=None):
