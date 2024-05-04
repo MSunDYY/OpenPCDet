@@ -339,11 +339,11 @@ class CrossAttention(nn.Module):
         self.grid_size = grid_size
 
     def forward(self, src1,src2,xyz1,xyz2):
-        xyz1 = self.pos_linear(xyz1)
-        xyz2 = self.pos_linear(xyz2)
-        src1 = src1.permute(1,0,2)+xyz1.permute(1,0,2)
-        src2 = src2.permute(1,0,2)+xyz2.permute(1,0,2)
-        src = self.mixer(src1, src2, src2)[0]
+        xyz1 = self.pos_linear(xyz1).permute(1,0,2)
+        xyz2 = self.pos_linear(xyz2).permute(1,0,2)
+        src1 = src1.permute(1,0,2)
+        src2 = src2.permute(1,0,2)
+        src = self.mixer(src1+xyz1, src2+xyz2, src2)[0]
 
         src = src1 + self.dropout(src)
         src_mixer = self.norm(src)
