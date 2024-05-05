@@ -821,7 +821,7 @@ class DENetHead(RoIHeadTemplate):
         if self.voxel_sampler is None:
             self.voxel_sampler = build_voxel_sampler(rois.device)
 
-        src1 = self.voxel_sampler(batch_size, trajectory_rois, num_sample, batch_dict)
+        src1 = self.voxel_sampler(batch_size, backward_rois, num_sample, batch_dict)
 
         src2 = rois.new_zeros(batch_size, num_rois, num_sample, 5)
         src2 = self.crop_current_frame_points(src2, batch_size, trajectory_rois, num_rois, batch_dict)
