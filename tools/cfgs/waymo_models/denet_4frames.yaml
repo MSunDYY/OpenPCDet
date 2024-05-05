@@ -112,7 +112,7 @@ MODEL:
             RATIO: 0.2
             USE_ROI_AUG: True
             USE_TRAJ_AUG:
-                ENABLED: True
+                ENABLED: False
                 THRESHOD: 0.8
             SAMPLE_ROI_BY_EACH_CLASS: True
             CLS_SCORE_TYPE: roi_iou
