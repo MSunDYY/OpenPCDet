@@ -862,7 +862,7 @@ class DENet2Head(RoIHeadTemplate):
         # src2[~valid_length]=0
 
         # src2 = src1.clone()
-        # trajectory_rois = backward_rois.clone()
+        trajectory_rois = backward_rois.clone()
 
         src1 = src1.view(batch_size * num_rois, -1, src1.shape[-1])
         src2 = src2.view(batch_size * num_rois,-1,src2.shape[-1])
