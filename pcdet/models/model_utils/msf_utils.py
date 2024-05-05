@@ -563,7 +563,7 @@ class VoxelSampler_traj(nn.Module):
             cur_batch_boxes = trajectory_rois[bs_idx]
             src_points = list()
             for idx in range(trajectory_rois.shape[1]):
-                gamma = 1  # ** (idx+1)
+                gamma = 1.1  # ** (idx+1)
 
                 time_mask = (cur_points[:, -1] - idx * 0.1).abs() < 1e-3
                 cur_time_points = cur_points[time_mask, :5].contiguous()
@@ -627,9 +627,9 @@ class VoxelSampler_traj(nn.Module):
                 key_points = key_points[torch.randperm(len(key_points)), :]
 
                 key_points = self.cylindrical_pool(key_points, cur_frame_boxes, num_sample, gamma)
-                if idx!=0:
-                    key_points[valid_length[bs_idx,idx]==0] = src_points[0][valid_length[bs_idx,idx]==0]
-                    key_points[valid_length[bs_idx,idx]==0][:,:,:2]+=+cur_frame_boxes[valid_length[bs_idx,idx]==0][:,None,7:9]*idx
+                # if idx!=0:
+                #     key_points[valid_length[bs_idx,idx]==0] = src_points[0][valid_length[bs_idx,idx]==0]
+                #     key_points[valid_length[bs_idx,idx]==0][:,:,:2]+=+cur_frame_boxes[valid_length[bs_idx,idx]==0][:,None,7:9]*idx
                 src_points.append(key_points)
 
             src.append(torch.stack(src_points))
