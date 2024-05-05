@@ -861,8 +861,8 @@ class DENet2Head(RoIHeadTemplate):
         # src1 = self.voxel_sampler(batch_size,backward_rois,num_sample,batch_dict)
         # src2[~valid_length]=0
 
-        src2 = src1.clone()
-        trajectory_rois = backward_rois.clone()
+        # src2 = src1.clone()
+        # trajectory_rois = backward_rois.clone()
 
         src1 = src1.view(batch_size * num_rois, -1, src1.shape[-1])
         src2 = src2.view(batch_size * num_rois,-1,src2.shape[-1])
