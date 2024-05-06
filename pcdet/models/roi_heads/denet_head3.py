@@ -8,6 +8,7 @@ from pcdet.ops.iou3d_nms import iou3d_nms_utils
 from ...utils import common_utils, loss_utils
 from .roi_head_template import RoIHeadTemplate
 from ..model_utils.denet_utils import build_transformer, PointNet, MLP,SpatialMixerBlock, build_voxel_sampler_denet
+from ..model_utils.denet3_utils import build_transformer3,CrossAttention
 from ..model_utils.msf_utils import build_voxel_sampler,build_voxel_sampler_traj
 
 from .target_assigner.proposal_target_layer import ProposalTargetLayer
@@ -317,43 +318,9 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
             raise NotImplementedError
 
 
-class CrossAttention(nn.Module):
 
-    def __init__(self, hidden_dim, grid_size, channels, config=None, dropout=0.0):
-        super().__init__()
 
-        self.mixer = nn.MultiheadAttention(channels, 8, dropout=dropout)
-
-        self.dropout = nn.Dropout(dropout)
-        self.norm = nn.LayerNorm(channels)
-        self.pos_linear = nn.Linear(3,channels)
-
-        self.norm_channel = nn.LayerNorm(channels)
-        self.ffn = nn.Sequential(
-            nn.Linear(channels, 2 * channels),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(2 * channels, channels),
-        )
-        self.config = config
-        self.grid_size = grid_size
-
-    def forward(self, src1,src2,xyz1,xyz2):
-        xyz1 = self.pos_linear(xyz1).permute(1,0,2)
-        xyz2 = self.pos_linear(xyz2).permute(1,0,2)
-        src1 = src1.permute(1,0,2)
-        src2 = src2.permute(1,0,2)
-        src = self.mixer(src1+xyz1, src2+xyz2, src2)[0]
-
-        src = src1 + self.dropout(src)
-        src_mixer = self.norm(src)
-
-        src_mixer = src_mixer + self.ffn(src_mixer)
-        src_mixer = self.norm_channel(src_mixer)
-
-        return src_mixer.permute(1,0,2)
-
-class DENet2Head(RoIHeadTemplate):
+class DENet3Head(RoIHeadTemplate):
     def __init__(self,model_cfg, num_class=1,**kwargs):
         super().__init__(num_class=num_class, model_cfg=model_cfg)
         self.model_cfg = model_cfg
@@ -374,10 +341,8 @@ class DENet2Head(RoIHeadTemplate):
             # nn.ReLU(inplace=False),
         )
         self.cross = nn.ModuleList([CrossAttention(3,4,256,None) for i in range(4)])
-        self.seqboxembed1 = PointNet(8,model_cfg=self.model_cfg)
-        self.seqboxembed2 = PointNet(8,model_cfg=self.model_cfg)
-        self.jointembed1 = MLP(self.hidden_dim*(self.num_groups+1), model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
-        self.jointembed2 = MLP(self.hidden_dim*(self.num_groups+1), model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
+        self.seqboxembed = PointNet(8,model_cfg=self.model_cfg)
+        self.jointembed = MLP(self.hidden_dim*(self.num_groups+1), model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
 
         self.up_dimension_traj = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
         self.up_dimension_back = MLP(input_dim = 29, hidden_dim = 64, output_dim = hidden_dim, num_layers = 3)
@@ -385,20 +350,16 @@ class DENet2Head(RoIHeadTemplate):
         self.up_dimension_back_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
 
         
-        self.transformer1 = build_transformer(model_cfg.Transformer)
-        self.transformer2 = build_transformer(model_cfg.Transformer)
+        self.transformer = build_transformer3(model_cfg.Transformer)
+        # self.transformer2 = build_transformer(model_cfg.Transformer)
         self.voxel_sampler = None
   
-        self.class_embed1 = nn.ModuleList()
-        self.class_embed1.append(nn.Linear(model_cfg.Transformer.hidden_dim, 1))
-        self.class_embed2 = nn.ModuleList()
-        self.class_embed2.append(nn.Linear(model_cfg.Transformer.hidden_dim, 1))
+        self.class_embed = nn.ModuleList()
+        self.class_embed.append(nn.Linear(model_cfg.Transformer.hidden_dim, 1))
 
-        self.bbox_embed1 = nn.ModuleList()
-        self.bbox_embed2 = nn.ModuleList()
+        self.bbox_embed = nn.ModuleList()
         for _ in range(self.num_groups):
-            self.bbox_embed1.append(MLP(model_cfg.Transformer.hidden_dim, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4))
-            self.bbox_embed2.append(MLP(model_cfg.Transformer.hidden_dim, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4))
+            self.bbox_embed.append(MLP(model_cfg.Transformer.hidden_dim, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4))
 
 
     def init_weights(self, weight_init='xavier'):
@@ -581,7 +542,7 @@ class DENet2Head(RoIHeadTemplate):
 
         return src_gemoetry
 
-    def trajectories_auxiliary_branch1(self,trajectory_rois):
+    def trajectories_auxiliary_branch(self,trajectory_rois):
 
         time_stamp = torch.ones([trajectory_rois.shape[0],trajectory_rois.shape[1],trajectory_rois.shape[2],1]).cuda()
         for i in range(time_stamp.shape[1]):
@@ -604,36 +565,8 @@ class DENet2Head(RoIHeadTemplate):
 
         batch_rcnn = box_seq.shape[0]*box_seq.shape[2]
 
-        box_reg, box_feat, _ = self.seqboxembed1(box_seq.permute(0,2,3,1).contiguous().view(batch_rcnn,box_seq.shape[-1],box_seq.shape[1]))
+        box_reg, box_feat, _ = self.seqboxembed(box_seq.permute(0,2,3,1).contiguous().view(batch_rcnn,box_seq.shape[-1],box_seq.shape[1]))
         
-        return box_reg, box_feat
-
-    def trajectories_auxiliary_branch2(self, trajectory_rois):
-
-        time_stamp = torch.ones(
-            [trajectory_rois.shape[0], trajectory_rois.shape[1], trajectory_rois.shape[2], 1]).cuda()
-        for i in range(time_stamp.shape[1]):
-            time_stamp[:, i, :] = i * 0.1
-
-        box_seq = torch.cat([trajectory_rois[:, :, :, :7], time_stamp], -1)
-
-        box_seq[:, :, :, 0:3] = box_seq[:, :, :, 0:3] - box_seq[:, 0:1, :, 0:3]
-
-        roi_ry = box_seq[:, :, :, 6] % (2 * np.pi)
-        roi_ry_t0 = roi_ry[:, 0]
-        roi_ry_t0 = roi_ry_t0.repeat(1, box_seq.shape[1])
-
-        box_seq = common_utils.rotate_points_along_z(
-            points=box_seq.view(-1, 1, box_seq.shape[-1]), angle=-roi_ry_t0.view(-1)
-        ).view(box_seq.shape[0], box_seq.shape[1], -1, box_seq.shape[-1])
-
-        box_seq[:, :, :, 6] = 0
-
-        batch_rcnn = box_seq.shape[0] * box_seq.shape[2]
-
-        box_reg, box_feat, _ = self.seqboxembed2(
-            box_seq.permute(0, 2, 3, 1).contiguous().view(batch_rcnn, box_seq.shape[-1], box_seq.shape[1]))
-
         return box_reg, box_feat
 
     def crop_current_frame_points(self, src, batch_size, trajectory_rois, num_rois, batch_dict):
@@ -658,8 +591,8 @@ class DENet2Head(RoIHeadTemplate):
             empty_flag = sampled_mask.sum(-1) == 0
             src[bs_idx, empty_flag] = 0
 
-        src = src.repeat([1, 1, trajectory_rois.shape[1], 1])
-        # src = torch.concat([src,torch.zeros_like(src).repeat(1,1,trajectory_rois.shape[1]-1,1)],dim=-2)
+        # src = src.repeat([1, 1, trajectory_rois.shape[1], 1])
+        src = torch.concat([src,torch.zeros_like(src).repeat(1,1,trajectory_rois.shape[1]-1,1)],dim=-2)
         return src
 
     def crop_previous_frame_points(self, src, batch_size, trajectory_rois, num_rois, valid_length, batch_dict):
@@ -746,27 +679,22 @@ class DENet2Head(RoIHeadTemplate):
         valid_length[:, 0] = 1
         num_frames = batch_dict['num_points_all'].shape[1]
         for i in range(1, num_frames):
-            # trajectory_rois[:,i,:,:2]=trajectory_rois[:,0,:,:2]+trajectory_rois[:,0,:,7:9]*i
+            trajectory_rois[:,i,:,:2]=trajectory_rois[:,0,:,:2]+trajectory_rois[:,0,:,7:9]*i
             frame = torch.zeros_like(cur_batch_boxes)
             frame[:, :, 0:2] = trajectory_rois[:, i - 1, :, 0:2] + trajectory_rois[:, i - 1, :, 7:9]
             frame[:, :, 2:] = trajectory_rois[:, i - 1, :, 2:]
-            # frame_back = torch.zeros_like(proposals_list[:,0,:,:])
-            # frame_back[:,:,0:2] = proposals_list[:,i,:,0:2]-proposals_list[:,i,:,7:9]
-            # frame_back[:,:,2:] = proposals_list[:,i,:,2:]
 
             for bs_idx in range(batch_dict['batch_size']):
                 iou3d = iou3d_nms_utils.boxes_iou3d_gpu(frame.cuda()[bs_idx, :, :7],
                                                         proposals_list.cuda()[bs_idx, i, :, :7]).to(device)
-                # iou3d_back = iou3d_nms_utils.boxes_iou3d_gpu(trajectory_rois[bs_idx,i-1,:,:7],frame_back[bs_idx,:,:7]).to(device)
-
 
                 max_overlaps, traj_assignment = torch.max(iou3d, dim=1)
-                # max_overlaps_back,traj_assignment_traj = torch.max(iou3d_back,dim=1)
+
                 fg_inds = ((max_overlaps >= 0.5)).nonzero().view(-1)
 
                 valid_length[bs_idx, i, fg_inds] = 1
 
-                trajectory_rois[bs_idx, i, fg_inds, :] = proposals_list[bs_idx, i, traj_assignment[fg_inds]]
+                # trajectory_rois[bs_idx, i, fg_inds, :] = proposals_list[bs_idx, i, traj_assignment[fg_inds]]
 
         batch_dict['valid_length'] = valid_length
 
@@ -862,13 +790,11 @@ class DENet2Head(RoIHeadTemplate):
             self.voxel_sampler_traj = build_voxel_sampler_traj(rois.device)
         src1 = self.voxel_sampler(batch_size, backward_rois, num_sample, batch_dict)
 
+        # src2 = rois.new_zeros(batch_size, num_rois, num_sample, 5)
         src2 = self.voxel_sampler_traj(batch_size, trajectory_rois, num_sample, batch_dict,valid_length)
+
         # src1 = self.voxel_sampler(batch_size,backward_rois,num_sample,batch_dict)
         # src2[~valid_length]=0
-
-        # src2 = src1.clone()
-        trajectory_rois = backward_rois.clone()
-
         src1 = src1.view(batch_size * num_rois, -1, src1.shape[-1])
         src2 = src2.view(batch_size * num_rois,-1,src2.shape[-1])
         xyz1 = src1[:, :, :3]
@@ -881,51 +807,49 @@ class DENet2Head(RoIHeadTemplate):
         
         src1 = src_backward_feature + src_motion_feature1
         src2 = src_trajectory_feature+src_motion_feature2
-
+        # src = []
+        # for i in range(num_frames):
+        #     src2[:,num_sample*i:num_sample*(i+1)] = src2[:,num_sample*i:num_sample*(i+1)]*valid_length[:,i,:].reshape(batch_size*num_rois,1,1).repeat(1,num_sample,1)
+        #
+        #     src.append(self.cross[i-1](src1[:,num_sample*i:num_sample*(i+1)],src2[:,num_sample*i:num_sample*(i+1)],xyz1[:,num_sample*i:num_sample*(i+1)],xyz2[:,num_sample*i:num_sample*(i+1)]))
+        # src = torch.concat(src,dim=1)
         # num_rois_all = src1.shape[0]
         # src = src_geometry_feature + src_motion_feature
         # src = self.conv(torch.concat([src_trajectory_feature,src_backward_feature],dim=-1).permute(0,2,1)).permute(0,2,1)
-        box_reg1, feat_box1 = self.trajectories_auxiliary_branch1(backward_rois)
-        box_reg2,feat_box2 = self.trajectories_auxiliary_branch2(trajectory_rois)
+        box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
+        
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK',None):
             src1[empty_mask.view(-1)] = 0
             src2[empty_mask.view(-1)] = 0
-            # src2[empty_mask.view(-1)] = 0
-    
-        hs1, tokens1 = self.transformer1(src1,pos=None)
-        hs2,tokens2 = self.transformer2(src2,pos=None)
+        src = torch.concat([src1,src2],dim=1)
+        xyz = torch.concat([xyz1,xyz2],dim=1)
+
+        hs, tokens = self.transformer(src,pos = xyz)
         # hs2,tokens2 = self.transformer2(src2,pos=None)
         # hs = hs[:,:num_rois_all]
         
-        point_cls_list1 = []
-        point_cls_list2 = []
-        point_reg_list1 = []
-        point_reg_list2 = []
+        point_cls_list = []
+        point_reg_list = []
 
         for i in range(self.num_enc_layer):
-            point_cls_list1.append(self.class_embed1[0](tokens1[i][0]))
-            point_cls_list2.append(self.class_embed2[0](tokens2[i][0]))
-        for i in range(hs1.shape[0]):
+            point_cls_list.append(self.class_embed[0](tokens[i][0]))
+
+        for i in range(hs.shape[0]//2):
             for j in range(self.num_enc_layer):
                 # tokens1[j][i] = tokens1[j][i]+tokens2[j][i]
-                point_reg_list1.append(self.bbox_embed1[i](tokens1[j][i]))
-                point_reg_list2.append(self.bbox_embed2[i](tokens2[j][i]))
+                point_reg_list.append(self.bbox_embed[i](tokens[j][i+num_frames]))
                 # point_reg_list.append(self.bbox_embed[i](tokens[j][i]))
 
-        point_cls1 = torch.cat(point_cls_list1,0)
-        point_cls2 = torch.cat(point_cls_list2,0)
-        point_reg1 = torch.cat(point_reg_list1,0)
-        point_reg2 = torch.cat(point_reg_list2,0)
-        hs1 = hs1.permute(1,0,2).reshape(hs1.shape[1],-1)
-        hs2 = hs2.permute(1,0,2).reshape(hs2.shape[1],-1)
-        # hs2 = hs2.permute(1,0,2).reshape(hs2.shape[1],-1)
-        joint_reg1 = self.jointembed1(torch.cat([hs1,feat_box1],-1))
-        joint_reg2 = self.jointembed2(torch.cat([hs2,feat_box2],-1))
+        point_cls = torch.cat(point_cls_list,0)
 
-        rcnn_cls1 = point_cls1
-        rcnn_cls2 = point_cls2
-        rcnn_reg1 = joint_reg1
-        rcnn_reg2 = joint_reg2
+        point_reg = torch.cat(point_reg_list,0)
+        hs = hs[num_frames:].permute(1,0,2).reshape(hs.shape[1],-1)
+        # hs2 = hs2.permute(1,0,2).reshape(hs2.shape[1],-1)
+        joint_reg = self.jointembed(torch.cat([hs,feat_box],-1))
+
+        rcnn_cls = point_cls
+        rcnn_reg = joint_reg
+
         if not self.training:
             rcnn_cls = rcnn_cls[-rcnn_cls.shape[0]//self.num_enc_layer:]
             batch_cls_preds, batch_box_preds = self.generate_predicted_boxes(
@@ -971,36 +895,26 @@ class DENet2Head(RoIHeadTemplate):
 
         else:
             targets_dict['batch_size'] = batch_size
-            targets_dict['rcnn_cls1'] = rcnn_cls1
-            targets_dict['rcnn_cls2'] = rcnn_cls2
-            targets_dict['rcnn_reg1'] = rcnn_reg1
-            targets_dict['rcnn_reg2'] = rcnn_reg2
-            targets_dict['box_reg1'] = box_reg1
-            targets_dict['box_reg2'] = box_reg2
-            targets_dict['point_reg1'] = point_reg1
-            targets_dict['point_reg2'] = point_reg2
-            targets_dict['point_cls1'] = point_cls1
-            targets_dict['point_cls2'] = point_cls2
+            targets_dict['rcnn_cls'] = rcnn_cls
+            targets_dict['rcnn_reg'] = rcnn_reg
+            targets_dict['box_reg'] = box_reg
+            targets_dict['point_reg'] = point_reg
+            targets_dict['point_cls'] = point_cls
             self.forward_ret_dict = targets_dict
 
         return batch_dict
 
     def get_loss(self, tb_dict=None):
         tb_dict = {} if tb_dict is None else tb_dict
-        rcnn_loss1 = 0
-        rcnn_loss2 = 0
-        rcnn_loss_cls1,rcnn_loss_cls2, cls_tb_dict = self.get_box_cls_layer_loss(self.forward_ret_dict)
-        rcnn_loss1 += rcnn_loss_cls1
-        rcnn_loss2 +=rcnn_loss_cls2
+        rcnn_loss = 0
+        rcnn_loss_cls, cls_tb_dict = self.get_box_cls_layer_loss(self.forward_ret_dict)
+        rcnn_loss += rcnn_loss_cls
         tb_dict.update(cls_tb_dict)
 
-        rcnn_loss_reg1,rcnn_loss_reg2, reg_tb_dict = self.get_box_reg_layer_loss(self.forward_ret_dict)
-        rcnn_loss1 += rcnn_loss_reg1
-        rcnn_loss2+=  rcnn_loss_reg2
+        rcnn_loss_reg, reg_tb_dict = self.get_box_reg_layer_loss(self.forward_ret_dict)
+        rcnn_loss += rcnn_loss_reg
         tb_dict.update(reg_tb_dict)
-        tb_dict['rcnn_loss1'] = rcnn_loss1
-        tb_dict['rcnn_loss2'] = rcnn_loss2
-        rcnn_loss = rcnn_loss1+rcnn_loss2
+        tb_dict['rcnn_loss'] = rcnn_loss.item()
         return rcnn_loss, tb_dict
     
     def get_box_reg_layer_loss(self, forward_ret_dict):
@@ -1011,8 +925,8 @@ class DENet2Head(RoIHeadTemplate):
         gt_boxes3d_ct = forward_ret_dict['gt_of_rois'][..., 0:code_size]
         gt_of_rois_src = forward_ret_dict['gt_of_rois_src'][..., 0:code_size].view(-1, code_size)
 
-        rcnn_reg1 = forward_ret_dict['rcnn_reg1']
-        rcnn_reg2 = forward_ret_dict['rcnn_reg2']
+        rcnn_reg = forward_ret_dict['rcnn_reg'] 
+
         roi_boxes3d = forward_ret_dict['rois']
 
         rcnn_batch_size = gt_boxes3d_ct.view(-1, code_size).shape[0]
@@ -1030,56 +944,32 @@ class DENet2Head(RoIHeadTemplate):
             reg_targets = self.box_coder.encode_torch(
                 gt_boxes3d_ct.view(rcnn_batch_size, code_size), rois_anchor
                 )
-            rcnn_loss_reg1 = self.reg_loss_func(
-                rcnn_reg1.view(rcnn_batch_size, -1).unsqueeze(dim=0),
+            rcnn_loss_reg = self.reg_loss_func(
+                rcnn_reg.view(rcnn_batch_size, -1).unsqueeze(dim=0),
                 reg_targets.unsqueeze(dim=0),
             )  # [B, M, 7]
-            rcnn_loss_reg1 = (rcnn_loss_reg1.view(rcnn_batch_size, -1) * fg_mask.unsqueeze(dim=-1).float()).sum() / max(fg_sum, 1)
-            rcnn_loss_reg1 = rcnn_loss_reg1 * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight']*loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][0]
+            rcnn_loss_reg = (rcnn_loss_reg.view(rcnn_batch_size, -1) * fg_mask.unsqueeze(dim=-1).float()).sum() / max(fg_sum, 1)
+            rcnn_loss_reg = rcnn_loss_reg * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight']*loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][0]
 
-            rcnn_loss_reg2 = self.reg_loss_func(
-                rcnn_reg2.view(rcnn_batch_size, -1).unsqueeze(dim=0),
-                reg_targets.unsqueeze(dim=0),
-            )  # [B, M, 7]
-            rcnn_loss_reg2 = (rcnn_loss_reg2.view(rcnn_batch_size, -1) * fg_mask.unsqueeze(dim=-1).float()).sum() / max(
-                fg_sum, 1)
-            rcnn_loss_reg2 = rcnn_loss_reg2 * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight'] * \
-                             loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][0]
-            # rcnn_loss_reg = (rcnn_loss_reg1+rcnn_loss_reg2)
-            tb_dict['rcnn_loss_reg1'] = rcnn_loss_reg1.item()
-            tb_dict['rcnn_loss_reg2'] = rcnn_loss_reg2.item()
+            tb_dict['rcnn_loss_reg'] = rcnn_loss_reg.item()
   
             if self.model_cfg.USE_AUX_LOSS:
-                point_reg1 = forward_ret_dict['point_reg1']
-                point_reg2 = forward_ret_dict['point_reg2']
+                point_reg = forward_ret_dict['point_reg']
 
-                groups = point_reg1.shape[0]//reg_targets.shape[0]
+                groups = point_reg.shape[0]//reg_targets.shape[0]
                 if groups != 1 :
-                    point_loss_regs1 = 0
-                    point_loss_regs2 = 0
+                    point_loss_regs = 0
                     slice = reg_targets.shape[0]
                     for i in range(groups):
-                        point_loss_reg1 = self.reg_loss_func(
-                        point_reg1[i*slice:(i+1)*slice].view(slice, -1).unsqueeze(dim=0),reg_targets.unsqueeze(dim=0),)
-                        point_loss_reg1 = (point_loss_reg1.view(slice, -1) * fg_mask.unsqueeze(dim=-1).float()).sum() / max(fg_sum, 1)
-                        point_loss_reg1 = point_loss_reg1 * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight']*loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][2]
-
-                        point_loss_reg2 = self.reg_loss_func(
-                        point_reg2[i*slice:(i+1)*slice].view(slice, -1).unsqueeze(dim=0),reg_targets.unsqueeze(dim=0),)
-                        point_loss_reg2 = (point_loss_reg2.view(slice, -1) * fg_mask.unsqueeze(
-                            dim=-1).float()).sum() / max(fg_sum, 1)
-                        point_loss_reg2 = point_loss_reg2 * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight'] * \
-                                          loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][2]
-
-                        point_loss_regs1 += point_loss_reg1
-                        point_loss_regs2 +=point_loss_reg2
-                    point_loss_regs1 = point_loss_regs1 / groups
-                    point_loss_regs2 = point_loss_regs2 / groups
-                    # point_loss_regs = point_loss_regs1+point_loss_regs2
-                    tb_dict['point_loss_reg1'] = point_loss_regs1.item()
-                    tb_dict['point_loss_reg2'] = point_loss_regs2.item()
-                    rcnn_loss_reg1 += point_loss_regs1
-                    rcnn_loss_reg2 += point_loss_regs2
+                        point_loss_reg = self.reg_loss_func(
+                        point_reg[i*slice:(i+1)*slice].view(slice, -1).unsqueeze(dim=0),reg_targets.unsqueeze(dim=0),) 
+                        point_loss_reg = (point_loss_reg.view(slice, -1) * fg_mask.unsqueeze(dim=-1).float()).sum() / max(fg_sum, 1)
+                        point_loss_reg = point_loss_reg * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight']*loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][2]
+                        
+                        point_loss_regs += point_loss_reg
+                    point_loss_regs = point_loss_regs / groups
+                    tb_dict['point_loss_reg'] = point_loss_regs.item()
+                    rcnn_loss_reg += point_loss_regs 
 
                 else:
                     point_loss_reg = self.reg_loss_func(point_reg.view(rcnn_batch_size, -1).unsqueeze(dim=0),reg_targets.unsqueeze(dim=0),)  
@@ -1088,27 +978,16 @@ class DENet2Head(RoIHeadTemplate):
                     tb_dict['point_loss_reg'] = point_loss_reg.item()
                     rcnn_loss_reg += point_loss_reg
 
-                seqbox_reg1 = forward_ret_dict['box_reg1']
-                seqbox_loss_reg1 = self.reg_loss_func(seqbox_reg1.view(rcnn_batch_size, -1).unsqueeze(dim=0),reg_targets.unsqueeze(dim=0),)
-                seqbox_loss_reg1 = (seqbox_loss_reg1.view(rcnn_batch_size, -1) * fg_mask.unsqueeze(dim=-1).float()).sum() / max(fg_sum, 1)
-                seqbox_loss_reg1 = seqbox_loss_reg1 * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight']*loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][1]
-                seqbox_reg2 = forward_ret_dict['box_reg2']
-                seqbox_loss_reg2 = self.reg_loss_func(seqbox_reg2.view(rcnn_batch_size, -1).unsqueeze(dim=0),
-                                                      reg_targets.unsqueeze(dim=0), )
-                seqbox_loss_reg2 = (seqbox_loss_reg2.view(rcnn_batch_size, -1) * fg_mask.unsqueeze(
-                    dim=-1).float()).sum() / max(fg_sum, 1)
-                seqbox_loss_reg2 = seqbox_loss_reg2 * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight'] * \
-                                   loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][1]
-                # seqbox_loss_reg = (seqbox_loss_reg1+seqbox_loss_reg2)
-                tb_dict['seqbox_loss_reg1'] = seqbox_loss_reg1.item()
-                tb_dict['seqbox_loss_reg2'] = seqbox_loss_reg2.item()
-                rcnn_loss_reg1 += seqbox_loss_reg1
-                rcnn_loss_reg2 +=seqbox_loss_reg2
+                seqbox_reg = forward_ret_dict['box_reg']  
+                seqbox_loss_reg = self.reg_loss_func(seqbox_reg.view(rcnn_batch_size, -1).unsqueeze(dim=0),reg_targets.unsqueeze(dim=0),)
+                seqbox_loss_reg = (seqbox_loss_reg.view(rcnn_batch_size, -1) * fg_mask.unsqueeze(dim=-1).float()).sum() / max(fg_sum, 1)
+                seqbox_loss_reg = seqbox_loss_reg * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight']*loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][1]
+                tb_dict['seqbox_loss_reg'] = seqbox_loss_reg.item()
+                rcnn_loss_reg += seqbox_loss_reg
 
             if loss_cfgs.CORNER_LOSS_REGULARIZATION and fg_sum > 0:
 
-                fg_rcnn_reg1 = rcnn_reg1.view(rcnn_batch_size, -1)[fg_mask]
-                fg_rcnn_reg2 = rcnn_reg2.view(rcnn_batch_size, -1)[fg_mask]
+                fg_rcnn_reg = rcnn_reg.view(rcnn_batch_size, -1)[fg_mask]
                 fg_roi_boxes3d = roi_boxes3d[:,:,:7].contiguous().view(-1, code_size)[fg_mask]
 
                 fg_roi_boxes3d = fg_roi_boxes3d.view(1, -1, code_size)
@@ -1116,76 +995,54 @@ class DENet2Head(RoIHeadTemplate):
                 roi_ry = fg_roi_boxes3d[:, :, 6].view(-1)
                 roi_xyz = fg_roi_boxes3d[:, :, 0:3].view(-1, 3)
                 batch_anchors[:, :, 0:3] = 0
-                rcnn_boxes3d1 = self.box_coder.decode_torch(
-                    fg_rcnn_reg1.view(batch_anchors.shape[0], -1, code_size), batch_anchors
-                ).view(-1, code_size)
-                rcnn_boxes3d2 = self.box_coder.decode_torch(
-                    fg_rcnn_reg2.view(batch_anchors.shape[0], -1, code_size), batch_anchors
+                rcnn_boxes3d = self.box_coder.decode_torch(
+                    fg_rcnn_reg.view(batch_anchors.shape[0], -1, code_size), batch_anchors
                 ).view(-1, code_size)
 
-                rcnn_boxes3d1 = common_utils.rotate_points_along_z(
-                    rcnn_boxes3d1.unsqueeze(dim=1), roi_ry
+                rcnn_boxes3d = common_utils.rotate_points_along_z(
+                    rcnn_boxes3d.unsqueeze(dim=1), roi_ry
                 ).squeeze(dim=1)
-                rcnn_boxes3d2 = common_utils.rotate_points_along_z(
-                    rcnn_boxes3d2.unsqueeze(dim=1), roi_ry
-                ).squeeze(dim=1)
-
-                rcnn_boxes3d1[:, 0:3] += roi_xyz
-                rcnn_boxes3d2[:, 0:3] += roi_xyz
+                rcnn_boxes3d[:, 0:3] += roi_xyz
 
                 corner_loss_func = loss_utils.get_corner_loss_lidar
 
-                loss_corner1 = corner_loss_func(
-                    rcnn_boxes3d1[:, 0:7],
+                loss_corner = corner_loss_func(
+                    rcnn_boxes3d[:, 0:7],
                     gt_of_rois_src[fg_mask][:, 0:7])
 
-                loss_corner1 = loss_corner1.mean()
-                loss_corner1 = loss_corner1 * loss_cfgs.LOSS_WEIGHTS['rcnn_corner_weight']
+                loss_corner = loss_corner.mean()
+                loss_corner = loss_corner * loss_cfgs.LOSS_WEIGHTS['rcnn_corner_weight']
 
-                loss_corner2 = corner_loss_func(
-                    rcnn_boxes3d2[:, 0:7],
-                    gt_of_rois_src[fg_mask][:, 0:7])
-
-                loss_corner2 = loss_corner2.mean()
-                loss_corner2 = loss_corner2 * loss_cfgs.LOSS_WEIGHTS['rcnn_corner_weight']
-                # loss_corner = (loss_corner1+loss_corner2)
-                rcnn_loss_reg1 += loss_corner1
-                rcnn_loss_reg2 +=loss_corner2
-                tb_dict['rcnn_loss_corner1'] = loss_corner1.item()
-                tb_dict['rcnn_loss_corner2'] = loss_corner2.item()
+                rcnn_loss_reg += loss_corner
+                tb_dict['rcnn_loss_corner'] = loss_corner.item()
 
         else:
             raise NotImplementedError
 
-        return rcnn_loss_reg1,rcnn_loss_reg2, tb_dict
+        return rcnn_loss_reg, tb_dict
 
     def get_box_cls_layer_loss(self, forward_ret_dict):
         loss_cfgs = self.model_cfg.LOSS_CONFIG
-        rcnn_cls1 = forward_ret_dict['rcnn_cls1']
-        rcnn_cls2 = forward_ret_dict['rcnn_cls2']
+        rcnn_cls = forward_ret_dict['rcnn_cls']
         rcnn_cls_labels = forward_ret_dict['rcnn_cls_labels'].view(-1)
 
         if loss_cfgs.CLS_LOSS == 'BinaryCrossEntropy':
 
-            rcnn_cls_flat1 = rcnn_cls1.view(-1)
-            rcnn_cls_flat2 = rcnn_cls2.view(-1)
-            groups = rcnn_cls_flat1.shape[0] // rcnn_cls_labels.shape[0]
+            rcnn_cls_flat = rcnn_cls.view(-1)
+
+            groups = rcnn_cls_flat.shape[0] // rcnn_cls_labels.shape[0]
             if groups != 1:
-                rcnn_loss_cls1 = 0
-                rcnn_loss_cls2 = 0
+                rcnn_loss_cls = 0
                 slice = rcnn_cls_labels.shape[0]
                 for i in range(groups):
-                    batch_loss_cls1 = F.binary_cross_entropy(torch.sigmoid(rcnn_cls_flat1[i*slice:(i+1)*slice]),
+                    batch_loss_cls = F.binary_cross_entropy(torch.sigmoid(rcnn_cls_flat[i*slice:(i+1)*slice]), 
                                      rcnn_cls_labels.float(), reduction='none')
-                    batch_loss_cls2 = F.binary_cross_entropy(torch.sigmoid(rcnn_cls_flat2[i * slice:(i + 1) * slice]),
-                                                             rcnn_cls_labels.float(), reduction='none')
 
                     cls_valid_mask = (rcnn_cls_labels >= 0).float() 
-                    rcnn_loss_cls1 = rcnn_loss_cls1 + (batch_loss_cls1 * cls_valid_mask).sum() / torch.clamp(cls_valid_mask.sum(), min=1.0)
-                    rcnn_loss_cls2 = rcnn_loss_cls2 + (batch_loss_cls2 * cls_valid_mask).sum() / torch.clamp(cls_valid_mask.sum(), min=1.0)
+                    rcnn_loss_cls = rcnn_loss_cls + (batch_loss_cls * cls_valid_mask).sum() / torch.clamp(cls_valid_mask.sum(), min=1.0)
 
-                rcnn_loss_cls1 = rcnn_loss_cls1 / groups
-                rcnn_loss_cls2 = rcnn_loss_cls2/groups
+                rcnn_loss_cls = rcnn_loss_cls / groups
+            
             else:
 
                 batch_loss_cls = F.binary_cross_entropy(torch.sigmoid(rcnn_cls_flat), rcnn_cls_labels.float(), reduction='none')
@@ -1201,11 +1058,10 @@ class DENet2Head(RoIHeadTemplate):
         else:
             raise NotImplementedError
 
-        rcnn_loss_cls1 = rcnn_loss_cls1 * loss_cfgs.LOSS_WEIGHTS['rcnn_cls_weight']
-        rcnn_loss_cls2 = rcnn_loss_cls2 * loss_cfgs.LOSS_WEIGHTS['rcnn_cls_weight']
-        # rcnn_loss_cls = rcnn_loss_cls1+rcnn_loss_cls2
-        tb_dict = {'rcnn_loss_cls1': rcnn_loss_cls1.item(),'rcnn_loss_cls2': rcnn_loss_cls2.item()}
-        return rcnn_loss_cls1,rcnn_loss_cls2, tb_dict
+        rcnn_loss_cls = rcnn_loss_cls * loss_cfgs.LOSS_WEIGHTS['rcnn_cls_weight'] 
+
+        tb_dict = {'rcnn_loss_cls': rcnn_loss_cls.item()}
+        return rcnn_loss_cls, tb_dict
 
 
     def generate_predicted_boxes(self, batch_size, rois, cls_preds=None, box_preds=None):

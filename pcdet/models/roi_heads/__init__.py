@@ -10,6 +10,7 @@ from .velocity_head import VelocityHead
 from .denet_head import DENetHead
 from .msf_head import MSFHead
 from .denet_head2 import DENet2Head
+from .denet_head3 import DENet3Head
 __all__ = {
     'RoIHeadTemplate': RoIHeadTemplate,
     'PartA2FCHead': PartA2FCHead,
@@ -22,5 +23,6 @@ __all__ = {
     'VelocityHead': VelocityHead,
     'DENetHead': DENetHead,
     'MSFHead': MSFHead,
-    'DENet2Head': DENet2Head
+    'DENet2Head': DENet2Head,
+    'DENet3Head':DENet3Head,
 }
