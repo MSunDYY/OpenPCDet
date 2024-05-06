@@ -850,6 +850,7 @@ class DENet2Head(RoIHeadTemplate):
             empty_mask = batch_dict['roi_boxes'][:,:,:6].sum(-1)==0
             valid_length = targets_dict['valid_length']
         else:
+            valid_length = batch_dict['valid_length'].to(device)
             empty_mask = batch_dict['roi_boxes'][:,:,:6].sum(-1)==0
             batch_dict['valid_traj_mask'] = ~empty_mask
             batch_dict['roi_boxes'] = trajectory_rois[:,0]
