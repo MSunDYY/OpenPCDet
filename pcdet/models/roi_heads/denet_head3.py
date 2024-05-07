@@ -349,7 +349,9 @@ class DENet3Head(RoIHeadTemplate):
         self.up_dimension_traj_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
         self.up_dimension_back_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
 
-        
+        self.pos_emb = nn.Sequential(
+            nn.Linear(3,hidden_dim),
+        )
         self.transformer = build_transformer3(model_cfg.Transformer)
         # self.transformer2 = build_transformer(model_cfg.Transformer)
         self.voxel_sampler = None
@@ -829,7 +831,7 @@ class DENet3Head(RoIHeadTemplate):
             src1[empty_mask.view(-1)] = 0
             src2[empty_mask.view(-1)] = 0
         src = torch.concat([src1,src2],dim=1)
-        xyz = torch.concat([xyz1,xyz2],dim=1)
+        xyz = torch.concat([self.pos_emb(xyz1),self.pos_emb(xyz2)],dim=1)
 
         hs, tokens = self.transformer(src,pos = xyz)
         # hs2,tokens2 = self.transformer2(src2,pos=None)

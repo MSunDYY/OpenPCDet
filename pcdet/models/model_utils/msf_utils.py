@@ -627,9 +627,9 @@ class VoxelSampler_traj(nn.Module):
                 key_points = key_points[torch.randperm(len(key_points)), :]
 
                 key_points = self.cylindrical_pool(key_points, cur_frame_boxes, num_sample, gamma)
-                # if idx!=0:
-                #     key_points[valid_length[bs_idx,idx]==0] = src_points[0][valid_length[bs_idx,idx]==0]
-                #     key_points[valid_length[bs_idx,idx]==0][:,:,:2]+=+cur_frame_boxes[valid_length[bs_idx,idx]==0][:,None,7:9]*idx
+                if idx!=0:
+                    key_points[valid_length[bs_idx,idx]==0] = src_points[0][valid_length[bs_idx,idx]==0]
+                    key_points[valid_length[bs_idx,idx]==0][:,:,:2]+=cur_frame_boxes[valid_length[bs_idx,idx]==0][:,None,7:9]*idx
                 src_points.append(key_points)
 
             src.append(torch.stack(src_points))

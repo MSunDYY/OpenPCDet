@@ -76,8 +76,8 @@ class BioCrossAttention(nn.Module):
         self.grid_size = grid_size
 
     def forward(self, src1,src2,xyz1,xyz2,return_xyz=False):
-        xyz1_emb = self.pos_linear(xyz1)
-        xyz2_emb = self.pos_linear(xyz2)
+        xyz1_emb = xyz1
+        xyz2_emb = xyz2
         # src1 = src1.permute(1,0,2)
         # src2 = src2.permute(1,0,2)
         src1_= self.mixer1(src1+xyz1_emb, src2+xyz2_emb, src2)[0]
@@ -434,7 +434,7 @@ class TransformerEncoderLayer(nn.Module):
             # src_cur = torch.concat([src1[:,:num_rois*(self.num_groups-1)],src2[:,:num_rois*(self.num_groups-1)]],dim=1)
             # src_pre = torch.concat([src1[:,num_rois:],src2[:,num_rois:]],dim=1)
             # src_cur[:,:,-5:-3]+=src_cur[:,:,-2:]
-            src_1,src_2 = self.bio_cross_atten(src1[:,:,:-3],src2[:,:,:-3],src1[:,:,-3:],src2[:,:,-3:])
+            src_1,src_2 = self.bio_cross_atten(src1[:,:,:-self.config.hidden_dim],src2[:,:,:-self.config.hidden_dim],src1[:,:,-self.config.hidden_dim:],src2[:,:,-self.config.hidden_dim:])
             src_all_groups = src_1.chunk(self.num_groups,1) + src_2.chunk(self.num_groups,1)
             if self.layer_count==1:
                 indice = [0,4,1,5,2,6,3,7]
