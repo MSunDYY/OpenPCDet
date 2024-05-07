@@ -62,7 +62,7 @@ MODEL:
 
     ROI_HEAD:
         NAME: DENet3Head
-        TRANS_INPUT: 256
+        TRANS_INPUT: 128
         CLASS_AGNOSTIC: True
         USE_BOX_ENCODING:
             ENABLED: True 
@@ -85,11 +85,11 @@ MODEL:
             
 
         Transformer:
-            num_lidar_points: 108
+            num_lidar_points: 128
             pos_hidden_dim: 64
             enc_layers: 3
             dim_feedforward: 512
-            hidden_dim: 256 #equal to ROI_HEAD.TRANS_INPUT
+            hidden_dim: 128 #equal to ROI_HEAD.TRANS_INPUT
             dropout: 0.1
             nheads: 4
             pre_norm: False
