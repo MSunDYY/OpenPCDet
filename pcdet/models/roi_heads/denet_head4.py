@@ -863,7 +863,7 @@ class DENet4Head(RoIHeadTemplate):
         for i in range(self.num_enc_layer):
             point_cls_list.append(self.class_embed[0](tokens1[i][0]))
 
-        for i in range(hs.shape[0]):
+        for i in range(hs2.shape[0]):
             for j in range(self.num_enc_layer):
                 # tokens1[j][i] = tokens1[j][i]+tokens2[j][i]
                 point_reg_list.append(self.bbox_embed[i](tokens2[j][i]))
