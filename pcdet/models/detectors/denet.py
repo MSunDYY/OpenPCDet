@@ -161,9 +161,9 @@ class DENet(Detector3DTemplate):
                     final_boxes  = torch.cat([final_boxes_car,final_boxes_pedcyc],0)
 
                 #########  Car DONOT Using NMS ###### 
-
+            batch_dict['rois'] = batch_dict['roi_boxes']
             recall_dict = self.generate_recall_record(
-                box_preds=final_boxes if 'rois' not in batch_dict else src_box_preds,
+                box_preds=final_boxes,
                 recall_dict=recall_dict, batch_index=index, data_dict=batch_dict,
                 thresh_list=post_process_cfg.RECALL_THRESH_LIST
             )

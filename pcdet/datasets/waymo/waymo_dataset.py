@@ -493,7 +493,8 @@ class WaymoDataset(DatasetTemplate):
         }
 
         if self.dataset_cfg.get('TRANSFORMED_POINTS',False):
-            file_name = self.root_path/'waymo_processed_data_v0_5_0_full'/sequence_name/('%04d.npy'%sample_idx)
+            data_tag = 'waymo_processed_data_v0_5_0_full' if self.training else 'waymo_processed_data_v0_5_0_full_val'
+            file_name = self.root_path/data_tag/sequence_name/('%04d.npy'%sample_idx)
             points = np.load(file_name)
         else:
             if self.use_shared_memory and index < self.shared_memory_file_limit:
@@ -729,7 +730,7 @@ class WaymoDataset(DatasetTemplate):
     def create_transform_database(self,info_path,save_path):
         with open(info_path, 'rb') as f:
             infos = pickle.load(f)
-        save_path = save_path/'waymo_processed_data_v0_5_0_full'
+        save_path = save_path/'waymo_processed_data_v0_5_0_full_val'
         save_path.mkdir(parents=True,exist_ok=True)
         point_offset_cnt = 0
         stacked_gt_points = []

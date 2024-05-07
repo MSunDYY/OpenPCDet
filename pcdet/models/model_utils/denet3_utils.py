@@ -75,13 +75,13 @@ class BioCrossAttention(nn.Module):
         self.config = config
         self.grid_size = grid_size
 
-    def forward(self, src1,src2,xyz1,xyz2):
-        xyz1 = self.pos_linear(xyz1)
-        xyz2 = self.pos_linear(xyz2)
+    def forward(self, src1,src2,xyz1,xyz2,return_xyz=False):
+        xyz1_emb = self.pos_linear(xyz1)
+        xyz2_emb = self.pos_linear(xyz2)
         # src1 = src1.permute(1,0,2)
         # src2 = src2.permute(1,0,2)
-        src1_= self.mixer1(src1+xyz1, src2+xyz2, src2)[0]
-        src2_ = self.mixer2(src2+xyz2,src1+xyz1,src1)[0]
+        src1_= self.mixer1(src1+xyz1_emb, src2+xyz2_emb, src2)[0]
+        src2_ = self.mixer2(src2+xyz2_emb,src1+xyz1_emb,src1)[0]
         src1 = src1 + self.dropout(src1_)
         src2 = src2 + self.dropout(src2_)
         src_mixer1 = self.norm(src1)
@@ -91,8 +91,10 @@ class BioCrossAttention(nn.Module):
         src_mixer2 = src_mixer2 + self.ffn2(src_mixer2)
         src_mixer1 = self.norm_channel(src_mixer1)
         src_mixer2 = self.norm_channel(src_mixer2)
-        return src_mixer1,src_mixer2
-
+        if return_xyz:
+            return torch.concat([src_mixer1,xyz1],dim=-1),torch.concat([src_mixer2,xyz2],dim=-1)
+        else:
+            return src_mixer1,src_mixer2
 class PointNetfeat(nn.Module):
     def __init__(self, input_dim, x=1,outchannel=512):
         super(PointNetfeat, self).__init__()
@@ -352,7 +354,7 @@ class TransformerEncoderLayer(nn.Module):
         self.config = config
         self.num_point = num_points
         self.num_groups= num_groups
-        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.self_attn = vector_attention(d_model, nhead=1)
         # self.self_attn = vector_attention(d_model, nhead=4)
         self.linear1 = nn.Linear(d_model, dim_feedforward)
         self.dropout = nn.Dropout(dropout)
@@ -373,7 +375,9 @@ class TransformerEncoderLayer(nn.Module):
             self.cross_conv_4 = nn.Linear(d_model * 2, d_model)
             self.cross_norm_4 = nn.LayerNorm(d_model)
 
-        self.cross_atten = BioCrossAttention(3,4,256,None)
+        self.bio_cross_atten = BioCrossAttention(3,4,256,None)
+        self.cross_atten = CrossAttention(3,4,256,None)
+
         self.activation = _get_activation_fn(activation)
         self.normalize_before = normalize_before
 
@@ -392,7 +396,7 @@ class TransformerEncoderLayer(nn.Module):
                      src,
                      pos: Optional[Tensor] = None):
         # src = torch.cat([src1,src2],0)
-
+        num_rois = src.shape[1]//(self.num_groups*2)
         src_intra_group_fusion = self.mlp_mixer_3d(src[1:])
         # src_intra_group_fusion2 = self.mlp_mixer_3d(src2[1:])
         src = torch.cat([src[:1],src_intra_group_fusion],0)
@@ -405,7 +409,7 @@ class TransformerEncoderLayer(nn.Module):
         # else:
         key = src_intra_group_fusion
 
-      
+
         src_summary = self.self_attn(token, key,src_intra_group_fusion)[0]
         token = token + self.dropout1(src_summary)
         token = self.norm1(token)
@@ -414,55 +418,78 @@ class TransformerEncoderLayer(nn.Module):
         token = self.norm2(token)
         src = torch.cat([token,src[1:]],0)
 
-
         if self.layer_count <= self.config.enc_layers-1:
-
-            # src1 = src[:,:src.shape[1]//2]
-            # src2 = src[:,src.shape[1]//2:]
+            src_all_groups = torch.concat([src[1:],pos],-1)
             num_half = pos.shape[1]//2
-            num_points = src.shape[0]-1
-            src_all_groups = src[1:].view((src.shape[0]-1)*8,-1,src.shape[-1])
-            # pos = pos.reshape(pos.shape[0]*8,-1,pos.shape[-1])
-            # src_groups_list = src_all_groups.chunk(self.num_groups,0)
-            # src_groups_list = [src_all_groups[torch.arange(num_points)*8+i] for i in range(8)]
-            pos1 = pos[:,:num_half]
-            pos2 = pos[:,num_half:]
-            src_all_groups1 = src[1:,:num_half]
-            src_all_groups2 = src[1:,num_half:]
-            src_all_groups1,src_all_groups2 = self.cross_atten(src_all_groups1,src_all_groups2,pos1,pos2)
+            # src_all_groups = torch.stack(src_all_groups.chunk(2,1))
+            src_all_groups = src_all_groups.chunk(self.num_groups*2,1)
+            if self.layer_count==1:
+                src1 = torch.concat([src_all_groups[0],src_all_groups[2],src_all_groups[4],src_all_groups[6]],dim=1)
+                src2 = torch.concat([src_all_groups[1],src_all_groups[3],src_all_groups[5],src_all_groups[7]],dim=1)
+            else:
+                src1 = torch.concat([src_all_groups[0], src_all_groups[1],src_all_groups[4],src_all_groups[5]], dim=1)
+                src2 = torch.concat([src_all_groups[2], src_all_groups[3],src_all_groups[6],src_all_groups[7]], dim=1)
 
-            src_all_groups1 = src_all_groups1.view((src_all_groups1.shape[0])*4,-1,src.shape[-1])
-            src_groups_list1 = [src_all_groups1[torch.arange(num_points)*4+i] for i in range(4)]
-            src_all_groups1 = torch.stack(src_groups_list1)
-            src_max_groups1 = torch.max(src_all_groups1, 1, keepdim=True).values
-            src_past_groups1 =  torch.cat([src_all_groups1[1:],\
-                 src_max_groups1[:-1].repeat(1, (src.shape[0]-1), 1, 1)], -1)
-            src_all_groups1[1:] = self.cross_norm_1(self.cross_conv_1(src_past_groups1) + src_all_groups1[1:])
-
-            src_max_groups1 = torch.max(src_all_groups1, 1, keepdim=True).values
-            src_past_groups1 =  torch.cat([src_all_groups1[:-1],\
-                 src_max_groups1[1:].repeat(1, (src.shape[0]-1), 1, 1)], -1)
-            src_all_groups1[:-1] = self.cross_norm_2(self.cross_conv_2(src_past_groups1) + src_all_groups1[:-1])
-
-            src_inter_group_fusion1 = src_all_groups1.permute(1, 0, 2, 3).contiguous().flatten(1,2)
-
-            src_all_groups2 = src_all_groups2.view((src_all_groups2.shape[0]) * 4, -1, src.shape[-1])
-            src_groups_list2 = [src_all_groups2[torch.arange(num_points) * 4 + i] for i in range(4)]
-            src_all_groups2 = torch.stack(src_groups_list2)
-            src_max_groups2 = torch.max(src_all_groups2, 1, keepdim=True).values
-            src_past_groups2 = torch.cat([src_all_groups2[1:], \
-                                          src_max_groups2[:-1].repeat(1, (src.shape[0] - 1), 1, 1)], -1)
-            src_all_groups2[1:] = self.cross_norm_3(self.cross_conv_3(src_past_groups2) + src_all_groups2[1:])
-
-            src_max_groups2 = torch.max(src_all_groups2, 1, keepdim=True).values
-            src_past_groups2 = torch.cat([src_all_groups2[:-1], \
-                                          src_max_groups2[1:].repeat(1, (src.shape[0] - 1), 1, 1)], -1)
-            src_all_groups2[:-1] = self.cross_norm_4(self.cross_conv_4(src_past_groups2) + src_all_groups2[:-1])
-
-            src_inter_group_fusion2 = src_all_groups2.permute(1, 0, 2, 3).contiguous().flatten(1, 2)
-
-            src_inter_group_fusion = torch.concat([src_inter_group_fusion1,src_inter_group_fusion2],dim=1)
-            src = torch.cat([src[:1],src_inter_group_fusion],0)
+            # src2 = src_all_groups[1:,:num_half,:]
+            # src_cur = torch.concat([src1[:,:num_rois*(self.num_groups-1)],src2[:,:num_rois*(self.num_groups-1)]],dim=1)
+            # src_pre = torch.concat([src1[:,num_rois:],src2[:,num_rois:]],dim=1)
+            # src_cur[:,:,-5:-3]+=src_cur[:,:,-2:]
+            src_1,src_2 = self.bio_cross_atten(src1[:,:,:-3],src2[:,:,:-3],src1[:,:,-3:],src2[:,:,-3:])
+            src_all_groups = src_1.chunk(self.num_groups,1) + src_2.chunk(self.num_groups,1)
+            if self.layer_count==1:
+                indice = [0,4,1,5,2,6,3,7]
+            else:
+                indice = [0,1,5,6,2,3,6,7]
+            src = torch.concat([src_all_groups[i] for i in indice],1)
+            src = torch.concat([token,src],dim=0)
+        # if self.layer_count <= self.config.enc_layers-1:
+        #
+        #     # src1 = src[:,:src.shape[1]//2]
+        #     # src2 = src[:,src.shape[1]//2:]
+        #     num_half = pos.shape[1]//2
+        #     num_points = src.shape[0]-1
+        #     src_all_groups = src[1:].view((src.shape[0]-1)*8,-1,src.shape[-1])
+        #     # pos = pos.reshape(pos.shape[0]*8,-1,pos.shape[-1])
+        #     # src_groups_list = src_all_groups.chunk(self.num_groups,0)
+        #     # src_groups_list = [src_all_groups[torch.arange(num_points)*8+i] for i in range(8)]
+        #     pos1 = pos[:,:num_half]
+        #     pos2 = pos[:,num_half:]
+        #     src_all_groups1 = src[1:,:num_half]
+        #     src_all_groups2 = src[1:,num_half:]
+        #     src_all_groups1,src_all_groups2 = self.cross_atten(src_all_groups1,src_all_groups2,pos1,pos2)
+        #
+        #     src_all_groups1 = src_all_groups1.view((src_all_groups1.shape[0])*4,-1,src.shape[-1])
+        #     src_groups_list1 = [src_all_groups1[torch.arange(num_points)*4+i] for i in range(4)]
+        #     src_all_groups1 = torch.stack(src_groups_list1)
+        #     src_max_groups1 = torch.max(src_all_groups1, 1, keepdim=True).values
+        #     src_past_groups1 =  torch.cat([src_all_groups1[1:],\
+        #          src_max_groups1[:-1].repeat(1, (src.shape[0]-1), 1, 1)], -1)
+        #     src_all_groups1[1:] = self.cross_norm_1(self.cross_conv_1(src_past_groups1) + src_all_groups1[1:])
+        #
+        #     src_max_groups1 = torch.max(src_all_groups1, 1, keepdim=True).values
+        #     src_past_groups1 =  torch.cat([src_all_groups1[:-1],\
+        #          src_max_groups1[1:].repeat(1, (src.shape[0]-1), 1, 1)], -1)
+        #     src_all_groups1[:-1] = self.cross_norm_2(self.cross_conv_2(src_past_groups1) + src_all_groups1[:-1])
+        #
+        #     src_inter_group_fusion1 = src_all_groups1.permute(1, 0, 2, 3).contiguous().flatten(1,2)
+        #
+        #     src_all_groups2 = src_all_groups2.view((src_all_groups2.shape[0]) * 4, -1, src.shape[-1])
+        #     src_groups_list2 = [src_all_groups2[torch.arange(num_points) * 4 + i] for i in range(4)]
+        #     src_all_groups2 = torch.stack(src_groups_list2)
+        #     src_max_groups2 = torch.max(src_all_groups2, 1, keepdim=True).values
+        #     src_past_groups2 = torch.cat([src_all_groups2[1:], \
+        #                                   src_max_groups2[:-1].repeat(1, (src.shape[0] - 1), 1, 1)], -1)
+        #     src_all_groups2[1:] = self.cross_norm_3(self.cross_conv_3(src_past_groups2) + src_all_groups2[1:])
+        #
+        #     src_max_groups2 = torch.max(src_all_groups2, 1, keepdim=True).values
+        #     src_past_groups2 = torch.cat([src_all_groups2[:-1], \
+        #                                   src_max_groups2[1:].repeat(1, (src.shape[0] - 1), 1, 1)], -1)
+        #     src_all_groups2[:-1] = self.cross_norm_4(self.cross_conv_4(src_past_groups2) + src_all_groups2[:-1])
+        #
+        #     src_inter_group_fusion2 = src_all_groups2.permute(1, 0, 2, 3).contiguous().flatten(1, 2)
+        #
+        #     src_inter_group_fusion = torch.concat([src_inter_group_fusion1,src_inter_group_fusion2],dim=1)
+        #     src = torch.cat([src[:1],src_inter_group_fusion],0)
         
         return src, torch.cat(src[:1].chunk(self.num_groups*2,1),0)
 

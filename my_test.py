@@ -1,12 +1,19 @@
+import os
+
 import numpy as np
 import open3d as o3d
-import open3d.ml.torch as ml3d
 
+import shutil
+source_path = '../data/waymo/waymo_processed_data_v0_5_0_full'
+dist_path = '../data/waymo/waymo_processed_data_v0_5_0_full_val'
+val_file = '../data/waymo/ImageSets/val.txt'
 
-file_name = 'data/waymo/waymo_processed_data_v0_5_0/segment-272435602399417322_2884_130_2904_130_with_camera_labels/0000.npy'
-data = np.load(file_name)
-data = data[:, :3]
-point_cloud = o3d.geometry.PointCloud()
-point_cloud.points=o3d.utility.Vector3dVector(data)
-o3d.visualization.draw_geometries([point_cloud])
+dir_list = os.listdir(source_path)
+with open(val_file, 'r') as f:
+    for line in f:
+        # 处理每一行的内容，例如打印出来
+        line = line[:-10]
+        if line in dir_list:
+            shutil.move(os.path.join(souce_path,line),shutil.move(os.path.join(dist_path,line)))
+
 

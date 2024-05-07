@@ -694,8 +694,8 @@ class DENet3Head(RoIHeadTemplate):
 
                 valid_length[bs_idx, i, fg_inds] = 1
 
-                # trajectory_rois[bs_idx, i, fg_inds, :] = proposals_list[bs_idx, i, traj_assignment[fg_inds]]
-
+                trajectory_rois[bs_idx, i, fg_inds, :] = proposals_list[bs_idx, i, traj_assignment[fg_inds]]
+        # trajectory_rois[:,:-1,:,7:9] = trajectory_rois[:,1:,:,:2]-trajectory_rois[:,:-1,:,7:9]
         batch_dict['valid_length'] = valid_length
 
         return trajectory_rois, valid_length
@@ -785,6 +785,9 @@ class DENet3Head(RoIHeadTemplate):
         num_rois = batch_dict['roi_boxes'].shape[1]
         num_sample = self.num_lidar_points 
 
+        backward_rois[:,:-1:,:,7:] = backward_rois[:,1:,:,:2]-backward_rois[:,:-1,:,:2]
+        trajectory_rois[:,:-1,:,7:] = trajectory_rois[:,1:,:,7:] - trajectory_rois[:,:-1,:,7:]
+
         if self.voxel_sampler is None:
             self.voxel_sampler = build_voxel_sampler(rois.device)
             self.voxel_sampler_traj = build_voxel_sampler_traj(rois.device)
@@ -797,8 +800,12 @@ class DENet3Head(RoIHeadTemplate):
         # src2[~valid_length]=0
         src1 = src1.view(batch_size * num_rois, -1, src1.shape[-1])
         src2 = src2.view(batch_size * num_rois,-1,src2.shape[-1])
-        xyz1 = src1[:, :, :3]
-        xyz2 = src2[:, :, :3]
+
+        xyz1 = src1[:, :, :3]-backward_rois[:,:,None,:,:3].repeat(1,1,num_sample,1,1).permute(0,3,1,2,4).reshape(batch_size*num_rois,-1,3)
+
+        xyz2 = src2[:, :, :3]-trajectory_rois[:,:,None,:,:3].repeat(1,1,num_sample,1,1).permute(0,3,1,2,4).reshape(batch_size*num_rois,-1,3)
+
+
         src_backward_feature = self.get_proposal_aware_backward_feature(src1,batch_size,backward_rois,num_rois)
         src_trajectory_feature = self.get_proposal_aware_trajectory_feature(src2, batch_size, trajectory_rois, num_rois,valid_length)
 
