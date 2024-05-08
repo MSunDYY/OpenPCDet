@@ -846,7 +846,7 @@ class DENet4Head(RoIHeadTemplate):
         # num_rois_all = src1.shape[0]
         # src = src_geometry_feature + src_motion_feature
         # src = self.conv(torch.concat([src_trajectory_feature,src_backward_feature],dim=-1).permute(0,2,1)).permute(0,2,1)
-        box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
+        box_reg, feat_box = self.trajectories_auxiliary_branch(backward_rois)
         
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK',None):
             src1[empty_mask.view(-1)] = 0
@@ -866,15 +866,17 @@ class DENet4Head(RoIHeadTemplate):
         for i in range(hs2.shape[0]):
             for j in range(self.num_enc_layer):
                 # tokens1[j][i] = tokens1[j][i]+tokens2[j][i]
-                point_reg_list.append(self.bbox_embed[i](tokens2[j][i]))
+                point_reg_list.append(self.bbox_embed[i](tokens1[j][i]))
                 # point_reg_list.append(self.bbox_embed[i](tokens[j][i]))
 
         point_cls = torch.cat(point_cls_list,0)
 
         point_reg = torch.cat(point_reg_list,0)
         hs2 = hs2.permute(1,0,2).reshape(hs2.shape[1],-1)
+        hs1 = hs1.permute(1,0,2).reshape(hs1.shape[1],-1)
+
         # hs2 = hs2.permute(1,0,2).reshape(hs2.shape[1],-1)
-        joint_reg = self.jointembed(torch.cat([hs2,feat_box],-1))
+        joint_reg = self.jointembed(torch.cat([hs1,feat_box],-1))
 
         rcnn_cls = point_cls
         rcnn_reg = joint_reg

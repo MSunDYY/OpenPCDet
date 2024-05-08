@@ -829,8 +829,10 @@ class DENet3Head(RoIHeadTemplate):
         # num_rois_all = src1.shape[0]
         # src = src_geometry_feature + src_motion_feature
         # src = self.conv(torch.concat([src_trajectory_feature,src_backward_feature],dim=-1).permute(0,2,1)).permute(0,2,1)
-        box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
-        
+        if self.model_cfg.REG1:
+            box_reg, feat_box = self.trajectories_auxiliary_branch(backward_rois)
+        else:
+            box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK',None):
             src1[empty_mask.view(-1)] = 0
             src2[empty_mask.view(-1)] = 0
@@ -838,7 +840,8 @@ class DENet3Head(RoIHeadTemplate):
         # xyz = torch.concat([self.pos_emb(xyz1),self.pos_emb(xyz2)],dim=1)
 
         hs, tokens = self.transformer(src1,pos = self.pos_emb1(xyz1))
-        hs2,tokens2 = self.transformer2(src2,pos = self.pos_emb2(xyz2))
+        if not self.model_cfg.REG1:
+            hs2,tokens2 = self.transformer2(src2,pos = self.pos_emb2(xyz2))
         tokens3=[]
         # hs, tokens = self.transformer2(src2,pos = self.pos_emb(xyz2))
 
@@ -850,19 +853,24 @@ class DENet3Head(RoIHeadTemplate):
 
         for i in range(self.num_enc_layer):
             point_cls_list.append(self.class_embed[0](tokens[i][0]))
-
-        for i in range(hs.shape[0]):
-
-            for j in range(self.num_enc_layer):
-                # tokens1[j][i] = tokens1[j][i]+tokens2[j][i]
-                temp=self.token_conv[i](torch.concat([tokens[j][i],tokens2[j][i]],-1))
-                point_reg_list.append(self.bbox_embed[i](temp[-1]))
-                if j==self.num_enc_layer-1:
-                    tokens3.append(temp[None,:,:])
-        tokens3 = torch.concat(tokens3,0)
+        if self.model_cfg.REG1:
+            for i in range(hs.shape[0]):
+                for j in range(self.num_enc_layer):
+                    point_reg_list.append(self.bbox_embed[i](tokens[j][i]))
+        else:
+        
+            for i in range(hs.shape[0]):
+    
+                for j in range(self.num_enc_layer):
+                    # tokens1[j][i] = tokens1[j][i]+tokens2[j][i]
+                    temp=self.token_conv[i](torch.concat([tokens[j][i],tokens2[j][i]],-1))
+                    point_reg_list.append(self.bbox_embed[i](temp))
+                    if j==self.num_enc_layer-1:
+                        tokens3.append(temp[None,:,:])
+            hs = torch.concat(tokens3,0)
 
                 # point_reg_list.append(self.bbox_embed[i](tokens[j][i]))
-        hs = tokens3
+            
         point_cls = torch.cat(point_cls_list,0)
 
         point_reg = torch.cat(point_reg_list,0)

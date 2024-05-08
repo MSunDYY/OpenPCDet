@@ -10,7 +10,7 @@ DATA_CONFIG:
     }
     TRAIN_WITH_SPEED: True
     SAMPLED_INTERVAL: {
-        'train': 1,
+        'train': 4,
         'test': 10
     }
     FILTER_EMPTY_BOXES_FOR_TRAIN: False
@@ -62,7 +62,7 @@ MODEL:
 
     ROI_HEAD:
         NAME: DENet4Head
-        TRANS_INPUT: 256
+        TRANS_INPUT: 128
         CLASS_AGNOSTIC: True
         USE_BOX_ENCODING:
             ENABLED: True 
@@ -89,7 +89,7 @@ MODEL:
             pos_hidden_dim: 64
             enc_layers: 3
             dim_feedforward: 512
-            hidden_dim: 256 #equal to ROI_HEAD.TRANS_INPUT
+            hidden_dim: 128 #equal to ROI_HEAD.TRANS_INPUT
             dropout: 0.1
             nheads: 4
             pre_norm: False
