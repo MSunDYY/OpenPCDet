@@ -532,7 +532,7 @@ class MSFHead(RoIHeadTemplate):
 
         if self.voxel_sampler is None:
             self.voxel_sampler = build_voxel_sampler(rois.device)
-            self.voxel_sampler = build
+            # self.voxel_sampler = build
         src = self.voxel_sampler(batch_size, trajectory_rois, num_sample, batch_dict)
 
         src = src.view(batch_size * num_rois, -1, src.shape[-1]) 

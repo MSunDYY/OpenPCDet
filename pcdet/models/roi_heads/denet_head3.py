@@ -349,20 +349,24 @@ class DENet3Head(RoIHeadTemplate):
         self.up_dimension_traj_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
         self.up_dimension_back_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
 
-        self.pos_emb = nn.Sequential(
+        self.pos_emb1 = nn.Sequential(
             nn.Linear(3,hidden_dim),
         )
+        self.pos_emb2 = nn.Sequential(
+            nn.Linear(3, hidden_dim),
+        )
         self.transformer = build_transformer3(model_cfg.Transformer)
-        # self.transformer2 = build_transformer(model_cfg.Transformer)
+        self.transformer2 = build_transformer3(model_cfg.Transformer)
         self.voxel_sampler = None
   
         self.class_embed = nn.ModuleList()
         self.class_embed.append(nn.Linear(model_cfg.Transformer.hidden_dim, 1))
 
         self.bbox_embed = nn.ModuleList()
+        self.token_conv = nn.ModuleList()
         for _ in range(self.num_groups):
             self.bbox_embed.append(MLP(model_cfg.Transformer.hidden_dim, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4))
-
+            self.token_conv.append(nn.Linear(model_cfg.Transformer.hidden_dim*2,model_cfg.Transformer.hidden_dim))
 
     def init_weights(self, weight_init='xavier'):
         if weight_init == 'kaiming':
@@ -831,9 +835,12 @@ class DENet3Head(RoIHeadTemplate):
             src1[empty_mask.view(-1)] = 0
             src2[empty_mask.view(-1)] = 0
         src = torch.concat([src1,src2],dim=1)
-        xyz = torch.concat([self.pos_emb(xyz1),self.pos_emb(xyz2)],dim=1)
+        # xyz = torch.concat([self.pos_emb(xyz1),self.pos_emb(xyz2)],dim=1)
 
-        hs, tokens = self.transformer(src,pos = xyz)
+        hs, tokens = self.transformer(src1,pos = self.pos_emb1(xyz1))
+        hs2,tokens2 = self.transformer2(src2,pos = self.pos_emb2(xyz2))
+        # hs, tokens = self.transformer2(src2,pos = self.pos_emb(xyz2))
+
         # hs2,tokens2 = self.transformer2(src2,pos=None)
         # hs = hs[:,:num_rois_all]
         
@@ -846,13 +853,14 @@ class DENet3Head(RoIHeadTemplate):
         for i in range(hs.shape[0]//2):
             for j in range(self.num_enc_layer):
                 # tokens1[j][i] = tokens1[j][i]+tokens2[j][i]
-                point_reg_list.append(self.bbox_embed[i](tokens[j][i+num_frames]))
+                tokens2[j][i] = self.token_conv[i](torch.concat([tokens[j][i],tokens2[j][i]],-1))
+                point_reg_list.append(self.bbox_embed[i](tokens2[j][i]))
                 # point_reg_list.append(self.bbox_embed[i](tokens[j][i]))
-
+        hs = tokens2[-1]
         point_cls = torch.cat(point_cls_list,0)
 
         point_reg = torch.cat(point_reg_list,0)
-        hs = hs[num_frames:].permute(1,0,2).reshape(hs.shape[1],-1)
+        hs = hs.permute(1,0,2).reshape(hs.shape[1],-1)
         # hs2 = hs2.permute(1,0,2).reshape(hs2.shape[1],-1)
         joint_reg = self.jointembed(torch.cat([hs,feat_box],-1))
 

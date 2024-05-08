@@ -249,7 +249,7 @@ class Transformer(nn.Module):
         self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers, encoder_norm,self.config)
 
         self.token = nn.Parameter(torch.zeros(self.num_groups*2, 1, d_model))
-
+        self.token2 = nn.Parameter(torch.zeros(self.num_groups,1,d_model))
         
         if self.num_frames >4:
   
@@ -273,10 +273,10 @@ class Transformer(nn.Module):
         #     pos = pos.permute(1, 0, 2)
             
         
-        token_list = [self.token[i:(i+1)].repeat(BS,1,1) for i in range(self.num_groups*2)]
-        src = [torch.cat([token_list[i],src[:,i*self.num_lidar_points:(i+1)*self.num_lidar_points]],dim=1) for i in range(self.num_groups*2)]
+        token_list = [self.token[i:(i+1)].repeat(BS,1,1) for i in range(self.num_groups)]
+        src = [torch.cat([token_list[i],src[:,i*self.num_lidar_points:(i+1)*self.num_lidar_points]],dim=1) for i in range(self.num_groups)]
         src = torch.cat(src,dim=0)
-        pos = [pos[:,i*self.num_lidar_points:(i+1)*self.num_lidar_points] for i in range(self.num_groups*2)]
+        pos = [pos[:,i*self.num_lidar_points:(i+1)*self.num_lidar_points] for i in range(self.num_groups)]
         pos = torch.cat(pos,dim=0)
         # src2 = [torch.cat([token_list[i],src2[:,i*self.num_lidar_points:(i+1)*self.num_lidar_points]],dim=1) for i in range(self.num_groups)]
         # src2 = torch.cat(src2,dim=0)
@@ -285,7 +285,7 @@ class Transformer(nn.Module):
         # src2 = src2.permute(1,0,2)
         memory,tokens = self.encoder(src,pos=pos)
 
-        memory = torch.cat(memory[0:1].chunk(8,dim=1),0)
+        memory = torch.cat(memory[0:1].chunk(4,dim=1),0)
         return memory, tokens
     
 
@@ -354,26 +354,26 @@ class TransformerEncoderLayer(nn.Module):
         self.config = config
         self.num_point = num_points
         self.num_groups= num_groups
-        self.self_attn = vector_attention(d_model, nhead=1)
-        # self.self_attn = vector_attention(d_model, nhead=4)
+        # self.self_attn = vector_attention(d_model, nhead=1)
+        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+        # self.selfattn2 = nn.MultiheadAttention(d_model,nhead,dropout=dropout)
+
         self.linear1 = nn.Linear(d_model, dim_feedforward)
         self.dropout = nn.Dropout(dropout)
         self.linear2 = nn.Linear(dim_feedforward, d_model)
 
-        self.norm1 = nn.LayerNorm(d_model)
+        self.norm = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
-
+        self.dropout21 = nn.Dropout(dropout)
+        self.dropout22 = nn.Dropout(dropout)
         if self.layer_count <= self.config.enc_layers-1:
             self.cross_conv_1 = nn.Linear(d_model * 2, d_model)
             self.cross_norm_1 = nn.LayerNorm(d_model)
             self.cross_conv_2 = nn.Linear(d_model * 2, d_model)
             self.cross_norm_2 = nn.LayerNorm(d_model)
-            self.cross_conv_3 = nn.Linear(d_model * 2, d_model)
-            self.cross_norm_3 = nn.LayerNorm(d_model)
-            self.cross_conv_4 = nn.Linear(d_model * 2, d_model)
-            self.cross_norm_4 = nn.LayerNorm(d_model)
+
 
         self.bio_cross_atten = BioCrossAttention(3,4,self.config.hidden_dim,None)
         self.cross_atten = CrossAttention(3,4,self.config.hidden_dim,None)
@@ -387,7 +387,12 @@ class TransformerEncoderLayer(nn.Module):
                         self.config.hidden_dim, 
                         self.config.use_mlp_mixer
         )
-
+        self.mlp_mixer_3d2 = SpatialMixerBlock(
+                        self.config.use_mlp_mixer.hidden_dim,
+                        self.config.use_mlp_mixer.get('grid_size', 4),
+                        self.config.hidden_dim,
+                        self.config.use_mlp_mixer
+        )
 
     def with_pos_embed(self, tensor, pos: Optional[Tensor]):
         return tensor if pos is None else tensor + pos
@@ -397,49 +402,64 @@ class TransformerEncoderLayer(nn.Module):
                      pos: Optional[Tensor] = None):
         # src = torch.cat([src1,src2],0)
         num_rois = src.shape[1]//(self.num_groups*2)
+        # src1,src2 = src.chunk(2,1)
+
         src_intra_group_fusion = self.mlp_mixer_3d(src[1:])
+        # src_intra_group_fusion2 = self.mlp_mixer_3d2(src2[1:])
         # src_intra_group_fusion2 = self.mlp_mixer_3d(src2[1:])
         src = torch.cat([src[:1],src_intra_group_fusion],0)
         # src2 = torch.cat([src2[:1],src_intra_group_fusion2],0)
         token = src[:1]
         # token2 = src2[:1]
-        
+        # token2 = src2[:1]
         # if not pos is None:
         #     key = self.with_pos_embed(src_intra_group_fusion, pos[1:])
         # else:
         key = src_intra_group_fusion
 
-
         src_summary = self.self_attn(token, key,src_intra_group_fusion)[0]
+        # src_summary2 = self.self_attn2(token2, key2,src_intra_group_fusion2)[0]
+
         token = token + self.dropout1(src_summary)
-        token = self.norm1(token)
+        token = self.norm(token)
         src_summary = self.linear2(self.dropout(self.activation(self.linear1(token))))
         token = token + self.dropout2(src_summary)
-        token = self.norm2(token)
+        token = self.norm(token)
         src = torch.cat([token,src[1:]],0)
 
         if self.layer_count <= self.config.enc_layers-1:
+            src_max = torch.max(src[1:],dim=0,keepdim=True)[0].repeat(src.shape[0]-1,1,1)
+
+            src[1:] = self.cross_norm_1(src[1:]+self.cross_conv_1(torch.concat([src[1:],src_max],-1)))
             src_all_groups = torch.concat([src[1:],pos],-1)
-            num_half = pos.shape[1]//2
+            # num_half = pos.shape[1]//2
             # src_all_groups = torch.stack(src_all_groups.chunk(2,1))
-            src_all_groups = src_all_groups.chunk(self.num_groups*2,1)
+            src_all_groups = src_all_groups.chunk(self.num_groups,1)
             if self.layer_count==1:
-                src1 = torch.concat([src_all_groups[0],src_all_groups[2],src_all_groups[4],src_all_groups[6]],dim=1)
-                src2 = torch.concat([src_all_groups[1],src_all_groups[3],src_all_groups[5],src_all_groups[7]],dim=1)
+                # src1 = torch.concat([src_all_groups[0],src_all_groups[2],src_all_groups[4],src_all_groups[6]],dim=1)
+                # src2 = torch.concat([src_all_groups[1],src_all_groups[3],src_all_groups[5],src_all_groups[7]],dim=1)
+                src1 = torch.concat([src_all_groups[0], src_all_groups[2]], dim=1)
+                src2 = torch.concat([src_all_groups[1], src_all_groups[3]], dim=1)
             else:
-                src1 = torch.concat([src_all_groups[0], src_all_groups[1],src_all_groups[4],src_all_groups[5]], dim=1)
-                src2 = torch.concat([src_all_groups[2], src_all_groups[3],src_all_groups[6],src_all_groups[7]], dim=1)
+                # src1 = torch.concat([src_all_groups[0], src_all_groups[1],src_all_groups[4],src_all_groups[5]], dim=1)
+                # src2 = torch.concat([src_all_groups[2], src_all_groups[3],src_all_groups[6],src_all_groups[7]], dim=1)
+                src1 = torch.concat([src_all_groups[0], src_all_groups[1]], dim=1)
+                src2 = torch.concat([src_all_groups[2], src_all_groups[3]], dim=1)
 
             # src2 = src_all_groups[1:,:num_half,:]
             # src_cur = torch.concat([src1[:,:num_rois*(self.num_groups-1)],src2[:,:num_rois*(self.num_groups-1)]],dim=1)
             # src_pre = torch.concat([src1[:,num_rois:],src2[:,num_rois:]],dim=1)
             # src_cur[:,:,-5:-3]+=src_cur[:,:,-2:]
+
+
             src_1,src_2 = self.bio_cross_atten(src1[:,:,:-self.config.hidden_dim],src2[:,:,:-self.config.hidden_dim],src1[:,:,-self.config.hidden_dim:],src2[:,:,-self.config.hidden_dim:])
-            src_all_groups = src_1.chunk(self.num_groups,1) + src_2.chunk(self.num_groups,1)
+            src_all_groups = src_1.chunk(self.num_groups//2,1) + src_2.chunk(self.num_groups//2,1)
             if self.layer_count==1:
-                indice = [0,4,1,5,2,6,3,7]
+                # indice = [0,4,1,5,2,6,3,7]
+                indice = [0,2,1,3]
             else:
-                indice = [0,1,5,6,2,3,6,7]
+                # indice = [0,1,5,6,2,3,6,7]
+                indice = [0,1,2,3]
             src = torch.concat([src_all_groups[i] for i in indice],1)
             src = torch.concat([token,src],dim=0)
         # if self.layer_count <= self.config.enc_layers-1:
@@ -491,7 +511,7 @@ class TransformerEncoderLayer(nn.Module):
         #     src_inter_group_fusion = torch.concat([src_inter_group_fusion1,src_inter_group_fusion2],dim=1)
         #     src = torch.cat([src[:1],src_inter_group_fusion],0)
         
-        return src, torch.cat(src[:1].chunk(self.num_groups*2,1),0)
+        return src, torch.cat(src[:1].chunk(self.num_groups,1),0)
 
     def forward_pre(self, src,
                     pos: Optional[Tensor] = None):
