@@ -839,6 +839,7 @@ class DENet3Head(RoIHeadTemplate):
 
         hs, tokens = self.transformer(src1,pos = self.pos_emb1(xyz1))
         hs2,tokens2 = self.transformer2(src2,pos = self.pos_emb2(xyz2))
+        tokens3=[]
         # hs, tokens = self.transformer2(src2,pos = self.pos_emb(xyz2))
 
         # hs2,tokens2 = self.transformer2(src2,pos=None)
@@ -850,13 +851,18 @@ class DENet3Head(RoIHeadTemplate):
         for i in range(self.num_enc_layer):
             point_cls_list.append(self.class_embed[0](tokens[i][0]))
 
-        for i in range(hs.shape[0]//2):
+        for i in range(hs.shape[0]):
+
             for j in range(self.num_enc_layer):
                 # tokens1[j][i] = tokens1[j][i]+tokens2[j][i]
-                tokens2[j][i] = self.token_conv[i](torch.concat([tokens[j][i],tokens2[j][i]],-1))
-                point_reg_list.append(self.bbox_embed[i](tokens2[j][i]))
+                temp=self.token_conv[i](torch.concat([tokens[j][i],tokens2[j][i]],-1))
+                point_reg_list.append(self.bbox_embed[i](temp[-1]))
+                if j==self.num_enc_layer-1:
+                    tokens3.append(temp[None,:,:])
+        tokens3 = torch.concat(tokens3,0)
+
                 # point_reg_list.append(self.bbox_embed[i](tokens[j][i]))
-        hs = tokens2[-1]
+        hs = tokens3
         point_cls = torch.cat(point_cls_list,0)
 
         point_reg = torch.cat(point_reg_list,0)
