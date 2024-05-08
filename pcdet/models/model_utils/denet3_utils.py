@@ -430,7 +430,7 @@ class TransformerEncoderLayer(nn.Module):
         if self.layer_count <= self.config.enc_layers-1:
             src_max = torch.max(src[1:],dim=0,keepdim=True)[0].repeat(src.shape[0]-1,1,1)
 
-            src[1:] = self.cross_norm_1(src[1:]+self.cross_conv_1(torch.concat([src[1:],src_max],-1)))
+            src=torch.concat([src[:1],self.cross_norm_1(src[1:]+self.cross_conv_1(torch.concat([src[1:],src_max],-1)))],0)
             src_all_groups = torch.concat([src[1:],pos],-1)
             # num_half = pos.shape[1]//2
             # src_all_groups = torch.stack(src_all_groups.chunk(2,1))
