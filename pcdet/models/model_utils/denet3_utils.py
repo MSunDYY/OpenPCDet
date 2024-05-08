@@ -375,8 +375,8 @@ class TransformerEncoderLayer(nn.Module):
             self.cross_conv_4 = nn.Linear(d_model * 2, d_model)
             self.cross_norm_4 = nn.LayerNorm(d_model)
 
-        self.bio_cross_atten = BioCrossAttention(3,4,256,None)
-        self.cross_atten = CrossAttention(3,4,256,None)
+        self.bio_cross_atten = BioCrossAttention(3,4,self.config.hidden_dim,None)
+        self.cross_atten = CrossAttention(3,4,self.config.hidden_dim,None)
 
         self.activation = _get_activation_fn(activation)
         self.normalize_before = normalize_before
