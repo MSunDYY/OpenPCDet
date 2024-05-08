@@ -342,7 +342,7 @@ class DENet3Head(RoIHeadTemplate):
         )
         self.cross = nn.ModuleList([CrossAttention(3,4,256,None) for i in range(4)])
         self.seqboxembed = PointNet(8,model_cfg=self.model_cfg)
-        self.jointembed = MLP(self.hidden_dim*(self.num_groups+1), model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
+        self.jointembed = MLP(self.hidden_dim*(self.num_groups*2+1), model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
 
         self.up_dimension_traj = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
         self.up_dimension_back = MLP(input_dim = 29, hidden_dim = 64, output_dim = hidden_dim, num_layers = 3)
@@ -363,9 +363,11 @@ class DENet3Head(RoIHeadTemplate):
         self.class_embed.append(nn.Linear(model_cfg.Transformer.hidden_dim, 1))
 
         self.bbox_embed = nn.ModuleList()
+        self.bbox_embed2 = nn.ModuleList()
         self.token_conv = nn.ModuleList()
         for _ in range(self.num_groups):
             self.bbox_embed.append(MLP(model_cfg.Transformer.hidden_dim, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4))
+            self.bbox_embed2.append(MLP(model_cfg.Transformer.hidden_dim, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4))
             self.token_conv.append(nn.Linear(model_cfg.Transformer.hidden_dim*2,model_cfg.Transformer.hidden_dim))
 
     def init_weights(self, weight_init='xavier'):
@@ -860,14 +862,12 @@ class DENet3Head(RoIHeadTemplate):
         else:
         
             for i in range(hs.shape[0]):
-    
                 for j in range(self.num_enc_layer):
                     # tokens1[j][i] = tokens1[j][i]+tokens2[j][i]
-                    temp=self.token_conv[i](torch.concat([tokens[j][i],tokens2[j][i]],-1))
-                    point_reg_list.append(self.bbox_embed[i](temp))
-                    if j==self.num_enc_layer-1:
-                        tokens3.append(temp[None,:,:])
-            hs = torch.concat(tokens3,0)
+                    point_reg_list.append(self.bbox_embed[i](tokens[j][i]))
+                    point_reg_list.append(self.bbox_embed2[i](tokens2[j][i]))
+
+            hs = torch.concat([hs,hs2],0)
 
                 # point_reg_list.append(self.bbox_embed[i](tokens[j][i]))
             
