@@ -800,6 +800,7 @@ class DENet4Head(RoIHeadTemplate):
         batch_dict['has_class_labels'] = True
         batch_dict['trajectory_rois'] = trajectory_rois
         batch_dict['backward_rois'] = backward_rois
+
         if self.training:
             targets_dict = self.assign_targets(batch_dict)
             batch_dict['roi_boxes'] = targets_dict['rois']
@@ -823,6 +824,13 @@ class DENet4Head(RoIHeadTemplate):
             self.voxel_sampler = build_voxel_sampler(rois.device)
             self.voxel_sampler_traj = build_voxel_sampler_traj(rois.device)
         src1 = self.voxel_sampler(batch_size, backward_rois, num_sample, batch_dict)
+        if not self.training:
+            mask = (src1[:,:,:num_sample,0]!=0).sum(-1)>1
+            batch_dict['batch_box_preds'] = backward_rois[:,0][mask][None,:,:]
+            batch_dict['batch_cls_preds'] = batch_dict['roi_scores'][:,:,0][mask][None,:,None]
+            batch_dict['cls_preds_normalized'] = False
+            batch_dict['roi_labels'] = batch_dict['roi_labels'][mask][None,:]
+            return batch_dict
 
         # src2 = rois.new_zeros(batch_size, num_rois, num_sample, 5)
         src2 = self.voxel_sampler_traj(batch_size, trajectory_rois, num_sample, batch_dict,valid_length)

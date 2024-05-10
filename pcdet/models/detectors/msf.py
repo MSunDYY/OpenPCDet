@@ -132,7 +132,8 @@ class MSF(Detector3DTemplate):
                 selected, selected_scores = model_nms_utils.class_agnostic_nms(
                     box_scores=cls_preds, box_preds=box_preds,
                     nms_config=post_process_cfg.NMS_CONFIG,
-                    score_thresh=post_process_cfg.SCORE_THRESH
+                    score_thresh=post_process_cfg.SCORE_THRESH,
+                    batch_dict = batch_dict
                 )
 
                 if post_process_cfg.OUTPUT_RAW_SCORE:

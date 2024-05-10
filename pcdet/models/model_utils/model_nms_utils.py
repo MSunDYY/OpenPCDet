@@ -25,7 +25,7 @@ def point_nms(box_scores,box_preds,nms_config,points,box_labels=None):
     selected = sampled_mask.sum(-1)/torch.clamp(points_mask.sum(-1),min=1,max=max_single_per_box)>0.1
     # print( selected.sum().item())
     return selected,box_scores[selected]
-def class_agnostic_nms(box_scores, box_preds, nms_config, score_thresh=None):
+def class_agnostic_nms(box_scores, box_preds, nms_config, score_thresh=None,batch_dict=None):
     src_box_scores = box_scores
     if score_thresh is not None:
         scores_mask = (box_scores >= score_thresh)
