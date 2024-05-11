@@ -16,4 +16,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 	m.def("points2box_gpu",&points2box_gpu,"selete points to box");
     m.def("points2box",&points2box,"cpu");
     m.def("distributed_smaple_points",&distributed_sample_points,"distributed_sample_points");
+    m.def("sample_anchor",&sample_anchor,"sample anchor");
+    m.def("calculate_miou_gpu",&calculate_miou_gpu,"calculate_miou_gpu");
 }

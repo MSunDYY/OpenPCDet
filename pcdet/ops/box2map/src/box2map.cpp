@@ -228,6 +228,45 @@ inline float iou_bev(const float *box_a, const float *box_b){
     return s_overlap / fmaxf(sa + sb - s_overlap, EPS);
 }
 
+int sample_anchor(at::Tensor miou_tensor,at::Tensor anchors_idx_tensor,at::Tensor mask_tensor,const float threshold)
+{
+    CHECK_CONTIGUOUS(miou_tensor);
+    CHECK_CONTIGUOUS(anchors_idx_tensor);
+    CHECK_CONTIGUOUS(mask_tensor);
+    float * miou = miou_tensor.data<float>();
+    int * anchors_idx = anchors_idx_tensor.data<int>();
+    bool *mask = mask_tensor.data<bool>();
+    int N = miou_tensor.size(0);
+    int anchor_loc=0;
+    int num_anchors = anchors_idx_tensor.size(1);
+    for(int i=0;i<N;i++)
+    {
+        if (mask[i]==0)
+        {
+            anchors_idx[anchor_loc*num_anchors]=i;
+            mask[i]=1;
+            for (int j=i+1,n=1;j<N;j++)
+            {
+                if(miou[i*N+j]>threshold )
+                {
+                    mask[j]=1;
+                    if(n<num_anchors)
+                        {anchors_idx[anchor_loc*num_anchors+n]=j;n++;}
+
+                }
+                else {continue;}
+            }
+            anchor_loc+=1;
+        }
+        else
+        {
+            continue;
+        }
+
+    }
+    return 1;
+}
+
 
 int box2map(at::Tensor boxes_tensor, at::Tensor map_tensor, at::Tensor values_tensor){
     // params boxes_a_tensor: (N, 7) [x, y, z, dx, dy, dz, heading]

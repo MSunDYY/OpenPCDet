@@ -279,6 +279,8 @@ __global__ void points2box_kernel(const int N,const int P,const int *points_mask
     }
 }
 
+
+
 __global__ void distrituted_sample_points_kernel(const int B,const int N,const int n,const int f,const int num_points,float *voxels,bool *voxels_mask,float *srces,float *boxes)
 {
     const int idx = blockIdx.x*THREADS_PER_BLOCK_P+threadIdx.x;
@@ -299,6 +301,27 @@ __global__ void distrituted_sample_points_kernel(const int B,const int N,const i
         }
     }
 
+}
+__global__ void calculate_miou_kernel(float * miou,bool * point_mask,const int N,const int M)
+{
+    const int a_idx = blockIdx.y*THREADS_PER_BLOCK_P+threadIdx.y;
+    const int b_idx = blockIdx.x*THREADS_PER_BLOCK_P+threadIdx.x;
+    if(a_idx>=M || b_idx>=M || a_idx==b_idx){
+    return;
+    }
+    const bool *point_a = point_mask+a_idx*N;
+    const bool *point_b = point_mask+b_idx*N;
+    float Intersection=0;
+    float Union=0;
+
+    for(int i=0;i<N;i++)
+    {
+        Intersection += point_a[i]*point_b[i];
+        Union += bool(point_a[i]+point_b[i]);
+
+    }
+    miou[a_idx*M+b_idx]=Intersection/max(static_cast<float>(Union),1.);
+    miou[b_idx*M+a_idx]=Intersection/max(static_cast<float>(Union),1.);
 }
 
 __global__ void box2map_kernel(const int N ,const int C,const int H,const int W,const float *boxes,const float *values,float * map )
@@ -402,6 +425,15 @@ void points2boxLauncher(const int N,const int P,int *points_mask_pr,int *sampled
 #ifdef DEBUG
     cudaDeviceSynchronize();
 #endif
+}
+
+void calculate_miou_Launcher(float *miou,bool *point_mask,const int N,const int M)
+{
+    dim3 blocks(DIVUP(M,THREADS_PER_BLOCK_P),
+                DIVUP(M,THREADS_PER_BLOCK_P));
+    dim3 threads(THREADS_PER_BLOCK_P);
+    calculate_miou_kernel<<<blocks,threads>>>(miou,point_mask,N,M);
+
 }
 
 void distributed_sample_points_Launcher(const int B,const int N,const int n,const int f,const int num_points,float *voxel_pr,bool *voxel_mask_pr,float *src_pr,float *boxes_pr)

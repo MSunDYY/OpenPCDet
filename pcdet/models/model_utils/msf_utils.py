@@ -7,6 +7,8 @@ from typing import Optional, List
 from torch import Tensor
 from torch.nn.init import xavier_uniform_, zeros_, kaiming_normal_
 from spconv.pytorch.utils import PointToVoxel
+from pcdet.ops.box2map.box2map import sample_anchor,calculate_miou_gpu
+from pcdet import device
 # from torch.utils.cpp_extension import load
 # scatter = load(name='scatter', sources=['../cuda/scatter.cpp', '../cuda/scatter.cu'])
 
@@ -636,6 +638,107 @@ class VoxelSampler_traj(nn.Module):
 
         return torch.stack(src).permute(0, 2, 1, 3, 4).flatten(2, 3)
 
+
+class VoxelSampler_anchor(nn.Module):
+    GAMMA = 1.1
+
+    def __init__(self, device, voxel_size, pc_range, max_points_per_voxel, num_point_features=5):
+        super().__init__()
+
+        self.voxel_size = voxel_size
+
+        self.gen = PointToVoxel(
+            vsize_xyz=[voxel_size, voxel_size, pc_range[5] - pc_range[2]],
+            coors_range_xyz=pc_range,
+            num_point_features=num_point_features,
+            max_num_voxels=50000,
+            max_num_points_per_voxel=max_points_per_voxel,
+            device=device
+        )
+
+        self.pc_start = torch.FloatTensor(pc_range[:2]).to(device)
+        self.k = max_points_per_voxel
+        self.grid_x = int((pc_range[3] - pc_range[0]) / voxel_size)
+        self.grid_y = int((pc_range[4] - pc_range[1]) / voxel_size)
+
+    def get_output_feature_dim(self):
+        return self.num_point_features
+
+    @staticmethod
+    def cylindrical_pool(cur_points, cur_boxes, num_sample, gamma=1.):
+        if len(cur_points) < num_sample:
+            cur_points = F.pad(cur_points, [0, 0, 0, num_sample - len(cur_points)])
+
+        cur_radiis = torch.norm(cur_boxes[:, 3:5] / 2, dim=-1) * gamma
+        dis = torch.norm(
+            (cur_points[:, :2].unsqueeze(0) - cur_boxes[:, :2].unsqueeze(1).repeat(1, cur_points.shape[0], 1)), dim=2)
+        point_mask = (dis <= cur_radiis.unsqueeze(-1)).contiguous()
+        miou = dis.new_zeros(point_mask.shape[0],point_mask.shape[0])
+        calculate_miou_gpu(miou,point_mask)
+        # miou_real = (point_mask[:,None,:]*point_mask[None,:,:]).sum(-1)/(torch.clamp((point_mask+point_mask).sum(-1),min=1)).contiguous()
+        # miou_real[torch.arange(dis.shape[0]),torch.arange(dis.shape[0])]=0
+        num_anchors = 2
+        anchors_idx = torch.full((miou.shape[0],num_anchors),fill_value=-1,device='cpu',dtype=torch.int32)
+        sample_anchor(miou.cpu(),anchors_idx,torch.full((miou.shape[0],),device='cpu',fill_value=0,dtype=torch.bool),0.5)
+
+        sampled_mask, sampled_idx = torch.topk(point_mask.float(), num_sample)
+        sampled_idx = sampled_idx.view(-1, 1).repeat(1, cur_points.shape[-1])
+        sampled_points = torch.gather(cur_points, 0, sampled_idx).view(len(sampled_mask), num_sample, -1)
+
+        sampled_points[sampled_mask == 0, :] = 0
+
+        return sampled_points,anchors_idx[anchors_idx!=-1].long()
+
+    def forward(self, batch_size, rois, num_sample,roi_scores, batch_dict):
+
+        src = list()
+        rois_new = list()
+        for bs_idx in range(batch_size):
+
+            cur_points = batch_dict['points'][(batch_dict['points'][:, 0] == bs_idx)][:, 1:]
+            cur_batch_boxes = rois[bs_idx]
+            src_points = list()
+
+            gamma = 1.0  # ** (idx+1)
+            idx=0
+            time_mask = (cur_points[:, -1] - idx * 0.1).abs() < 1e-3
+            cur_time_points = cur_points[time_mask, :5].contiguous()
+
+            # cur_frame_boxes = cur_batch_boxes[idx]
+
+            voxel, coords, num_points = self.gen(cur_time_points)
+            coords = coords[:, [2, 1]].contiguous()
+
+            query_coords = (cur_batch_boxes[:, :2] - self.pc_start) // self.voxel_size
+
+            radiis = torch.ceil(
+                torch.norm(cur_batch_boxes[:, 3:5] / 2, dim=-1) * gamma / self.voxel_size)
+
+
+            dist = torch.abs(query_coords[:, None, :2] - coords[None, :, :])
+
+            voxel_mask = torch.all(dist < radiis[:, None, None], dim=-1).any(0)
+
+            num_points = num_points[voxel_mask]
+            key_points = voxel[voxel_mask, :]
+
+            point_mask = torch.arange(self.k)[None, :].repeat(len(key_points), 1).type_as(num_points)
+
+            point_mask = num_points[:, None] > point_mask
+            key_points = key_points[point_mask]
+            key_points = key_points[torch.randperm(len(key_points)), :]
+
+            key_points,keep_idx = self.cylindrical_pool(key_points, cur_batch_boxes, num_sample, gamma)
+            if idx!=0:
+                key_points[valid_length[bs_idx,idx]==0] = src_points[0][valid_length[bs_idx,idx]==0]
+                key_points[valid_length[bs_idx,idx]==0][:,:,:2]+=(cur_frame_boxes[valid_length[bs_idx,idx]==0][:,None,:2]-cur_batch_boxes[0][valid_length[bs_idx,idx]==0][:,None,:2])
+            src_points.append(key_points)
+
+            src.append(torch.stack(src_points))
+            # rois_new.append(cur_batch_boxes[keep_idx][None,:,:])
+
+        return torch.stack(src).permute(0, 2, 1, 3, 4).flatten(2, 3),keep_idx
+
 def build_voxel_sampler(device):
     return VoxelSampler(
         device,
@@ -652,4 +755,12 @@ def build_voxel_sampler_traj(device):
         pc_range=[-75.2, -75.2, -10, 75.2, 75.2, 10],
         max_points_per_voxel=32,
         num_point_features=5
+    )
+
+def build_voxel_sampler_anchor(device):
+    return VoxelSampler_anchor(
+        device,voxel_size=0.4,
+        pc_range=[-75.2,-75.2,-10,75.2,75.2,10],
+        max_points_per_voxel=32,
+        num_point_features=5,
     )

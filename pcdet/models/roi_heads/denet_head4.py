@@ -8,7 +8,7 @@ from pcdet.ops.iou3d_nms import iou3d_nms_utils
 from ...utils import common_utils, loss_utils
 from .roi_head_template import RoIHeadTemplate
 from ..model_utils.denet_utils import build_transformer, PointNet, MLP,SpatialMixerBlock, build_voxel_sampler_denet
-from ..model_utils.msf_utils import build_voxel_sampler,build_voxel_sampler_traj
+from ..model_utils.msf_utils import build_voxel_sampler,build_voxel_sampler_traj,build_voxel_sampler_anchor
 
 from .target_assigner.proposal_target_layer import ProposalTargetLayer
 from pcdet.ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_stack_modules
@@ -793,13 +793,23 @@ class DENet4Head(RoIHeadTemplate):
 
         batch_dict['cur_frame_idx'] = 0
         proposals_list = batch_dict['proposals_list']
-        trajectory_rois,valid = self.generate_trajectory_mppnet(cur_batch_boxes,proposals_list, batch_dict)
+        self.anchor_sampler = build_voxel_sampler_anchor(roi_scores.device)
+        num_sample = self.num_lidar_points
+        anchor_rois,keep_idx = self.anchor_sampler(batch_size,cur_batch_boxes,num_sample,batch_dict['roi_scores'],batch_dict)
+        # trajectory_rois,valid = self.generate_trajectory_mppnet(cur_batch_boxes,proposals_list, batch_dict)
+
+
         backward_rois = self.generate_trajectory_msf(cur_batch_boxes,batch_dict)
 
         # batch_dict['traj_memory'] = trajectory_rois
         batch_dict['has_class_labels'] = True
-        batch_dict['trajectory_rois'] = trajectory_rois
+        # batch_dict['trajectory_rois'] = trajectory_rois
         batch_dict['backward_rois'] = backward_rois
+
+        if self.voxel_sampler is None:
+            self.voxel_sampler = build_voxel_sampler(device)
+            self.voxel_sampler_traj = build_voxel_sampler_traj(device)
+        src1 = self.voxel_sampler(batch_size, backward_rois, num_sample, batch_dict)
 
         if self.training:
             targets_dict = self.assign_targets(batch_dict)
@@ -814,22 +824,20 @@ class DENet4Head(RoIHeadTemplate):
         else:
             empty_mask = batch_dict['roi_boxes'][:,:,:6].sum(-1)==0
             batch_dict['valid_traj_mask'] = ~empty_mask
-            batch_dict['roi_boxes'] = trajectory_rois[:,0]
-            valid_length = batch_dict['valid_length'].to(device)
+            batch_dict['roi_boxes'] = backward_rois[:,0]
+            # valid_length = batch_dict['valid_length'].to(device)
         rois = batch_dict['roi_boxes']
         num_rois = batch_dict['roi_boxes'].shape[1]
-        num_sample = self.num_lidar_points 
 
-        if self.voxel_sampler is None:
-            self.voxel_sampler = build_voxel_sampler(rois.device)
-            self.voxel_sampler_traj = build_voxel_sampler_traj(rois.device)
+
+
         src1 = self.voxel_sampler(batch_size, backward_rois, num_sample, batch_dict)
         if not self.training:
-            mask = (src1[:,:,:num_sample,0]!=0).sum(-1)>1
-            batch_dict['batch_box_preds'] = backward_rois[:,0][mask][None,:,:]
-            batch_dict['batch_cls_preds'] = batch_dict['roi_scores'][:,:,0][mask][None,:,None]
-            batch_dict['cls_preds_normalized'] = False
-            batch_dict['roi_labels'] = batch_dict['roi_labels'][mask][None,:]
+            mask = (src1[:,:,:,0]!=0).sum(-1)>1
+            batch_dict['batch_box_preds'] = backward_rois[0,0][keep_idx][None,:,:]
+            batch_dict['batch_cls_preds'] = batch_dict['roi_scores'][0,:,0][keep_idx][None,:,None]
+            batch_dict['cls_preds_normalized'] = True
+            batch_dict['roi_labels'] = batch_dict['roi_labels'][0][keep_idx][None,:]
             return batch_dict
 
         # src2 = rois.new_zeros(batch_size, num_rois, num_sample, 5)
