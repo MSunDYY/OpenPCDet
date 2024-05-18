@@ -107,11 +107,11 @@ class ProposalTargetLayer(nn.Module):
 
             sampled_inds = self.subsample_rois(max_overlaps=max_overlaps)
 
-            batch_rois[index] = cur_roi[sampled_inds]
-            batch_roi_labels[index] = cur_roi_labels[sampled_inds]
-            batch_roi_ious[index] = max_overlaps[sampled_inds]
-            batch_roi_scores[index] = cur_roi_scores[sampled_inds]
-            batch_gt_of_rois[index] = cur_gt[gt_assignment[sampled_inds]]
+            batch_rois[index] = cur_roi[sampled_inds[0]]
+            batch_roi_labels[index] = cur_roi_labels[sampled_inds[0]]
+            batch_roi_ious[index] = max_overlaps[sampled_inds[0]]
+            batch_roi_scores[index] = cur_roi_scores[sampled_inds[0]]
+            batch_gt_of_rois[index] = cur_gt[gt_assignment[sampled_inds[0]]]
 
         return batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_scores, batch_roi_labels
 

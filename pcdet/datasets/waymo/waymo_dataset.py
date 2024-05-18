@@ -528,6 +528,9 @@ class WaymoDataset(DatasetTemplate):
                     'roi_labels': pred_labels,
 
                 })
+                
+        if self.dataset_cfg.get('SHRINK_STRIDE',None) is not None:
+            points[:,:3] = points[:,:3]/np.array(self.dataset_cfg.get('SHRINK_STRIDE'))[None,:]
         input_dict.update({
             'points': points,
             'frame_id': info['frame_id'],
@@ -558,7 +561,10 @@ class WaymoDataset(DatasetTemplate):
                     annos['name'] = annos['name'][mask]
                     gt_boxes_lidar = gt_boxes_lidar[mask]
                     annos['num_points_in_gt'] = annos['num_points_in_gt'][mask]
-
+                
+                if self.dataset_cfg.get('SHRINK_STRIDE',None) is not None:
+                    gt_boxes_lidar[:,:3] = gt_boxes_lidar[:,:3]/np.array(self.dataset_cfg.get('SHRINK_STRIDE'))[None,:]
+                    gt_boxes_lidar[:,3:6 ] = gt_boxes_lidar[:,3:6] / np.array(self.dataset_cfg.get('SHRINK_STRIDE'))[None, :]
                 input_dict.update({
                     'gt_names': annos['name'],
                     'gt_boxes': gt_boxes_lidar,

@@ -677,7 +677,7 @@ class VoxelSampler_anchor(nn.Module):
         calculate_miou_gpu(miou,point_mask)
         # miou_real = (point_mask[:,None,:]*point_mask[None,:,:]).sum(-1)/(torch.clamp((point_mask+point_mask).sum(-1),min=1)).contiguous()
         # miou_real[torch.arange(dis.shape[0]),torch.arange(dis.shape[0])]=0
-        num_anchors = 2
+        num_anchors = 4
         anchors_idx = torch.full((miou.shape[0],num_anchors),fill_value=-1,device='cpu',dtype=torch.int32)
         sample_anchor(miou.cpu(),anchors_idx,torch.full((miou.shape[0],),device='cpu',fill_value=0,dtype=torch.bool),0.5)
 
