@@ -490,7 +490,7 @@ class DataBaseSampler(object):
                 sampled_dict = self.sample_with_fixed_number(class_name, sample_group)
 
                 sampled_boxes = np.stack([x['box3d_lidar'] for x in sampled_dict], axis=0).astype(np.float32)
-
+                
                 assert not self.sampler_cfg.get('DATABASE_WITH_FAKELIDAR',
                                                 False), 'Please use latest codes to generate GT_DATABASE'
 
