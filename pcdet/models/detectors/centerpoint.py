@@ -52,6 +52,13 @@ class CenterPoint(Detector3DTemplate):
             }
             return ret_dict, tb_dict, disp_dict
         else:
+            if self.dataset.dataset_cfg.get('SHRINK_STRIDE',None) is not None:
+                batch_dict['final_box_dicts'][0]['pred_boxes'][:,:3]*=torch.tensor(self.dataset.dataset_cfg.SHRINK_STRIDE,device=device)
+                batch_dict['final_box_dicts'][0]['pred_boxes'][:,3:6]*=torch.tensor(self.dataset.dataset_cfg.SHRINK_STRIDE,device=device)
+
+                batch_dict['gt_boxes'][:,:,:3]*=torch.tensor(self.dataset.dataset_cfg.SHRINK_STRIDE,device=device)
+                batch_dict['gt_boxes'][:,:,3:6]*=torch.tensor(self.dataset.dataset_cfg.SHRINK_STRIDE,device=device)
+
             pred_dicts, recall_dicts = self.post_processing(batch_dict)
             return pred_dicts, recall_dicts
 

@@ -3,11 +3,12 @@ CLASS_NAMES: ['Vehicle', 'Pedestrian', 'Cyclist']
 DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/waymo_dataset.yaml
     SAMPLED_INTERVAL: {
-        'train': 50,
-        'test':100
+        'train': 5,
+        'test':10
     }
-    POINT_CLOUD_RANGE: [-37.6, -37.6, -1, 37.6, 37.6, 2]
-    SHRINK_STRIDE: [2,2,2]
+#    POINT_CLOUD_RANGE: [-37.6, -37.6, -1, 37.6, 37.6, 2]
+    POINT_CLOUD_RANGE: [-18.8, -18.8, -0.5, 18.8, 18.8, 1]
+    SHRINK_STRIDE: [4,4,4]
     DATA_PROCESSOR:
         - NAME: mask_points_and_boxes_outside_range
           REMOVE_OUTSIDE_BOXES: True
@@ -19,7 +20,7 @@ DATA_CONFIG:
           }
 
         - NAME: transform_points_to_voxels
-          VOXEL_SIZE: [ 0.05, 0.05, 0.075 ]
+          VOXEL_SIZE: [ 0.025, 0.025, 0.0375 ]
           MAX_POINTS_PER_VOXEL: 5
           MAX_NUMBER_OF_VOXELS: {
               'train': 180000,
@@ -88,7 +89,7 @@ MODEL:
             MAX_OBJ_PER_SAMPLE: 500
             NMS_CONFIG:
                 NMS_TYPE: nms_gpu
-                NMS_THRESH: 0.9
+                NMS_THRESH: 0.7
                 NMS_PRE_MAXSIZE: 4096
                 NMS_POST_MAXSIZE: 500
 
