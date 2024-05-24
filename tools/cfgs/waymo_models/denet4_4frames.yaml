@@ -22,7 +22,7 @@ DATA_CONFIG:
 
     USE_PREDBOX: True
     ROI_BOXES_PATH: {
-        'train': '../output/waymo_models/centerpoint_4frames/default/eval/epoch_0/train/Interval1/result.pkl',  # example: predicted boxes of RPN in training set
+        'train': '../output/waymo_models/centerpoint_4frames/Interval5/eval/epoch_0/train/Interval1/result.pkl',  # example: predicted boxes of RPN in training set
         'test': '../output/waymo_models/centerpoint_4frames/default/eval/epoch_0/val/Interval1/result.pkl',  # example: predicted boxes of RPN in evalulation set
     }
 
@@ -62,7 +62,8 @@ MODEL:
 
     ROI_HEAD:
         NAME: DENet4Head
-        TRANS_INPUT: 128
+        TRANS_INPUT: 256
+        NUM_ANCHORS: 3
         CLASS_AGNOSTIC: True
         USE_BOX_ENCODING:
             ENABLED: True 
@@ -89,7 +90,7 @@ MODEL:
             pos_hidden_dim: 64
             enc_layers: 3
             dim_feedforward: 512
-            hidden_dim: 128 #equal to ROI_HEAD.TRANS_INPUT
+            hidden_dim: 256 #equal to ROI_HEAD.TRANS_INPUT
             dropout: 0.1
             nheads: 4
             pre_norm: False
@@ -112,7 +113,7 @@ MODEL:
             RATIO: 0.2
             USE_ROI_AUG: True
             USE_TRAJ_AUG:
-                ENABLED: False
+                ENABLED: True
                 THRESHOD: 0.8
             SAMPLE_ROI_BY_EACH_CLASS: True
             CLS_SCORE_TYPE: roi_iou

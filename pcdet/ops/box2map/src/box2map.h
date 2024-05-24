@@ -13,6 +13,6 @@ int points2box_gpu(at::Tensor points_mask,at::Tensor sampled_mask,at::Tensor sam
 int points2box(at::Tensor points_mask,at::Tensor sampled_mask,at::Tensor sampled_idx,at::Tensor point_sampled_num,const int num_sampled_per_box,const int num_sampled_per_point);
 int distributed_sample_points(at::Tensor voxels,at::Tensor voxel_mask,at::Tensor src,at::Tensor boxes,const int num_points);
 int sample_anchor(at::Tensor miou_tensor,at::Tensor anchors_idx_tensor,at::Tensor mask_tensor,const float threshold);
-int calculate_miou_gpu(at::Tensor miou_tensor,at::Tensor point_mask_tensor);
+int calculate_miou_gpu(at::Tensor miou_tensor,at::Tensor point_mask_tensor,at::Tensor label_tensor);
 
 #endif

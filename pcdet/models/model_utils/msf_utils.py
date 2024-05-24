@@ -665,7 +665,7 @@ class VoxelSampler_anchor(nn.Module):
         return self.num_point_features
 
     @staticmethod
-    def cylindrical_pool(cur_points, cur_boxes, num_sample, gamma=1.):
+    def cylindrical_pool(cur_points, cur_boxes, num_sample, gamma=1.,num_anchors = 3,return_boxes=True):
         if len(cur_points) < num_sample:
             cur_points = F.pad(cur_points, [0, 0, 0, num_sample - len(cur_points)])
 
@@ -674,25 +674,38 @@ class VoxelSampler_anchor(nn.Module):
             (cur_points[:, :2].unsqueeze(0) - cur_boxes[:, :2].unsqueeze(1).repeat(1, cur_points.shape[0], 1)), dim=2)
         point_mask = (dis <= cur_radiis.unsqueeze(-1)).contiguous()
         miou = dis.new_zeros(point_mask.shape[0],point_mask.shape[0])
-        calculate_miou_gpu(miou,point_mask)
+        calculate_miou_gpu(miou,point_mask,cur_boxes[:,-1].int())
         # miou_real = (point_mask[:,None,:]*point_mask[None,:,:]).sum(-1)/(torch.clamp((point_mask+point_mask).sum(-1),min=1)).contiguous()
         # miou_real[torch.arange(dis.shape[0]),torch.arange(dis.shape[0])]=0
-        num_anchors = 4
-        anchors_idx = torch.full((miou.shape[0],num_anchors),fill_value=-1,device='cpu',dtype=torch.int32)
-        sample_anchor(miou.cpu(),anchors_idx,torch.full((miou.shape[0],),device='cpu',fill_value=0,dtype=torch.bool),0.5)
 
-        sampled_mask, sampled_idx = torch.topk(point_mask.float(), num_sample)
+        anchors_idx = torch.full((miou.shape[0],num_anchors),fill_value=-1,device='cpu',dtype=torch.int32)
+
+        sample_anchor(miou.cpu(),anchors_idx,torch.full((miou.shape[0],),device='cpu',fill_value=0,dtype=torch.bool),0.5)
+        anchors_idx = anchors_idx.long().to(device)
+        anchors = cur_boxes[anchors_idx[anchors_idx[:,0]!=-1][:,0]][None,:,:].repeat(num_anchors,1,1)
+        for i in range(1,num_anchors):
+            anchors[i][anchors_idx[anchors_idx[:,0]!=-1][:,i]!=-1] = cur_boxes[anchors_idx[anchors_idx[:,i]!=-1][:,i]]
+            anchors[i][anchors_idx[anchors_idx[:,0]!=-1][:,i]==-1] = torch.mean(anchors[:i,anchors_idx[anchors_idx[:,0]!=-1][:,i]==-1],dim=0)
+        if return_boxes:
+            return anchors
+        for i in range(1,num_anchors):
+            point_mask[anchors_idx[anchors_idx[:,i]!=-1][:,0]] += point_mask[anchors_idx[anchors_idx[:,i]!=-1][:,i]]
+
+        sampled_mask, sampled_idx = torch.topk(point_mask[anchors_idx[:,0]!=-1].float(), num_sample)
+
+
         sampled_idx = sampled_idx.view(-1, 1).repeat(1, cur_points.shape[-1])
         sampled_points = torch.gather(cur_points, 0, sampled_idx).view(len(sampled_mask), num_sample, -1)
 
         sampled_points[sampled_mask == 0, :] = 0
 
-        return sampled_points,anchors_idx[anchors_idx!=-1].long()
+        return sampled_points,anchors_idx[anchors_idx[:,0]!=-1]
 
-    def forward(self, batch_size, rois, num_sample,roi_scores, batch_dict):
+    def forward(self, batch_size, rois, num_sample,roi_scores, batch_dict,num_anchors ,return_boxes=True):
 
         src = list()
         rois_new = list()
+        anchors_list = list()
         for bs_idx in range(batch_size):
 
             cur_points = batch_dict['points'][(batch_dict['points'][:, 0] == bs_idx)][:, 1:]
@@ -727,16 +740,23 @@ class VoxelSampler_anchor(nn.Module):
             point_mask = num_points[:, None] > point_mask
             key_points = key_points[point_mask]
             key_points = key_points[torch.randperm(len(key_points)), :]
+            if return_boxes:
+                anchors = self.cylindrical_pool(key_points, cur_batch_boxes, num_sample, gamma,num_anchors = num_anchors,return_boxes = return_boxes)
+                anchors_list.append(anchors)
+                continue
+            else:
+                key_points,keep_idx = self.cylindrical_pool(key_points, cur_batch_boxes, num_sample, gamma,return_boxes = return_boxes)
 
-            key_points,keep_idx = self.cylindrical_pool(key_points, cur_batch_boxes, num_sample, gamma)
-            if idx!=0:
-                key_points[valid_length[bs_idx,idx]==0] = src_points[0][valid_length[bs_idx,idx]==0]
-                key_points[valid_length[bs_idx,idx]==0][:,:,:2]+=(cur_frame_boxes[valid_length[bs_idx,idx]==0][:,None,:2]-cur_batch_boxes[0][valid_length[bs_idx,idx]==0][:,None,:2])
             src_points.append(key_points)
 
             src.append(torch.stack(src_points))
             # rois_new.append(cur_batch_boxes[keep_idx][None,:,:])
-
+        if return_boxes:
+            max_anchors_num = max([anchor.shape[1] for anchor in anchors_list])
+            anchors = rois.new_zeros(batch_size,num_anchors,max_anchors_num,anchors.shape[-1])
+            for bs in range(batch_size):
+                anchors[bs,:,:anchors_list[bs].shape[1]] = anchors_list[bs]
+            return anchors
         return torch.stack(src).permute(0, 2, 1, 3, 4).flatten(2, 3),keep_idx
 
 def build_voxel_sampler(device):

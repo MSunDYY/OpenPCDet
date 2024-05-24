@@ -302,11 +302,12 @@ __global__ void distrituted_sample_points_kernel(const int B,const int N,const i
     }
 
 }
-__global__ void calculate_miou_kernel(float * miou,bool * point_mask,const int N,const int M)
+__global__ void calculate_miou_kernel(float * miou,bool * point_mask,int * label,const int N,const int M)
 {
     const int a_idx = blockIdx.y*THREADS_PER_BLOCK_P+threadIdx.y;
     const int b_idx = blockIdx.x*THREADS_PER_BLOCK_P+threadIdx.x;
-    if(a_idx>=M || b_idx>=M || a_idx==b_idx){
+    if(a_idx>=M || b_idx>=M || a_idx==b_idx ||  *(label+a_idx)!=*(label+b_idx)){
+
     return;
     }
     const bool *point_a = point_mask+a_idx*N;
@@ -427,12 +428,12 @@ void points2boxLauncher(const int N,const int P,int *points_mask_pr,int *sampled
 #endif
 }
 
-void calculate_miou_Launcher(float *miou,bool *point_mask,const int N,const int M)
+void calculate_miou_Launcher(float *miou,bool *point_mask,int *label,const int N,const int M)
 {
     dim3 blocks(DIVUP(M,THREADS_PER_BLOCK_P),
                 DIVUP(M,THREADS_PER_BLOCK_P));
     dim3 threads(THREADS_PER_BLOCK_P);
-    calculate_miou_kernel<<<blocks,threads>>>(miou,point_mask,N,M);
+    calculate_miou_kernel<<<blocks,threads>>>(miou,point_mask,label,N,M);
 
 }
 

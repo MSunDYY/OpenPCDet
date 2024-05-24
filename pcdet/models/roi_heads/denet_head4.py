@@ -38,8 +38,8 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
                 rcnn_cls_labels: (B, M)
         """
 
-        batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_scores, batch_roi_labels, \
-        batch_backward_rois,batch_trajectory_rois,batch_valid_length = self.sample_rois_for_mppnet(batch_dict=batch_dict)
+        batch_rois, batch_gt_of_rois, batch_roi_ious,  batch_roi_labels, \
+        batch_backward_rois,batch_valid_length = self.sample_rois_for_mppnet(batch_dict=batch_dict)
 
         # regression valid mask
         reg_valid_mask = (batch_roi_ious > self.roi_sampler_cfg.REG_FG_THRESH).long()
@@ -65,9 +65,9 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
 
 
         targets_dict = {'rois': batch_rois, 'gt_of_rois': batch_gt_of_rois, 
-                        'gt_iou_of_rois': batch_roi_ious,'roi_scores': batch_roi_scores,
+                        'gt_iou_of_rois': batch_roi_ious,#'roi_scores': batch_roi_scores,
                         'roi_labels': batch_roi_labels,'reg_valid_mask': reg_valid_mask, 
-                        'rcnn_cls_labels': batch_cls_labels,'trajectory_rois':batch_trajectory_rois,
+                        'rcnn_cls_labels': batch_cls_labels,
                         'backward_rois':batch_backward_rois,
                         'valid_length': batch_valid_length,
                         }
@@ -91,29 +91,29 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
         roi_scores = batch_dict['roi_scores'][:, :, cur_frame_idx]
         roi_labels = batch_dict['roi_labels']
         gt_boxes = batch_dict['gt_boxes']
-
+        num_anchors = batch_dict['num_anchors']
         code_size = rois.shape[-1]
-        batch_rois = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, code_size)
-        batch_gt_of_rois = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, gt_boxes.shape[-1])
-        batch_roi_ious = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE)
-        batch_roi_scores = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE)
-        batch_roi_labels = rois.new_zeros((batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE), dtype=torch.long)
+        batch_rois = rois.new_zeros(batch_size,self.roi_sampler_cfg.ROI_PER_IMAGE * num_anchors, code_size)
+        batch_gt_of_rois = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE*num_anchors, gt_boxes.shape[-1])
+        batch_roi_ious = rois.new_zeros(batch_size,self.roi_sampler_cfg.ROI_PER_IMAGE * num_anchors)
+        batch_roi_scores = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE*num_anchors)
+        batch_roi_labels = rois.new_zeros((batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE*num_anchors), dtype=torch.long)
         backward_rois = batch_dict['backward_rois']
-        trajectory_rois = batch_dict['trajectory_rois']
-        batch_trajectory_rois = rois.new_zeros(batch_size, trajectory_rois.shape[1], self.roi_sampler_cfg.ROI_PER_IMAGE,
-                                                trajectory_rois.shape[-1])
-        batch_backward_rois = rois.new_zeros(batch_size, backward_rois.shape[1], self.roi_sampler_cfg.ROI_PER_IMAGE,
+        # trajectory_rois = batch_dict['trajectory_rois']
+        # batch_trajectory_rois = rois.new_zeros(batch_size, trajectory_rois.shape[1], self.roi_sampler_cfg.ROI_PER_IMAGE,
+        #                                         trajectory_rois.shape[-1])
+        batch_backward_rois = rois.new_zeros(batch_size, backward_rois.shape[1], self.roi_sampler_cfg.ROI_PER_IMAGE*num_anchors,
                                                backward_rois.shape[-1])
 
-        valid_length = batch_dict['valid_length']
+        # valid_length = batch_dict['valid_length']
         batch_valid_length = rois.new_zeros(
             (batch_size, batch_dict['backward_rois'].shape[1], self.roi_sampler_cfg.ROI_PER_IMAGE))
 
         for index in range(batch_size):
 
             cur_backward_rois = backward_rois[index]
-            cur_trajectory_rois = trajectory_rois[index]
-            cur_roi, cur_gt, cur_roi_labels, cur_roi_scores = rois[index], gt_boxes[index], roi_labels[index], \
+            # cur_trajectory_rois = trajectory_rois[index]
+            cur_roi, cur_gt, cur_roi_labels, cur_roi_scores = rois[index], gt_boxes[index], rois[index][:,-1].long(), \
             roi_scores[index]
 
             if 'valid_length' in batch_dict.keys():
@@ -128,16 +128,18 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
 
             if self.roi_sampler_cfg.get('SAMPLE_ROI_BY_EACH_CLASS', False):
                 max_overlaps, gt_assignment = self.get_max_iou_with_same_class(
-                    rois=cur_roi, roi_labels=cur_roi_labels,
+                    rois=cur_roi[:,:-1], roi_labels=cur_roi[:,-1].long(),
                     gt_boxes=cur_gt[:, 0:7], gt_labels=cur_gt[:, -1].long()
                 )
 
             else:
                 iou3d = iou3d_nms_utils.boxes_iou3d_gpu(cur_roi, cur_gt[:, 0:7])  # (M, N)
                 max_overlaps, gt_assignment = torch.max(iou3d, dim=1)
-
-            sampled_inds, fg_inds, bg_inds = self.subsample_rois(max_overlaps=max_overlaps)
-
+            num_rois = max_overlaps.shape[0]//num_anchors
+            sampled_inds, fg_inds, bg_inds = self.subsample_rois(max_overlaps=max_overlaps[torch.arange(num_rois)*num_anchors])
+            fg_inds = torch.concat([fg_inds[:,None]*num_anchors+i for i in range(num_anchors)],dim=-1).flatten()
+            bg_inds = torch.concat([bg_inds[:,None]*num_anchors+i for i in range(num_anchors)],dim=-1).flatten()
+            sampled_inds = torch.concat([fg_inds,bg_inds],dim=0)
             batch_roi_labels[index] = cur_roi_labels[sampled_inds.long()]
 
             if self.roi_sampler_cfg.get('USE_ROI_AUG', False):
@@ -157,7 +159,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
                 batch_roi_ious[index] = max_overlaps[sampled_inds]
                 batch_gt_of_rois[index] = cur_gt[gt_assignment[sampled_inds]]
 
-            batch_roi_scores[index] = cur_roi_scores[sampled_inds]
+            # batch_roi_scores[index] = cur_roi_scores[sampled_inds]
 
             if 'valid_length' in batch_dict.keys():
                 batch_valid_length[index] = cur_valid_length[:, sampled_inds]
@@ -169,9 +171,9 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
                     if idx == cur_frame_idx:
                         batch_backward_rois_list.append(
                             cur_backward_rois[cur_frame_idx:cur_frame_idx + 1, sampled_inds])
-                        batch_trajectory_rois_list.append(
-                            cur_trajectory_rois[cur_frame_idx:cur_frame_idx+1,sampled_inds]
-                        )
+                        # batch_trajectory_rois_list.append(
+                        #     cur_trajectory_rois[cur_frame_idx:cur_frame_idx+1,sampled_inds]
+                        # )
                         continue
                     fg_backs, _ = self.aug_roi_by_noise_torch(cur_backward_rois[idx, fg_inds],
                                                               cur_backward_rois[idx, fg_inds][:, :8],
@@ -179,22 +181,22 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
                                                               aug_times=self.roi_sampler_cfg.ROI_FG_AUG_TIMES,
                                                               pos_thresh=self.roi_sampler_cfg.USE_TRAJ_AUG.THRESHOD)
                     bg_backs = cur_backward_rois[idx, bg_inds]
-                    fg_trajs,_ = self.aug_roi_by_noise_torch(cur_trajectory_rois[idx,fg_inds],
-                                                             cur_trajectory_rois[idx,fg_inds][:,:8],
-                                                             max_overlaps[fg_inds],
-                                                             aug_times=self.roi_sampler_cfg.ROI_FG_AUG_TIMES,
-                                                             pos_thresh=self.roi_sampler_cfg.USE_TRAJ_AUG.THRESHOD
-                                                             )
-                    bg_trajs = cur_trajectory_rois[idx,bg_inds]
+                    # fg_trajs,_ = self.aug_roi_by_noise_torch(cur_trajectory_rois[idx,fg_inds],
+                    #                                          cur_trajectory_rois[idx,fg_inds][:,:8],
+                    #                                          max_overlaps[fg_inds],
+                    #                                          aug_times=self.roi_sampler_cfg.ROI_FG_AUG_TIMES,
+                    #                                          pos_thresh=self.roi_sampler_cfg.USE_TRAJ_AUG.THRESHOD
+                    #                                          )
+                    # bg_trajs = cur_trajectory_rois[idx,bg_inds]
 
                     batch_backward_rois_list.append(torch.cat([fg_backs, bg_backs], 0)[None, :, :])
-                    batch_trajectory_rois_list.append(torch.cat([fg_trajs,bg_trajs],0)[None,:,:])
+                    # batch_trajectory_rois_list.append(torch.cat([fg_trajs,bg_trajs],0)[None,:,:])
                 batch_backward_rois[index] = torch.cat(batch_backward_rois_list, 0)
-                batch_trajectory_rois[index] = torch.cat(batch_trajectory_rois_list,0)
+                # batch_trajectory_rois[index] = torch.cat(batch_trajectory_rois_list,0)
             else:
                 batch_backward_rois[index] = cur_backward_rois[:, sampled_inds]
-                batch_trajectory_rois[index] = cur_trajectory_rois[:,sampled_inds]
-        return batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_scores, batch_roi_labels, batch_backward_rois,batch_trajectory_rois, batch_valid_length
+                # batch_trajectory_rois[index] = cur_trajectory_rois[:,sampled_inds]
+        return batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_labels, batch_backward_rois, batch_valid_length
 
     def sample_rois_for_mppnet_(self, max_overlaps):
         # sample fg, easy_bg, hard_bg
@@ -365,6 +367,7 @@ class DENet4Head(RoIHeadTemplate):
         self.num_enc_layer = model_cfg.Transformer.enc_layers
         hidden_dim = model_cfg.TRANS_INPUT
         self.hidden_dim = model_cfg.TRANS_INPUT
+        self.num_anchors = model_cfg.NUM_ANCHORS
         self.num_groups = model_cfg.Transformer.num_groups
 
         self.grid_size = model_cfg.ROI_GRID_POOL.GRID_SIZE
@@ -375,9 +378,11 @@ class DENet4Head(RoIHeadTemplate):
         )
         self.cross = nn.ModuleList([CrossAttention(3,4,256,None) for i in range(4)])
         self.seqboxembed = PointNet(8,model_cfg=self.model_cfg)
-        self.jointembed = MLP(self.hidden_dim*(self.num_groups+1), model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
+        self.jointembed = MLP(self.hidden_dim*(self.num_groups+1), model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class*self.num_anchors, 4)
 
         self.up_dimension_geometry = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
+        self.fuse = MLP(input_dim=hidden_dim*self.num_anchors,hidden_dim=hidden_dim,output_dim=hidden_dim,num_layers=3)
+        self.fuse_box = MLP(input_dim=hidden_dim*self.num_anchors,hidden_dim=hidden_dim,output_dim=hidden_dim,num_layers=2)
         self.up_dimension_back = MLP(input_dim = 29, hidden_dim = 64, output_dim = hidden_dim, num_layers = 3)
         self.up_dimension_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
         self.up_dimension_back_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
@@ -388,11 +393,11 @@ class DENet4Head(RoIHeadTemplate):
         self.voxel_sampler = None
   
         self.class_embed = nn.ModuleList()
-        self.class_embed.append(nn.Linear(model_cfg.Transformer.hidden_dim, 1))
+        self.class_embed.append(nn.Linear(model_cfg.Transformer.hidden_dim, self.num_anchors))
 
         self.bbox_embed = nn.ModuleList()
         for _ in range(self.num_groups):
-            self.bbox_embed.append(MLP(model_cfg.Transformer.hidden_dim, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4))
+            self.bbox_embed.append(MLP(model_cfg.Transformer.hidden_dim, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class * self.num_anchors, 4))
 
 
     def init_weights(self, weight_init='xavier'):
@@ -785,41 +790,45 @@ class DENet4Head(RoIHeadTemplate):
         batch_dict['roi_boxes'] = batch_dict['roi_boxes'][:,0,:][:,roi_scores.sum(0)>0]
         batch_dict['roi_labels'] = batch_dict['roi_labels'][:, 0, :][:, roi_scores.sum(0) > 0].long()
         batch_dict['num_frames'] = batch_dict['num_points_all'].shape[-1]
+        batch_dict['num_anchors'] = 3
         num_rois = batch_dict['roi_boxes'].shape[1]
         # batch_dict['roi_labels'] = batch_dict['roi_labels'][:,0].long()
         # batch_dict['roi_scores'] = batch_dict['roi_scores'][:,0]
         batch_size = batch_dict['batch_size']
         cur_batch_boxes = copy.deepcopy(batch_dict['roi_boxes'].detach())
-
+        cur_batch_boxes = torch.concat([cur_batch_boxes,batch_dict['roi_labels'][:,:,None].float()],dim=-1)
         batch_dict['cur_frame_idx'] = 0
         proposals_list = batch_dict['proposals_list']
         self.anchor_sampler = build_voxel_sampler_anchor(roi_scores.device)
         num_sample = self.num_lidar_points
-        anchor_rois,keep_idx = self.anchor_sampler(batch_size,cur_batch_boxes,num_sample,batch_dict['roi_scores'],batch_dict)
+        anchors_rois= self.anchor_sampler(batch_size,cur_batch_boxes,num_sample,batch_dict['roi_scores'],batch_dict,num_anchors = batch_dict['num_anchors'],return_boxes = True)
+        anchors_rois = anchors_rois.transpose(1,2)
+
+
         # trajectory_rois,valid = self.generate_trajectory_mppnet(cur_batch_boxes,proposals_list, batch_dict)
 
 
-        backward_rois = self.generate_trajectory_msf(cur_batch_boxes,batch_dict)
+        backward_rois = self.generate_trajectory_msf(anchors_rois.reshape(batch_size,-1,anchors_rois.shape[-1]),batch_dict)
 
         # batch_dict['traj_memory'] = trajectory_rois
         batch_dict['has_class_labels'] = True
         # batch_dict['trajectory_rois'] = trajectory_rois
         batch_dict['backward_rois'] = backward_rois
 
-        if self.voxel_sampler is None:
-            self.voxel_sampler = build_voxel_sampler(device)
-            self.voxel_sampler_traj = build_voxel_sampler_traj(device)
-        src1 = self.voxel_sampler(batch_size, backward_rois, num_sample, batch_dict)
+        # if self.voxel_sampler is None:
+        #     self.voxel_sampler = build_voxel_sampler(device)
+        #     self.voxel_sampler_traj = build_voxel_sampler_traj(device)
+        # src1 = self.voxel_sampler(batch_size, backward_rois, num_sample, batch_dict)
 
         if self.training:
             targets_dict = self.assign_targets(batch_dict)
             batch_dict['roi_boxes'] = targets_dict['rois']
-            batch_dict['roi_scores'] = targets_dict['roi_scores']
+            # batch_dict['roi_scores'] = targets_dict['roi_scores']
             batch_dict['roi_labels'] = targets_dict['roi_labels']
             targets_dict['backward_rois'][:,batch_dict['cur_frame_idx'],:,:] = batch_dict['roi_boxes']
-            trajectory_rois = targets_dict['trajectory_rois']
+            # trajectory_rois = targets_dict['trajectory_rois']
             backward_rois = targets_dict['backward_rois']
-            empty_mask = batch_dict['roi_boxes'][:,:,:6].sum(-1)==0
+            empty_mask = batch_dict['roi_boxes'][:,torch.arange(batch_dict['roi_boxes'].shape[1]//self.num_anchors)*self.num_anchors,:6].sum(-1)==0
             valid_length = targets_dict['valid_length']
         else:
             empty_mask = batch_dict['roi_boxes'][:,:,:6].sum(-1)==0
@@ -829,47 +838,48 @@ class DENet4Head(RoIHeadTemplate):
         rois = batch_dict['roi_boxes']
         num_rois = batch_dict['roi_boxes'].shape[1]
 
-
-
-        src1 = self.voxel_sampler(batch_size, backward_rois, num_sample, batch_dict)
-        if not self.training:
-            mask = (src1[0,:,:128,0]!=0).sum(-1)>0
-            batch_dict['batch_box_preds'] = backward_rois[0,0][mask][None,:,:]
-            batch_dict['batch_cls_preds'] = batch_dict['roi_scores'][0,:,0][mask][None,:,None]
-            batch_dict['cls_preds_normalized'] = True
-            batch_dict['roi_labels'] = batch_dict['roi_labels'][0][mask][None,:]
-            return batch_dict
+        self.voxel_sampler = build_voxel_sampler(roi_scores.device)
+        backward_rois = backward_rois.reshape(batch_size,num_frames,-1,batch_dict['num_anchors'],backward_rois.shape[-1])
+        src1 = self.voxel_sampler(batch_size, torch.mean(backward_rois,dim=-2), num_sample, batch_dict)
+        # if not self.training:
+        #     mask = (src1[0,:,:128,0]!=0).sum(-1)>0
+        #     batch_dict['batch_box_preds'] = backward_rois[0,0][mask][None,:,:]
+        #     batch_dict['batch_cls_preds'] = batch_dict['roi_scores'][0,:,0][mask][None,:,None]
+        #     batch_dict['cls_preds_normalized'] = True
+        #     batch_dict['roi_labels'] = batch_dict['roi_labels'][0][mask][None,:]
+        #     return batch_dict
 
         # src2 = rois.new_zeros(batch_size, num_rois, num_sample, 5)
-        src2 = self.voxel_sampler_traj(batch_size, trajectory_rois, num_sample, batch_dict,valid_length)
+        # src2 = self.voxel_sampler_traj(batch_size, trajectory_rois, num_sample, batch_dict,valid_length)
 
         # src1 = self.voxel_sampler(batch_size,backward_rois,num_sample,batch_dict)
         # src2[~valid_length]=0
-        src1 = src1.view(batch_size * num_rois, -1, src1.shape[-1])
-        src2 = src2.view(batch_size * num_rois,-1,src2.shape[-1])
-        xyz1 = src1[:, :, :3]
-        xyz2 = src2[:, :, :3]
+        src1 = src1[:,:,None,:,:].repeat(1,1,batch_dict['num_anchors'],1,1).view(batch_size * num_rois, -1, src1.shape[-1])
+        # src2 = src2.view(batch_size * num_rois,-1,src2.shape[-1])
+        # xyz1 = src1[:, :, :3]
+        backward_rois = backward_rois.view(batch_size,num_frames,-1,backward_rois.shape[-1])
+        # xyz2 = src2[:, :, :3]
         src_backward_feature = self.get_proposal_aware_geometry_feature(src1,batch_size,backward_rois,num_rois)
-        src_trajectory_feature = self.get_proposal_aware_geometry_feature(src2, batch_size, trajectory_rois, num_rois)
+        # src_trajectory_feature = self.get_proposal_aware_geometry_feature(src2, batch_size, trajectory_rois, num_rois)
 
         src_motion_feature1 = self.get_proposal_aware_motion_feature(src1, batch_size, backward_rois, num_rois)
-        src_motion_feature2 = self.get_proposal_aware_motion_feature(src2,batch_size,trajectory_rois,num_rois)
+        # src_motion_feature2 = self.get_proposal_aware_motion_feature(src2,batch_size,trajectory_rois,num_rois)
         
         src1 = src_backward_feature + src_motion_feature1
-        src2 = src_trajectory_feature+src_motion_feature2
-        src = []
-
+        # src2 = src_trajectory_feature+src_motion_feature2
+        src1 = src1.reshape(-1,batch_dict['num_anchors'],src1.shape[-2],src1.shape[-1])
+        src1 = self.fuse(src1.transpose(1,2).reshape(-1,src1.shape[-2],self.num_anchors*self.hidden_dim))
         # num_rois_all = src1.shape[0]
         # src = src_geometry_feature + src_motion_feature
         # src = self.conv(torch.concat([src_trajectory_feature,src_backward_feature],dim=-1).permute(0,2,1)).permute(0,2,1)
         box_reg, feat_box = self.trajectories_auxiliary_branch(backward_rois)
-        
+        feat_box = self.fuse_box(feat_box.reshape(-1,self.num_anchors*feat_box.shape[-1]))
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK',None):
             src1[empty_mask.view(-1)] = 0
-            src2[empty_mask.view(-1)] = 0
+            # src2[empty_mask.view(-1)] = 0
     
         hs1, tokens1 = self.transformer(src1,pos=None)
-        hs2,tokens2 = self.transformer(src2,pos=None)
+        # hs2,tokens2 = self.transformer(src2,pos=None)
         # hs2,tokens2 = self.transformer2(src2,pos=None)
         # hs = hs[:,:num_rois_all]
         
@@ -879,7 +889,7 @@ class DENet4Head(RoIHeadTemplate):
         for i in range(self.num_enc_layer):
             point_cls_list.append(self.class_embed[0](tokens1[i][0]))
 
-        for i in range(hs2.shape[0]):
+        for i in range(hs1.shape[0]):
             for j in range(self.num_enc_layer):
                 # tokens1[j][i] = tokens1[j][i]+tokens2[j][i]
                 point_reg_list.append(self.bbox_embed[i](tokens1[j][i]))
@@ -888,7 +898,7 @@ class DENet4Head(RoIHeadTemplate):
         point_cls = torch.cat(point_cls_list,0)
 
         point_reg = torch.cat(point_reg_list,0)
-        hs2 = hs2.permute(1,0,2).reshape(hs2.shape[1],-1)
+        # hs2 = hs2.permute(1,0,2).reshape(hs2.shape[1],-1)
         hs1 = hs1.permute(1,0,2).reshape(hs1.shape[1],-1)
 
         # hs2 = hs2.permute(1,0,2).reshape(hs2.shape[1],-1)
@@ -1002,7 +1012,7 @@ class DENet4Head(RoIHeadTemplate):
   
             if self.model_cfg.USE_AUX_LOSS:
                 point_reg = forward_ret_dict['point_reg']
-
+                point_reg = point_reg.view(-1,7)
                 groups = point_reg.shape[0]//reg_targets.shape[0]
                 if groups != 1 :
                     point_loss_regs = 0
@@ -1076,7 +1086,7 @@ class DENet4Head(RoIHeadTemplate):
         if loss_cfgs.CLS_LOSS == 'BinaryCrossEntropy':
 
             rcnn_cls_flat = rcnn_cls.view(-1)
-
+            # rcnn_cls_flat = rcnn_cls
             groups = rcnn_cls_flat.shape[0] // rcnn_cls_labels.shape[0]
             if groups != 1:
                 rcnn_loss_cls = 0

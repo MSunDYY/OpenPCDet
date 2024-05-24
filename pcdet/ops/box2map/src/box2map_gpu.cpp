@@ -41,7 +41,7 @@ const int THREADS_PER_BLOCK_NMS = sizeof(unsigned long long) * 8;
 
 void box2mapLauncher(const int N,const int C,const int H,const int W,const float *boxes,const float *values,float * map);
 void points2boxLauncher(const int N,const int P,int *points_mask_pr,int *sampled_mask_pr,int*sampled_idx_pr,int *point_sampled_num_pr,const int num_sampled_per_box,const int num_sampled_per_point,const int num_threads);
-void calculate_miou_Launcher(float *miou,bool *point_mask,const int N,const int M );
+void calculate_miou_Launcher(float *miou,bool *point_mask,int *label,const int N,const int M );
 void distributed_sample_points_Launcher(const int B,const int N,const int n,const int f,const int num_points,float *voxel_pr,bool *voxel_mask_pr,float *src_pr,float *boxes);
 
 
@@ -62,15 +62,17 @@ int box2map_gpu(at::Tensor boxes_tensor, at::Tensor map_tensor, at::Tensor value
     return 1;
 }
 
-int calculate_miou_gpu(at::Tensor miou_tensor,at::Tensor point_mask_tensor)
+int calculate_miou_gpu(at::Tensor miou_tensor,at::Tensor point_mask_tensor,at::Tensor label_tensor)
 {
     CHECK_INPUT(miou_tensor);
     CHECK_INPUT(point_mask_tensor);
+    CHECK_INPUT(label_tensor);
     int N=point_mask_tensor.size(1);
     int M=miou_tensor.size(0);
     float *miou = miou_tensor.data<float>();
     bool *point_mask = point_mask_tensor.data<bool>();
-    calculate_miou_Launcher(miou,point_mask,N,M);
+    int *label = label_tensor.data<int>();
+    calculate_miou_Launcher(miou,point_mask,label,N,M);
     return 1;
 
 }
