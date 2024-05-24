@@ -204,7 +204,7 @@ class Detector3DTemplate(nn.Module):
         import GPUtil
 
         if self.model_cfg.ROI_HEAD.TARGET_CONFIG.get('ROI_PER_IMAGE',False) is not False and GPUtil.getGPUs()[0].name.endswith('1650'):
-            self.model_cfg.ROI_HEAD.TARGET_CONFIG.ROI_PER_IMAGE = 8
+            self.model_cfg.ROI_HEAD.TARGET_CONFIG.ROI_PER_IMAGE = 96
 
         point_head_module = roi_heads.__all__[self.model_cfg.ROI_HEAD.NAME](
             model_cfg=self.model_cfg.ROI_HEAD,

@@ -678,10 +678,16 @@ class VoxelSampler_anchor(nn.Module):
         # miou_real = (point_mask[:,None,:]*point_mask[None,:,:]).sum(-1)/(torch.clamp((point_mask+point_mask).sum(-1),min=1)).contiguous()
         # miou_real[torch.arange(dis.shape[0]),torch.arange(dis.shape[0])]=0
 
-        anchors_idx = torch.full((miou.shape[0],num_anchors),fill_value=-1,device='cpu',dtype=torch.int32)
+        anchors_idx = torch.full((miou.shape[0],miou.shape[0]),fill_value=-1,device='cpu',dtype=torch.int32)
+        address1 = torch.full((miou.shape[0],),fill_value=0,device='cpu',dtype=torch.int32)
+        address2 = torch.full((miou.shape[0],),fill_value=0,device='cpu',dtype=torch.int32)
 
-        sample_anchor(miou.cpu(),anchors_idx,torch.full((miou.shape[0],),device='cpu',fill_value=0,dtype=torch.bool),0.5)
-        anchors_idx = anchors_idx.long().to(device)
+        miou_max ,miou_index= miou.max(-1)
+
+        num_anchors_all = sample_anchor(miou_max.cpu(),miou_index.int().cpu(),anchors_idx,address1,address2,0.5)
+        # miou_max ,miou_index= miou.max(0)
+        anchors_idx = anchors_idx[:num_anchors_all,:num_anchors].long()
+
         anchors = cur_boxes[anchors_idx[anchors_idx[:,0]!=-1][:,0]][None,:,:].repeat(num_anchors,1,1)
         for i in range(1,num_anchors):
             anchors[i][anchors_idx[anchors_idx[:,0]!=-1][:,i]!=-1] = cur_boxes[anchors_idx[anchors_idx[:,i]!=-1][:,i]]

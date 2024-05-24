@@ -228,43 +228,41 @@ inline float iou_bev(const float *box_a, const float *box_b){
     return s_overlap / fmaxf(sa + sb - s_overlap, EPS);
 }
 
-int sample_anchor(at::Tensor miou_tensor,at::Tensor anchors_idx_tensor,at::Tensor mask_tensor,const float threshold)
+int sample_anchor(at::Tensor miou_max_tensor,at::Tensor miou_index_tensor,at::Tensor anchors_idx_tensor,at::Tensor address1_tensor,at::Tensor address2_tensor,const float threshold)
 {
-    CHECK_CONTIGUOUS(miou_tensor);
+    CHECK_CONTIGUOUS(miou_index_tensor);
     CHECK_CONTIGUOUS(anchors_idx_tensor);
-    CHECK_CONTIGUOUS(mask_tensor);
-    float * miou = miou_tensor.data<float>();
+
+
+    float * miou_max = miou_max_tensor.data<float>();
+    int * miou_index = miou_index_tensor.data<int>();
+
     int * anchors_idx = anchors_idx_tensor.data<int>();
-    bool *mask = mask_tensor.data<bool>();
-    int N = miou_tensor.size(0);
-    int anchor_loc=0;
-    int num_anchors = anchors_idx_tensor.size(1);
+    int *address1 = address1_tensor.data<int>();
+    int *address2 = address2_tensor.data<int>();
+    int N = miou_max_tensor.size(0);
+
+    int location=0;
     for(int i=0;i<N;i++)
     {
-        if (mask[i]==0)
+        if (miou_index[i]<i && miou_max[i]>threshold )
         {
-            anchors_idx[anchor_loc*num_anchors]=i;
-            mask[i]=1;
-            for (int j=i+1,n=1;j<N;j++)
-            {
-                if(miou[i*N+j]>threshold )
-                {
-                    mask[j]=1;
-                    if(n<num_anchors)
-                        {anchors_idx[anchor_loc*num_anchors+n]=j;n++;}
+            address1[i]=address1[miou_index[i]];
 
-                }
-                else {continue;}
-            }
-            anchor_loc+=1;
+            anchors_idx[address1[i]*N+address2[address1[i]]]=i;
+            address2[address1[i]]+=1;
+
         }
         else
         {
-            continue;
+            anchors_idx[location*N]=i;
+            address1[i] = location;
+            address2[address1[i]]+=1;
+            location++;
         }
 
     }
-    return 1;
+    return location;
 }
 
 

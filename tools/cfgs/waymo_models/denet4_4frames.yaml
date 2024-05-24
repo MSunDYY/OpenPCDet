@@ -62,7 +62,7 @@ MODEL:
 
     ROI_HEAD:
         NAME: DENet4Head
-        TRANS_INPUT: 256
+        TRANS_INPUT: 128
         NUM_ANCHORS: 3
         CLASS_AGNOSTIC: True
         USE_BOX_ENCODING:
@@ -107,11 +107,12 @@ MODEL:
         TARGET_CONFIG:
             BOX_CODER: ResidualCoder
             ROI_PER_IMAGE: 96
-            FG_RATIO: 0.5
+            FG_RATIO: 0.7
             REG_AUG_METHOD: single
             ROI_FG_AUG_TIMES: 10
             RATIO: 0.2
             USE_ROI_AUG: True
+            USE_BG_ROI_AUG: True
             USE_TRAJ_AUG:
                 ENABLED: True
                 THRESHOD: 0.8

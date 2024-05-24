@@ -147,8 +147,14 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
                 fg_rois, fg_iou3d = self.aug_roi_by_noise_torch(cur_roi[fg_inds], cur_gt[gt_assignment[fg_inds]],
                                                                 max_overlaps[fg_inds],
                                                                 aug_times=self.roi_sampler_cfg.ROI_FG_AUG_TIMES)
-                bg_rois = cur_roi[bg_inds]
-                bg_iou3d = max_overlaps[bg_inds]
+                if self.roi_sampler_cfg.get('USE_BG_ROI_AUG',False):
+                    bg_rois,_ = self.aug_roi_by_noise_torch(cur_roi[bg_inds],cur_roi[bg_inds],max_overlaps[bg_inds],
+                                                            aug_times = self.roi_sampler_cfg.ROI_FG_AUG_TIMES)
+                    bg_iou3d=  iou3d_nms_utils.boxes_iou3d_gpu(bg_rois[:,:7],cur_gt[:,:7][gt_assignment[bg_inds]])
+                    bg_iou3d = bg_iou3d[torch.arange(bg_rois.shape[0]),torch.arange(bg_rois.shape[0])]
+                else:
+                    bg_rois = cur_roi[bg_inds]
+                    bg_iou3d = max_overlaps[bg_inds]
 
                 batch_rois[index] = torch.cat([fg_rois, bg_rois], 0)
                 batch_roi_ious[index] = torch.cat([fg_iou3d, bg_iou3d], 0)
@@ -378,18 +384,18 @@ class DENet4Head(RoIHeadTemplate):
         )
         self.cross = nn.ModuleList([CrossAttention(3,4,256,None) for i in range(4)])
         self.seqboxembed = PointNet(8,model_cfg=self.model_cfg)
-        self.jointembed = MLP(self.hidden_dim*(self.num_groups+1), model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class*self.num_anchors, 4)
+        self.jointembed = MLP(model_cfg.Transformer.hidden_dim*(self.num_groups+1), model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class*self.num_anchors, 4)
 
         self.up_dimension_geometry = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
-        self.fuse = MLP(input_dim=hidden_dim*self.num_anchors,hidden_dim=hidden_dim,output_dim=hidden_dim,num_layers=3)
-        self.fuse_box = MLP(input_dim=hidden_dim*self.num_anchors,hidden_dim=hidden_dim,output_dim=hidden_dim,num_layers=2)
+        self.fuse = MLP(input_dim=hidden_dim*self.num_anchors,hidden_dim=model_cfg.Transformer.hidden_dim,output_dim=model_cfg.Transformer.hidden_dim,num_layers=2)
+        self.fuse_box = MLP(input_dim=hidden_dim*self.num_anchors,hidden_dim=model_cfg.Transformer.hidden_dim,output_dim=model_cfg.Transformer.hidden_dim,num_layers=2)
         self.up_dimension_back = MLP(input_dim = 29, hidden_dim = 64, output_dim = hidden_dim, num_layers = 3)
         self.up_dimension_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
         self.up_dimension_back_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
 
         
         self.transformer = build_transformer(model_cfg.Transformer)
-        self.transformer2 = build_transformer(model_cfg.Transformer)
+        # self.transformer2 = build_transformer(model_cfg.Transformer)
         self.voxel_sampler = None
   
         self.class_embed = nn.ModuleList()
