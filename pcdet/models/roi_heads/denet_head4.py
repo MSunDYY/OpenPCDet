@@ -844,7 +844,7 @@ class DENet4Head(RoIHeadTemplate):
         rois = batch_dict['roi_boxes']
         num_rois = batch_dict['roi_boxes'].shape[1]
 
-        self.voxel_sampler = build_voxel_sampler(roi_scores.device)
+        self.voxel_sampler = build_voxel_sampler(roi_scores.device,return_point_feature = True)
         backward_rois = backward_rois.reshape(batch_size,num_frames,-1,batch_dict['num_anchors'],backward_rois.shape[-1])
         src1 = self.voxel_sampler(batch_size, torch.mean(backward_rois,dim=-2), num_sample, batch_dict)
         # if not self.training:
