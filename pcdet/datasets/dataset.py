@@ -99,7 +99,8 @@ class DatasetTemplate(torch_data.Dataset):
             pred_dict['pred_labels'] = pred_labels
             if 'num_pred_gt' in box_dict:
                 pred_dict['num_pred_gt'] = box_dict['num_pred_gt'].cpu().numpy()
-
+            if 'pred_anchors' in box_dict:
+                pred_dict['pred_anchors'] = box_dict['pred_anchors'].cpu().numpy()
             return pred_dict
 
         annos = []

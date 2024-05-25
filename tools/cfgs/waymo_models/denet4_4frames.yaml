@@ -6,11 +6,11 @@ DATA_CONFIG:
     TRANSFORMED_POINTS: True
     DATA_SPLIT: {
         'train': train,
-        'test': val
+        'test': train
     }
     TRAIN_WITH_SPEED: True
     SAMPLED_INTERVAL: {
-        'train': 4,
+        'train': 1,
         'test': 200
     }
     FILTER_EMPTY_BOXES_FOR_TRAIN: False
@@ -22,8 +22,8 @@ DATA_CONFIG:
 
     USE_PREDBOX: True
     ROI_BOXES_PATH: {
-        'train': '../output/waymo_models/centerpoint_4frames/Interval5/eval/epoch_0/train/Interval1/result.pkl',  # example: predicted boxes of RPN in training set
-        'test': '../output/waymo_models/centerpoint_4frames/Interval5/eval/epoch_0/val/Interval1/result.pkl',  # example: predicted boxes of RPN in evalulation set
+        'train': '../output/waymo_models/denet4_4frames/anchor_rois/eval/epoch_36/train/anchor_rois/result.pkl',  # example: predicted boxes of RPN in training set
+        'test': '../output/waymo_models/centerpoint_4frames/Interval5/eval/epoch_0/train/Interval1/result.pkl',  # example: predicted boxes of RPN in evalulation set
     }
 
     DATA_AUGMENTOR:
