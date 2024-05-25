@@ -265,7 +265,7 @@ class TransformerEncoderLayer(nn.Module):
         self.num_point = num_points
         self.num_groups= num_groups
         self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-        self.self_attn = vector_attention(d_model, nhead=4)
+        # self.self_attn = vector_attention(d_model, nhead=4)
         self.linear1 = nn.Linear(d_model, dim_feedforward)
         self.dropout = nn.Dropout(dropout)
         self.linear2 = nn.Linear(dim_feedforward, d_model)
@@ -310,7 +310,7 @@ class TransformerEncoderLayer(nn.Module):
             key = src_intra_group_fusion
 
       
-        src_summary = self.self_attn(token, key,src_intra_group_fusion)
+        src_summary = self.self_attn(token, key,src_intra_group_fusion)[0]
         token = token + self.dropout1(src_summary)
         token = self.norm1(token)
         src_summary = self.linear2(self.dropout(self.activation(self.linear1(token))))
