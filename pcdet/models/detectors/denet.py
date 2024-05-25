@@ -65,7 +65,8 @@ class DENet(Detector3DTemplate):
             if post_process_cfg.get('GENERATE_ANCHORS'):
                 pred_boxes = batch_dict['roi_boxes'][index]
                 pred_anchors = batch_dict['pred_anchors'][index]
-
+                pred_boxes[:,7:]*=-10
+                pred_anchors[:,:,7:]*=-10
                 record_dict = {
                     'pred_boxes': pred_boxes[pred_boxes[:,0]!=0,:9],
                     'pred_scores': batch_dict['roi_scores'][index][pred_boxes[:,0]!=0],

@@ -52,6 +52,12 @@ class WaymoDataset(DatasetTemplate):
             )
         else:
             self.pred_boxes_dict = {}
+
+        if self.dataset_cfg.get('USE_ANCHOR',False):
+            self.pred_anchors_dict = self.load_pred_anchors_to_dict(
+                pred_anchors_path=self.dataset_cfg.ROI_BOXES_PATH[self.mode]
+            )
+
         import GPUtil
         if (GPUtil.getGPUs()[0].name.endswith('3080') and self.training) or (GPUtil.getGPUs()[0].name.endswith('1650')):
             self.dataset_cfg.TRANSFORMED_POINTS=False
@@ -114,13 +120,15 @@ class WaymoDataset(DatasetTemplate):
             pred_dicts = pickle.load(f)
 
         pred_boxes_dict = {}
+        pred_anchors_dict = {}
         for index, box_dict in enumerate(pred_dicts):
             seq_name = box_dict['frame_id'][:-4].replace('training_', '').replace('validation_', '')
             sample_idx = int(box_dict['frame_id'][-3:])
 
             if seq_name not in pred_boxes_dict:
                 pred_boxes_dict[seq_name] = {}
-
+                if 'pred_anchors' in pred_boxes_dict:
+                    pred_anchors_dict[seq_name] = {}
             pred_labels = np.array(
                 [self.class_names.index(box_dict['name'][k]) + 1 for k in range(box_dict['name'].shape[0])])
             pred_boxes = np.concatenate(
@@ -128,7 +136,29 @@ class WaymoDataset(DatasetTemplate):
             pred_boxes_dict[seq_name][sample_idx] = pred_boxes
 
         self.logger.info(f'Predicted boxes has been loaded, total sequences: {len(pred_boxes_dict)}')
+
+
+
         return pred_boxes_dict
+
+    def load_pred_anchors_to_dict(self, pred_anchors_path):
+        self.logger.info(f'Loading and reorganizing pred_boxes to dict from path: {pred_anchors_path}')
+        with open(pred_anchors_path, 'rb') as f:
+            pred_dicts = pickle.load(f)
+
+        pred_boxes_dict = {}
+        pred_anchors_dict = {}
+        for index, box_dict in enumerate(pred_dicts):
+            seq_name = box_dict['frame_id'][:-4].replace('training_', '').replace('validation_', '')
+            sample_idx = int(box_dict['frame_id'][-3:])
+
+            if seq_name not in pred_anchors_dict:
+                # pred_boxes_dict[seq_name] = {}
+                pred_anchors_dict[seq_name] = {}
+            pred_anchors_dict[seq_name][sample_idx] = box_dict['pred_anchors']
+        self.logger.info(f'Predicted boxes has been loaded, total sequences: {len(pred_boxes_dict)}')
+
+        return pred_anchors_dict
 
     def load_data_to_shared_memory(self):
         self.logger.info(f'Loading training data to shared memory (file limit={self.shared_memory_file_limit})')
@@ -452,6 +482,16 @@ class WaymoDataset(DatasetTemplate):
 
         return points, num_points_all, sample_idx_pre_list, gt_boxes, annos_all, poses, pred_boxes, pred_scores, pred_labels
 
+    def load_pred_anchors_from_dict(self,sequence_name, sample_idx):
+        """
+        boxes: (N, 11)  [x, y, z, dx, dy, dn, raw, vx, vy, score, label]
+        """
+        sequence_name = sequence_name.replace('training_', '').replace('validation_', '')
+        load_boxes = self.pred_anchors_dict[sequence_name][sample_idx]
+        # assert load_boxes.shape[-1] == 11
+
+        load_boxes[:,:, 7:9] = -0.1 * load_boxes[:,:, 7:9]  # transfer speed to negtive motion from t to t-1
+        return load_boxes
     def __len__(self):
         if self._merge_all_iters_to_one_epoch:
             return len(self.infos) * self.total_epochs
@@ -518,7 +558,9 @@ class WaymoDataset(DatasetTemplate):
                     load_pred_boxes=self.dataset_cfg.get('USE_PREDBOX', False),
                     concat=self.dataset_cfg.get('CONCAT', True),transformed_points=self.dataset_cfg.get('TRANSFORMED_POINTS',False),
                 )
-
+            if self.dataset_cfg.get('USE_ANCHOR',False):
+                pred_anchors = self.load_pred_anchors_from_dict(sequence_name, sample_idx)
+                input_dict['anchors'] = pred_anchors
             input_dict['num_points_all'] = num_points_all
             input_dict['poses'] = poses
             if self.dataset_cfg.get('USE_PREDBOX', False):
