@@ -62,6 +62,18 @@ class DENet(Detector3DTemplate):
         recall_dict = {}
         pred_dicts = []
         for index in range(batch_size):
+            if post_process_cfg.get('GENERATE_ANCHORS'):
+                pred_boxes = batch_dict['roi_boxes'][index]
+                pred_anchors = batch_dict['pred_anchors'][index]
+
+                record_dict = {
+                    'pred_boxes': pred_boxes[pred_boxes[:,0]!=0,:9],
+                    'pred_scores': batch_dict['roi_scores'][index][pred_boxes[:,0]!=0],
+                    'pred_labels': batch_dict['roi_labels'][index][pred_boxes[:,0]!=0],
+                    'pred_anchors': pred_anchors[pred_anchors[:,0,0]!=0,:,:9]
+                }
+                pred_dicts.append(record_dict)
+                continue
             if batch_dict.get('batch_index', None) is not None:
                 assert batch_dict['batch_box_preds'].shape.__len__() == 2
                 batch_mask = (batch_dict['batch_index'] == index)

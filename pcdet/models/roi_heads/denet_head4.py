@@ -703,7 +703,7 @@ class DENet4Head(RoIHeadTemplate):
         trajectory_rois = cur_batch_boxes[:, None, :, :].repeat(1, num_frames, 1, 1)
         trajectory_rois[:, 0, :, :] = cur_batch_boxes
         # batch_dict['valid_length'] = torch.ones([batch_dict['batch_size'], num_frames, trajectory_rois.shape[2]])
-        batch_dict['roi_scores'] = batch_dict['roi_scores'][:, :, None].repeat(1, 1, num_frames)
+        # batch_dict['roi_scores'] = batch_dict['roi_scores'][:, :, None].repeat(1, 1, num_frames)
 
         # simply propagate proposal based on velocity
         for i in range(1, num_frames):
@@ -825,7 +825,13 @@ class DENet4Head(RoIHeadTemplate):
         #     self.voxel_sampler = build_voxel_sampler(device)
         #     self.voxel_sampler_traj = build_voxel_sampler_traj(device)
         # src1 = self.voxel_sampler(batch_size, backward_rois, num_sample, batch_dict)
-
+        if not self.training:
+            # mask = (src1[0,:,:128,0]!=0).sum(-1)>0
+            batch_dict['pred_anchors'] = anchors_rois
+            # batch_dict['batch_cls_preds'] = batch_dict['roi_scores'][0,:,0][mask][None,:,None]
+            # batch_dict['cls_preds_normalized'] = True
+            # batch_dict['roi_labels'] = batch_dict['roi_labels'][0][mask][None,:]
+            return batch_dict
         if self.training:
             targets_dict = self.assign_targets(batch_dict)
             batch_dict['roi_boxes'] = targets_dict['rois']
@@ -847,13 +853,7 @@ class DENet4Head(RoIHeadTemplate):
         
         backward_rois = backward_rois.reshape(batch_size,num_frames,-1,batch_dict['num_anchors'],backward_rois.shape[-1])
         src1,src1_features = self.voxel_sampler(batch_size, torch.mean(backward_rois,dim=-2), num_sample, batch_dict)
-        # if not self.training:
-        #     mask = (src1[0,:,:128,0]!=0).sum(-1)>0
-        #     batch_dict['batch_box_preds'] = backward_rois[0,0][mask][None,:,:]
-        #     batch_dict['batch_cls_preds'] = batch_dict['roi_scores'][0,:,0][mask][None,:,None]
-        #     batch_dict['cls_preds_normalized'] = True
-        #     batch_dict['roi_labels'] = batch_dict['roi_labels'][0][mask][None,:]
-        #     return batch_dict
+
 
         # src2 = rois.new_zeros(batch_size, num_rois, num_sample, 5)
         # src2 = self.voxel_sampler_traj(batch_size, trajectory_rois, num_sample, batch_dict,valid_length)

@@ -866,6 +866,7 @@ class VoxelSampler_anchor(nn.Module):
 
             cur_points = batch_dict['points'][(batch_dict['points'][:, 0] == bs_idx)][:, 1:]
             cur_batch_boxes = rois[bs_idx]
+            cur_batch_boxes = cur_batch_boxes[cur_batch_boxes[:,0]!=0]
             src_points = list()
 
             gamma = 1.0  # ** (idx+1)

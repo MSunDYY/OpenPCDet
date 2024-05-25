@@ -29,10 +29,10 @@ current_file_path = os.path.dirname(__file__)
 
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
-    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/centerpoint_4frames.yaml',
+    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/denet4_4frames.yaml',
                         help='specify the config for training')
 
-    parser.add_argument('--batch_size', type=int, default=1, required=False, help='batch size for training')
+    parser.add_argument('--batch_size', type=int, default=2, required=False, help='batch size for training')
     parser.add_argument('--workers', type=int, default=4, help='number of workers for dataloader')
     parser.add_argument('--extra_tag', type=str, default='default', help='extra tag for this experiment')
     parser.add_argument('--ckpt', type=str,
