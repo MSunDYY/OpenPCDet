@@ -66,12 +66,12 @@ class DENet(Detector3DTemplate):
                 pred_boxes = batch_dict['roi_boxes'][index]
                 pred_anchors = batch_dict['pred_anchors'][index]
                 pred_boxes[:,7:]*=-10
-                pred_anchors[:,:,7:]*=-10
+                pred_anchors[:,:,7:9]*=-10
                 record_dict = {
                     'pred_boxes': pred_boxes[pred_boxes[:,0]!=0,:9],
                     'pred_scores': batch_dict['roi_scores'][index][pred_boxes[:,0]!=0],
                     'pred_labels': batch_dict['roi_labels'][index][pred_boxes[:,0]!=0],
-                    'pred_anchors': pred_anchors[pred_anchors[:,0,0]!=0,:,:9]
+                    'pred_anchors': pred_anchors[pred_anchors[:,0,0]!=0,:]
                 }
                 pred_dicts.append(record_dict)
                 continue

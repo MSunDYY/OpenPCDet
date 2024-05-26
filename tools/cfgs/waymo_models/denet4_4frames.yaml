@@ -3,7 +3,7 @@ CLASS_NAMES: ['Vehicle', 'Pedestrian', 'Cyclist']
 DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/waymo_dataset.yaml
     PROCESSED_DATA_TAG: 'waymo_processed_data_v0_5_0'
-    TRANSFORMED_POINTS: True
+    TRANSFORMED_POINTS: False
     DATA_SPLIT: {
         'train': train,
         'test': train
@@ -19,9 +19,10 @@ DATA_CONFIG:
     SEQUENCE_CONFIG:
         ENABLED: True
         SAMPLE_OFFSET: [-3,0]
+        USE_PRE_PREDBOX: False
 
     USE_PREDBOX: True
-    USE_ANCHOR: False
+    USE_ANCHOR: True
     ROI_BOXES_PATH: {
         'train': '../output/waymo_models/denet4_4frames/anchor_rois/eval/epoch_36/train/anchor_rois/result.pkl',  # example: predicted boxes of RPN in training set
         'test': '../output/waymo_models/centerpoint_4frames/Interval5/eval/epoch_0/train/Interval1/result.pkl',  # example: predicted boxes of RPN in evalulation set
@@ -40,6 +41,8 @@ DATA_CONFIG:
             -   NAME: random_world_scaling
                 WORLD_SCALE_RANGE: [ 0.95, 1.05 ]
 
+
+
     DATA_PROCESSOR:
         -   NAME: mask_points_and_boxes_outside_range
             REMOVE_OUTSIDE_BOXES: True
@@ -49,6 +52,27 @@ DATA_CONFIG:
                 'train': True,
                 'test': True
             }
+
+        - NAME: anchor_aug
+          ROI_PER_IMAGE: 96
+          FG_RATIO: 0.7
+          REG_AUG_METHOD: single
+          ROI_FG_AUG_TIMES: 10
+          RATIO: 0.2
+          USE_ROI_AUG: True
+          USE_BG_ROI_AUG: True
+          USE_TRAJ_AUG:
+              ENABLED: True
+              THRESHOD: 0.8
+          SAMPLE_ROI_BY_EACH_CLASS: True
+          CLS_SCORE_TYPE: roi_iou
+
+          CLS_FG_THRESH: 0.75
+          CLS_BG_THRESH: 0.25
+          CLS_BG_THRESH_LO: 0.1
+          HARD_BG_RATIO: 0.8
+
+          REG_FG_THRESH: 0.55
 
 
     POINT_FEATURE_ENCODING: {

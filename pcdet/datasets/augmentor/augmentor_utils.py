@@ -91,7 +91,7 @@ def global_scaling(gt_boxes, points, scale_range, return_scale=False):
         return gt_boxes, points, noise_scale
     return gt_boxes, points
 
-def global_scaling_with_roi_boxes(gt_boxes, roi_boxes, points, scale_range, return_scale=False):
+def global_scaling_with_roi_boxes(gt_boxes, roi_boxes, points, scale_range, return_scale=False,anchors=None):
     """
     Args:
         gt_boxes: (N, 7), [x, y, z, dx, dy, dz, heading]

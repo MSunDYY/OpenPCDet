@@ -3,7 +3,7 @@
 Written by Shaoshuai Shi
 All Rights Reserved 2020.
 */
-
+#include <iostream>
 #include <stdio.h>
 #include <math.h>
 #include <torch/serialize/tensor.h>
@@ -229,6 +229,7 @@ inline float iou_bev(const float *box_a, const float *box_b){
 }
 
 
+
 int boxes_iou_bev_cpu(at::Tensor boxes_a_tensor, at::Tensor boxes_b_tensor, at::Tensor ans_iou_tensor){
     // params boxes_a_tensor: (N, 7) [x, y, z, dx, dy, dz, heading]
     // params boxes_b_tensor: (M, 7) [x, y, z, dx, dy, dz, heading]
@@ -250,6 +251,25 @@ int boxes_iou_bev_cpu(at::Tensor boxes_a_tensor, at::Tensor boxes_b_tensor, at::
     }
     return 1;
 }
+//
+//int boxes_iou_cpu(at::Tensor boxes_a_tensor, at::Tensor boxes_b_tensor, at::Tensor ans_iou_tensor)
+//{
+//    CHECK_CONTIGUOUS(boxes_a_tensor);
+//    CHECK_CONTIGUOUS(boxes_b_tensor);
+//
+//    int num_boxes_a = boxes_a_tensor.size(0);
+//    int num_boxes_b = boxes_b_tensor.size(0);
+//    const float *boxes_a = boxes_a_tensor.data<float>();
+//    const float *boxes_b = boxes_b_tensor.data<float>();
+//    float *ans_iou = ans_iou_tensor.data<float>();
+//
+//    for (int i = 0; i < num_boxes_a; i++){
+//        for (int j = i; j < num_boxes_b; j++){
+//            ans_iou[i * num_boxes_b + j] = iou_bev(boxes_a + i * 7, boxes_b + j * 7);
+//        }
+//    }
+//    return 1;
+//}
 
 int boxes_aligned_iou_bev_cpu(at::Tensor boxes_a_tensor, at::Tensor boxes_b_tensor, at::Tensor ans_iou_tensor){
     // params boxes_a_tensor: (N, 7) [x, y, z, dx, dy, dz, heading]

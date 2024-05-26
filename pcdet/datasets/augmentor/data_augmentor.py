@@ -2,7 +2,7 @@ from functools import partial
 
 import numpy as np
 from PIL import Image
-
+from pcdet.ops.iou3d_nms import iou3d_nms_utils
 from ...utils import common_utils
 from . import augmentor_utils, database_sampler
 from pcdet.ops.roiaware_pool3d import roiaware_pool3d_utils
@@ -69,11 +69,20 @@ class DataAugmentor(object):
                 data_dict['roi_boxes'].reshape(-1,dim), np.zeros([1,3]), return_flip=True, enable=enable
                 )
                 data_dict['roi_boxes'] = roi_boxes.reshape(num_frame, num_rois,dim)
+            
+            if 'anchors' in data_dict.keys():
+                num_rois,num_anchors,dim = data_dict['anchors'].shape
+                anchors,_,_ = getattr(augmentor_utils,'random_flip_along_%s' % cur_axis)(
+                    data_dict['anchors'].reshape(-1,dim),np.zeros([1,3]),return_flip= True,enable=enable
+                )
+                data_dict['anchors'] = anchors.reshape(num_rois,num_anchors,dim)
 
         data_dict['gt_boxes'] = gt_boxes
         data_dict['points'] = points
         return data_dict
-
+    
+                
+        
     def random_world_rotation(self, data_dict=None, config=None):
         if data_dict is None:
             return partial(self.random_world_rotation, config=config)
@@ -88,7 +97,13 @@ class DataAugmentor(object):
             roi_boxes, _, _ = augmentor_utils.global_rotation(
             data_dict['roi_boxes'].reshape(-1, dim), np.zeros([1, 3]), rot_range=rot_range, return_rot=True, noise_rotation=noise_rot)
             data_dict['roi_boxes'] = roi_boxes.reshape(num_frame, num_rois,dim)
-
+        
+        if 'anchors' in data_dict.keys():
+            num_rois,num_anchors,dim = data_dict['anchors'].shape
+            anchors, _, _ = augmentor_utils.global_rotation(
+            data_dict['anchors'].reshape(-1, dim), np.zeros([1, 3]), rot_range=rot_range, return_rot=True, noise_rotation=noise_rot)
+            data_dict['anchors'] = anchors.reshape(num_rois, num_anchors,dim)
+        
         data_dict['gt_boxes'] = gt_boxes
         data_dict['points'] = points
         data_dict['noise_rot'] = noise_rot
@@ -100,9 +115,11 @@ class DataAugmentor(object):
         
         if 'roi_boxes' in data_dict.keys():
             gt_boxes, roi_boxes, points, noise_scale = augmentor_utils.global_scaling_with_roi_boxes(
-                data_dict['gt_boxes'], data_dict['roi_boxes'], data_dict['points'], config['WORLD_SCALE_RANGE'], return_scale=True
+                data_dict['gt_boxes'], data_dict['roi_boxes'], data_dict['points'], config['WORLD_SCALE_RANGE'], return_scale=True,anchors=data_dict['anchors']
             )
             data_dict['roi_boxes'] = roi_boxes
+            if 'anchors' in data_dict.keys():
+                data_dict['anchors'][:,:,[0,1,2,3,4,5,7,8]]*=noise_scale
         else:
             gt_boxes, points, noise_scale = augmentor_utils.global_scaling(
                 data_dict['gt_boxes'], data_dict['points'], config['WORLD_SCALE_RANGE'], return_scale=True

@@ -446,20 +446,21 @@ class WaymoDataset(DatasetTemplate):
             num_points_all = [(points[:,-1]==0.1*i).sum() for i in range(len(sample_idx_pre_list)+1)]
             poses = np.concatenate(pose_all, axis=0).astype(np.float32)
             num_points_all = np.array(num_points_all)
-
-        for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
-            if load_pred_boxes:
-                if pred_boxes_all[0].shape[-1] == 11:
-
-                    pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
-                    pred_boxes = load_pred_boxes_from_dict(sequence_name, sample_idx_pre)
-                    if pred_boxes.shape[-1] == 12:
-                        pred_boxes = pred_boxes[pred_boxes[:, 9] == 1] if (pred_boxes[:, 9] == 1).sum() > 10 else pred_boxes
-                        pred_boxes = np.concatenate((pred_boxes[:, :9], pred_boxes[:, 10:]), axis=-1)
-                    pred_boxes = self.transform_prebox_to_current(pred_boxes, pose_pre, pose_cur)
-                    pred_boxes_all.append(pred_boxes)
-                else:
-                    pred_boxes_all.append(pred_boxes_all[0][pred_boxes_all[0][:, -3] == idx + 1])
+        
+        if sequence_cfg.get('USE_PRE_PREDBOX',True):
+            for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
+                if load_pred_boxes:
+                    if pred_boxes_all[0].shape[-1] == 11:
+    
+                        pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
+                        pred_boxes = load_pred_boxes_from_dict(sequence_name, sample_idx_pre)
+                        if pred_boxes.shape[-1] == 12:
+                            pred_boxes = pred_boxes[pred_boxes[:, 9] == 1] if (pred_boxes[:, 9] == 1).sum() > 10 else pred_boxes
+                            pred_boxes = np.concatenate((pred_boxes[:, :9], pred_boxes[:, 10:]), axis=-1)
+                        pred_boxes = self.transform_prebox_to_current(pred_boxes, pose_pre, pose_cur)
+                        pred_boxes_all.append(pred_boxes)
+                    else:
+                        pred_boxes_all.append(pred_boxes_all[0][pred_boxes_all[0][:, -3] == idx + 1])
 
         if get_gt:
             points_gt_all.append(points_gt_cur[:, :5])
@@ -533,7 +534,7 @@ class WaymoDataset(DatasetTemplate):
         }
 
         if self.dataset_cfg.get('TRANSFORMED_POINTS',False):
-            data_tag = 'waymo_processed_data_v0_5_0_full' if self.training else 'waymo_processed_data_v0_5_0_full_val'
+            data_tag = 'waymo_processed_data_v0_5_0_full' if self.training else 'waymo_processed_data_v0_5_0_full'
             file_name = self.root_path/data_tag/sequence_name/('%04d.npy'%sample_idx)
             points = np.load(file_name)
         else:

@@ -7,6 +7,7 @@ import torchvision
 from ...utils import box_utils, common_utils
 from pcdet import device
 from pcdet.ops.roiaware_pool3d import roiaware_pool3d_utils
+from pcdet.ops.iou3d_nms import iou3d_nms_utils
 tv = None
 try:
     import cumm.tensorview as tv
@@ -116,6 +117,306 @@ class DataProcessor(object):
             return partial(self.transform_points_to_voxels_placeholder, config=config)
 
         return data_dict
+
+    def anchor_aug(self, data_dict=None, config=None):
+        if data_dict is None:
+            return partial(self.anchor_aug, config=config)
+
+        def get_max_iou_with_same_class(rois, roi_labels, gt_boxes, gt_labels):
+            """
+            Args:
+                rois: (N, 7)
+                roi_labels: (N)
+                gt_boxes: (N, )
+                gt_labels:
+
+            Returns:
+
+            """
+            """
+            :param rois: (N, 7)
+            :param roi_labels: (N)
+            :param gt_boxes: (N, 8)
+            :return:
+            """
+            max_overlaps = rois.new_zeros(rois.shape[0])
+            gt_assignment = roi_labels.new_zeros(roi_labels.shape[0])
+
+            for k in range(gt_labels.min().item(), gt_labels.max().item() + 1):
+                roi_mask = (roi_labels == k)
+                gt_mask = (gt_labels == k)
+                if roi_mask.sum() > 0 and gt_mask.sum() > 0:
+                    cur_roi = rois[roi_mask]
+                    cur_gt = gt_boxes[gt_mask]
+                    original_gt_assignment = gt_mask.nonzero().view(-1)
+
+                    
+                    iou3d = iou3d_nms_utils.boxes_iou3d_cpu(cur_roi[:, :7], cur_gt[:, :7]) # (M, N)
+                    cur_max_overlaps,cur_gt_assignment = torch.max(iou3d, dim=1)
+                    # cur_gt_assignment = np.argmax(iou3d,axis=1)
+                    max_overlaps[roi_mask] = cur_max_overlaps
+                    gt_assignment[roi_mask] = original_gt_assignment[cur_gt_assignment]
+
+            return max_overlaps, gt_assignment
+
+        def generate_trajectory_msf(cur_batch_boxes, batch_dict):
+            num_frames = batch_dict['num_points_all'].shape[0]
+            trajectory_rois = cur_batch_boxes[None, :, :].repeat(num_frames,1,1)
+            # trajectory_rois[:, 0, :, :] = cur_batch_boxes
+            # batch_dict['valid_length'] = torch.ones([batch_dict['batch_size'], num_frames, trajectory_rois.shape[2]])
+            # batch_dict['roi_scores'] = batch_dict['roi_scores'][:, :, None].repeat(1, 1, num_frames)
+
+            # simply propagate proposal based on velocity
+            for i in range(1, num_frames):
+                frame = torch.zeros_like(cur_batch_boxes)
+                frame[:, 0:2] = cur_batch_boxes[:, 0:2] + i * cur_batch_boxes[:, 7:9]
+                frame[:, 2:] = cur_batch_boxes[:, 2:]
+
+                trajectory_rois[i, :, :] = frame
+
+            return trajectory_rois
+
+        def subsample_rois(max_overlaps,config):
+
+            def sample_bg_inds(hard_bg_inds, easy_bg_inds, bg_rois_per_this_image, hard_bg_ratio):
+                if hard_bg_inds.numel() > 0 and easy_bg_inds.numel() > 0:
+                    hard_bg_rois_num = min(int(bg_rois_per_this_image * hard_bg_ratio), len(hard_bg_inds))
+                    easy_bg_rois_num = bg_rois_per_this_image - hard_bg_rois_num
+
+                    # sampling hard bg
+                    rand_idx = torch.randint(low=0, high=hard_bg_inds.numel(), size=(hard_bg_rois_num,)).long()
+                    hard_bg_inds = hard_bg_inds[rand_idx]
+
+                    # sampling easy bg
+                    rand_idx = torch.randint(low=0, high=easy_bg_inds.numel(), size=(easy_bg_rois_num,)).long()
+                    easy_bg_inds = easy_bg_inds[rand_idx]
+
+                    bg_inds = torch.cat([hard_bg_inds, easy_bg_inds], dim=0)
+                elif hard_bg_inds.numel() > 0 and easy_bg_inds.numel() == 0:
+                    hard_bg_rois_num = bg_rois_per_this_image
+                    # sampling hard bg
+                    rand_idx = torch.randint(low=0, high=hard_bg_inds.numel(), size=(hard_bg_rois_num,)).long()
+                    bg_inds = hard_bg_inds[rand_idx]
+                elif hard_bg_inds.numel() == 0 and easy_bg_inds.numel() > 0:
+                    easy_bg_rois_num = bg_rois_per_this_image
+                    # sampling easy bg
+                    rand_idx = torch.randint(low=0, high=easy_bg_inds.numel(), size=(easy_bg_rois_num,)).long()
+                    bg_inds = easy_bg_inds[rand_idx]
+                else:
+                    raise NotImplementedError
+
+                return bg_inds
+            
+            # sample fg, easy_bg, hard_bg
+            fg_rois_per_image = int(np.round(config.FG_RATIO * config.ROI_PER_IMAGE))
+            fg_thresh = min(config.REG_FG_THRESH, config.CLS_FG_THRESH)
+
+            fg_inds = ((max_overlaps >= fg_thresh)).nonzero().view(-1)
+            easy_bg_inds = ((max_overlaps < config.CLS_BG_THRESH_LO)).nonzero().view(-1)
+            hard_bg_inds = ((max_overlaps < config.REG_FG_THRESH) &
+                            (max_overlaps >= config.CLS_BG_THRESH_LO)).nonzero().view(-1)
+
+            fg_num_rois = fg_inds.numel()
+            bg_num_rois = hard_bg_inds.numel() + easy_bg_inds.numel()
+
+            if fg_num_rois > 0 and bg_num_rois > 0:
+                # sampling fg
+                fg_rois_per_this_image = min(fg_rois_per_image, fg_num_rois)
+
+                rand_num = torch.from_numpy(np.random.permutation(fg_num_rois)).type_as(max_overlaps).long()
+                fg_inds = fg_inds[rand_num[:fg_rois_per_this_image]]
+
+                # sampling bg
+                bg_rois_per_this_image = config.ROI_PER_IMAGE - fg_rois_per_this_image
+                bg_inds = sample_bg_inds(
+                    hard_bg_inds, easy_bg_inds, bg_rois_per_this_image, config.HARD_BG_RATIO
+                )
+
+            elif fg_num_rois > 0 and bg_num_rois == 0:
+                # sampling fg
+                rand_num = np.floor(np.random.rand(config.ROI_PER_IMAGE) * fg_num_rois)
+                rand_num = torch.from_numpy(rand_num).type_as(max_overlaps).long()
+                fg_inds = fg_inds[rand_num]
+                bg_inds = fg_inds[fg_inds < 0]  # yield empty tensor
+
+            elif bg_num_rois > 0 and fg_num_rois == 0:
+                # sampling bg
+                bg_rois_per_this_image = config.ROI_PER_IMAGE
+                bg_inds = sample_bg_inds(
+                    hard_bg_inds, easy_bg_inds, bg_rois_per_this_image, config.HARD_BG_RATIO
+                )
+            else:
+                print('maxoverlaps:(min=%f, max=%f)' % (max_overlaps.min().item(), max_overlaps.max().item()))
+                print('ERROR: FG=%d, BG=%d' % (fg_num_rois, bg_num_rois))
+                raise NotImplementedError
+
+            sampled_inds = torch.cat((fg_inds, bg_inds), dim=0)
+            return sampled_inds.long(), fg_inds.long(), bg_inds.long()
+
+        def sample_rois_for_mppnet(batch_dict, config):
+            cur_frame_idx = 0
+            # batch_size = batch_dict['batch_size']
+            rois = batch_dict['backward_rois'][cur_frame_idx, :, :]
+            # roi_scores = batch_dict['roi_scores'][:, :, cur_frame_idx]
+            anchor_labels = batch_dict['backward_rois'][cur_frame_idx, :, -1]
+            gt_boxes = torch.from_numpy(batch_dict['gt_boxes']).float()
+            num_anchors = batch_dict['num_anchors']
+            code_size = rois.shape[-1]
+            batch_rois = torch.zeros(config.ROI_PER_IMAGE * num_anchors, code_size)
+            batch_gt_of_rois = torch.zeros(config.ROI_PER_IMAGE * num_anchors,
+                                         gt_boxes.shape[-1])
+            batch_roi_ious = torch.zeros(config.ROI_PER_IMAGE * num_anchors)
+            batch_roi_scores = torch.zeros(config.ROI_PER_IMAGE * num_anchors)
+            batch_roi_labels = torch.zeros((config.ROI_PER_IMAGE * num_anchors),
+                                        dtype=torch.long)
+            backward_rois = batch_dict['backward_rois']
+            # trajectory_rois = batch_dict['trajectory_rois']
+            # batch_trajectory_rois = rois.new_zeros(batch_size, trajectory_rois.shape[1], self.roi_sampler_cfg.ROI_PER_IMAGE,
+            #                                         trajectory_rois.shape[-1])
+            batch_backward_rois = torch.zeros((backward_rois.shape[0],
+                                            config.ROI_PER_IMAGE * num_anchors,
+                                            backward_rois.shape[-1]))
+
+            # valid_length = batch_dict['valid_length']
+            batch_valid_length = torch.zeros(
+                ((batch_dict['backward_rois'].shape[0], config.ROI_PER_IMAGE)))
+
+            # for index in range(batch_size):
+
+            cur_backward_rois = backward_rois
+            # cur_trajectory_rois = trajectory_rois[index]
+            cur_roi, cur_gt, cur_roi_labels = rois[:, :-1], gt_boxes, rois[:, -1].long()
+
+            if 'valid_length' in batch_dict.keys():
+                cur_valid_length = valid_length[index].to(device)
+
+            k = cur_gt.__len__() - 1
+            while k > 0 and cur_gt[k].sum() == 0:
+                k -= 1
+
+            cur_gt = cur_gt[:k + 1]
+            cur_gt = torch.zeros(1, cur_gt.shape[1]) if len(cur_gt) == 0 else cur_gt
+
+            if config.get('SAMPLE_ROI_BY_EACH_CLASS', False):
+                max_overlaps, gt_assignment = get_max_iou_with_same_class(
+                    rois=cur_roi, roi_labels=cur_roi_labels,
+                    gt_boxes=cur_gt[:, 0:7], gt_labels=cur_gt[:, -1].long()
+                )
+
+            else:
+                iou3d = iou3d_nms_utils.boxes_iou3d_gpu(cur_roi, cur_gt[:, 0:7])  # (M, N)
+                max_overlaps, gt_assignment = torch.max(iou3d, dim=1)
+            num_rois = max_overlaps.shape[0] // num_anchors
+            sampled_inds, fg_inds, bg_inds = subsample_rois(
+                max_overlaps=max_overlaps[torch.arange(num_rois) * num_anchors],config=config)
+            fg_inds = torch.concat([fg_inds[:, None] * num_anchors + i for i in range(num_anchors)],
+                                   dim=-1).flatten()
+            bg_inds = torch.concat([bg_inds[:, None] * num_anchors + i for i in range(num_anchors)],
+                                   dim=-1).flatten()
+            sampled_inds = torch.concat([fg_inds, bg_inds], dim=0)
+            batch_roi_labels = cur_roi_labels[sampled_inds.long()]
+
+            if self.roi_sampler_cfg.get('USE_ROI_AUG', False):
+
+                fg_rois, fg_iou3d = self.aug_roi_by_noise_torch(cur_roi[fg_inds], cur_gt[gt_assignment[fg_inds]],
+                                                                max_overlaps[fg_inds],
+                                                                aug_times=self.roi_sampler_cfg.ROI_FG_AUG_TIMES)
+                if self.roi_sampler_cfg.get('USE_BG_ROI_AUG', False):
+                    bg_rois, _ = self.aug_roi_by_noise_torch(cur_roi[bg_inds], cur_roi[bg_inds],
+                                                             max_overlaps[bg_inds],
+                                                             aug_times=self.roi_sampler_cfg.ROI_FG_AUG_TIMES)
+                    bg_iou3d = iou3d_nms_utils.boxes_iou3d_gpu(bg_rois[:, :7],
+                                                               cur_gt[:, :7][gt_assignment[bg_inds]])
+                    bg_iou3d = bg_iou3d[torch.arange(bg_rois.shape[0]), torch.arange(bg_rois.shape[0])]
+                else:
+                    bg_rois = cur_roi[bg_inds]
+                    bg_iou3d = max_overlaps[bg_inds]
+
+                batch_rois = torch.cat([fg_rois, bg_rois], 0)
+                batch_roi_ious = torch.cat([fg_iou3d, bg_iou3d], 0)
+                batch_gt_of_rois = cur_gt[gt_assignment[sampled_inds]]
+
+            else:
+                batch_rois = cur_roi[sampled_inds]
+                batch_roi_ious = max_overlaps[sampled_inds]
+                batch_gt_of_rois = cur_gt[gt_assignment[sampled_inds]]
+
+                # batch_roi_scores[index] = cur_roi_scores[sampled_inds]
+
+            if 'valid_length' in batch_dict.keys():
+                batch_valid_length = cur_valid_length[:, sampled_inds]
+
+            if self.roi_sampler_cfg.USE_TRAJ_AUG.ENABLED:
+                batch_backward_rois_list = []
+                batch_trajectory_rois_list = []
+                for idx in range(0, batch_dict['num_frames']):
+                    if idx == cur_frame_idx:
+                        batch_backward_rois_list.append(
+                            cur_backward_rois[cur_frame_idx:cur_frame_idx + 1, sampled_inds])
+                        # batch_trajectory_rois_list.append(
+                        #     cur_trajectory_rois[cur_frame_idx:cur_frame_idx+1,sampled_inds]
+                        # )
+                        continue
+                    fg_backs, _ = self.aug_roi_by_noise_torch(cur_backward_rois[idx, fg_inds],
+                                                              cur_backward_rois[idx, fg_inds][:, :8],
+                                                              max_overlaps[fg_inds], \
+                                                              aug_times=self.roi_sampler_cfg.ROI_FG_AUG_TIMES,
+                                                              pos_thresh=self.roi_sampler_cfg.USE_TRAJ_AUG.THRESHOD)
+                    bg_backs = cur_backward_rois[idx, bg_inds]
+                    # fg_trajs,_ = self.aug_roi_by_noise_torch(cur_trajectory_rois[idx,fg_inds],
+                    #                                          cur_trajectory_rois[idx,fg_inds][:,:8],
+                    #                                          max_overlaps[fg_inds],
+                    #                                          aug_times=self.roi_sampler_cfg.ROI_FG_AUG_TIMES,
+                    #                                          pos_thresh=self.roi_sampler_cfg.USE_TRAJ_AUG.THRESHOD
+                    #                                          )
+                    # bg_trajs = cur_trajectory_rois[idx,bg_inds]
+
+                    batch_backward_rois_list.append(torch.cat([fg_backs, bg_backs], 0)[None, :, :])
+                    # batch_trajectory_rois_list.append(torch.cat([fg_trajs,bg_trajs],0)[None,:,:])
+                batch_backward_rois[index] = torch.cat(batch_backward_rois_list, 0)
+                # batch_trajectory_rois[index] = torch.cat(batch_trajectory_rois_list,0)
+            else:
+                batch_backward_rois[index] = cur_backward_rois[:, sampled_inds]
+                # batch_trajectory_rois[index] = cur_trajectory_rois[:,sampled_inds]
+            return batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_labels, batch_backward_rois, batch_valid_length
+
+        anchors = torch.from_numpy(data_dict['anchors'])
+        backward_rois = generate_trajectory_msf(anchors.reshape(-1, anchors.shape[-1]),
+                                                data_dict)
+        data_dict['backward_rois'] = backward_rois
+        data_dict['num_anchors'] = data_dict['anchors'].shape[-2]
+        batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_labels, batch_backward_rois, batch_valid_length = sample_rois_for_mppnet(
+            batch_dict=data_dict, config=config)
+        reg_valid_mask = (batch_roi_ious > config.REG_FG_THRESH).long()
+        if self.roi_sampler_cfg.CLS_SCORE_TYPE == 'cls':
+            batch_cls_labels = (batch_roi_ious > self.roi_sampler_cfg.CLS_FG_THRESH).long()
+            ignore_mask = (batch_roi_ious > self.roi_sampler_cfg.CLS_BG_THRESH) & \
+                          (batch_roi_ious < self.roi_sampler_cfg.CLS_FG_THRESH)
+            batch_cls_labels[ignore_mask > 0] = -1
+        elif self.roi_sampler_cfg.CLS_SCORE_TYPE == 'roi_iou':
+            iou_bg_thresh = self.roi_sampler_cfg.CLS_BG_THRESH
+            iou_fg_thresh = self.roi_sampler_cfg.CLS_FG_THRESH
+            fg_mask = batch_roi_ious > iou_fg_thresh
+            bg_mask = batch_roi_ious < iou_bg_thresh
+            interval_mask = (fg_mask == 0) & (bg_mask == 0)
+
+            batch_cls_labels = (fg_mask > 0).float()
+            batch_cls_labels[interval_mask] = \
+                (batch_roi_ious[interval_mask] - iou_bg_thresh) / (iou_fg_thresh - iou_bg_thresh)
+        else:
+            raise NotImplementedError
+
+        targets_dict = {'rois': batch_rois, 'gt_of_rois': batch_gt_of_rois,
+                        'gt_iou_of_rois': batch_roi_ious,  # 'roi_scores': batch_roi_scores,
+                        'roi_labels': batch_roi_labels, 'reg_valid_mask': reg_valid_mask,
+                        'rcnn_cls_labels': batch_cls_labels,
+                        'backward_rois': batch_backward_rois,
+                        'valid_length': batch_valid_length,
+                        }
+        data_dict['targets_dict'] = targets_dict
+
+
+
 
     def double_flip(self, points):
         # y flip
