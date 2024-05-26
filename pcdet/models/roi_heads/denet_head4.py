@@ -387,7 +387,7 @@ class DENet4Head(RoIHeadTemplate):
         self.jointembed = MLP(model_cfg.Transformer.hidden_dim*(self.num_groups+1), model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class*self.num_anchors, 4)
 
         self.up_dimension_geometry = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
-        self.fuse = MLP(input_dim=hidden_dim*self.num_anchors+96,hidden_dim=model_cfg.Transformer.hidden_dim,output_dim=model_cfg.Transformer.hidden_dim,num_layers=2)
+        self.fuse = MLP(input_dim=hidden_dim*self.num_anchors+(96 if model_cfg.get('USE_POINTNET',False) else 0),hidden_dim=model_cfg.Transformer.hidden_dim,output_dim=model_cfg.Transformer.hidden_dim,num_layers=2)
         self.fuse_box = MLP(input_dim=hidden_dim*self.num_anchors,hidden_dim=model_cfg.Transformer.hidden_dim,output_dim=model_cfg.Transformer.hidden_dim,num_layers=2)
         self.up_dimension_back = MLP(input_dim = 29, hidden_dim = 64, output_dim = hidden_dim, num_layers = 3)
         self.up_dimension_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
@@ -876,7 +876,12 @@ class DENet4Head(RoIHeadTemplate):
         # src2 = src_trajectory_feature+src_motion_feature2
         src1 = src1.reshape(-1,batch_dict['num_anchors'],src1.shape[-2],src1.shape[-1])
         src1_features = src1_features.view(batch_size*num_rois//num_anchors,-1,src1_features.shape[-1])
-        src1 = self.fuse(torch.concat([src1.transpose(1,2).reshape(-1,src1.shape[-2],self.num_anchors*self.hidden_dim),src1_features],dim=-1))
+        if self.model_cfg.get('USE_POINTNET',False):
+            src1 = self.fuse(torch.concat([src1.transpose(1,2).reshape(-1,src1.shape[-2],self.num_anchors*self.hidden_dim),src1_features],dim=-1))
+        
+        else:
+            src1 = self.fuse(src1.transpose(1,2).reshape(-1,src1.shape[-2],self.num_anchors*self.hidden_dim))
+
         # num_rois_all = src1.shape[0]
         # src = src_geometry_feature + src_motion_feature
         # src = self.conv(torch.concat([src_trajectory_feature,src_backward_feature],dim=-1).permute(0,2,1)).permute(0,2,1)

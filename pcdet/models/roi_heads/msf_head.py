@@ -277,7 +277,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
             hwl_scale = ((torch.rand(3, device=box3d.device) - 0.5) / 0.5) * range_config[idx][1] + 1.0
             angle_rot = ((torch.rand(1, device=box3d.device) - 0.5) / 0.5) * range_config[idx][2]
 
-            aug_box3d = torch.cat([box3d[0:3] + pos_shift, box3d[3:6] * hwl_scale, box3d[6:7] + angle_rot], dim=0)
+            aug_box3d = torch.cat([box3d[0:3] + pos_shift, box3d[3:6] * hwl_scale, box3d[6:7] + angle_rot,box3d[7:]], dim=0)
             return aug_box3d
         elif self.roi_sampler_cfg.REG_AUG_METHOD == 'normal':
             x_shift = np.random.normal(loc=0, scale=0.3)

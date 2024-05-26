@@ -115,7 +115,7 @@ class DataAugmentor(object):
         
         if 'roi_boxes' in data_dict.keys():
             gt_boxes, roi_boxes, points, noise_scale = augmentor_utils.global_scaling_with_roi_boxes(
-                data_dict['gt_boxes'], data_dict['roi_boxes'], data_dict['points'], config['WORLD_SCALE_RANGE'], return_scale=True,anchors=data_dict['anchors']
+                data_dict['gt_boxes'], data_dict['roi_boxes'], data_dict['points'], config['WORLD_SCALE_RANGE'], return_scale=True
             )
             data_dict['roi_boxes'] = roi_boxes
             if 'anchors' in data_dict.keys():

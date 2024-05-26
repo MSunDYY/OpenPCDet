@@ -126,8 +126,8 @@ class DataProcessor(object):
             """
 
             if config.REG_AUG_METHOD == 'single':
-                pos_shift = (torch.rand(3, device=box3d.device) - 0.5)  # [-0.5 ~ 0.5]
-                hwl_scale = (torch.rand(3, device=box3d.device) - 0.5) / (0.5 / 0.15) + 1.0  #
+                pos_shift = (torch.rand(3, device=box3d.device) - 0.5)/torch.tensor([4,4,40])*box3d[3:6]  # [-0.5 ~ 0.5]
+                hwl_scale = (torch.rand(3, device=box3d.device) - 0.5) / (0.5 / 0.1)/torch.tensor([4,4,8]) + 1.0  #
                 angle_rot = (torch.rand(1, device=box3d.device) - 0.5) / (0.5 / (np.pi / 12))  # [-pi/12 ~ pi/12]
                 aug_box3d = torch.cat(
                     [box3d[0:3] + pos_shift, box3d[3:6] * hwl_scale, box3d[6:7] + angle_rot, box3d[7:]], dim=0)
@@ -141,11 +141,13 @@ class DataProcessor(object):
                                 [1.0, 0.15, np.pi / 3, 0.2]]
                 idx = torch.randint(low=0, high=len(range_config), size=(1,))[0].long()
 
-                pos_shift = ((torch.rand(3, device=box3d.device) - 0.5) / 0.5) * range_config[idx][0]
-                hwl_scale = ((torch.rand(3, device=box3d.device) - 0.5) / 0.5) * range_config[idx][1] + 1.0
+                pos_shift = ((torch.rand(3, device=box3d.device) - 0.5) / torch.tensor([0.5,0.5,1])) * range_config[idx][0]
+                
+                hwl_scale = ((torch.rand(3, device=box3d.device) - 0.5) / torch.tensor([0.5,0.5,1])) * range_config[idx][1] + 1.0
+                
                 angle_rot = ((torch.rand(1, device=box3d.device) - 0.5) / 0.5) * range_config[idx][2]
 
-                aug_box3d = torch.cat([box3d[0:3] + pos_shift, box3d[3:6] * hwl_scale, box3d[6:7] + angle_rot], dim=0)
+                aug_box3d = torch.cat([box3d[0:3] + pos_shift, box3d[3:6] * hwl_scale, box3d[6:7] + angle_rot,box3d[7:]], dim=0)
                 return aug_box3d
             elif config.REG_AUG_METHOD == 'normal':
                 x_shift = np.random.normal(loc=0, scale=0.3)
@@ -404,7 +406,7 @@ class DataProcessor(object):
                 if config.get('USE_BG_ROI_AUG', False):
                     bg_rois, _ = self.aug_roi_by_noise_torch(cur_roi[bg_inds], cur_roi[bg_inds],
                                                              max_overlaps[bg_inds],
-                                                             aug_times=config.ROI_FG_AUG_TIMES,config=config)
+                                                             aug_times=config.ROI_FG_AUG_TIMES,config=config,pos_thresh=config.REG_BG_THRESH)
                     bg_iou3d = iou3d_nms_utils.boxes_iou3d_cpu(bg_rois[:, :7],
                                                                cur_gt[:, :7][gt_assignment[bg_inds]])
                     bg_iou3d = bg_iou3d[torch.arange(bg_rois.shape[0]), torch.arange(bg_rois.shape[0])]
