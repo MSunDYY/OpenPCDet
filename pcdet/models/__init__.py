@@ -24,6 +24,9 @@ def load_data_to_gpu(batch_dict):
         if key == 'camera_imgs':
             batch_dict[key] = val.to(device)
         elif not isinstance(val, np.ndarray):
+            if key=='targets_dict':
+                for sub_key,sub_val in val.items():
+                    batch_dict[key][sub_key]=sub_val.to(device)
             continue
         elif key in ['frame_id', 'metadata', 'calib', 'image_paths','ori_shape','img_process_infos']:
             continue

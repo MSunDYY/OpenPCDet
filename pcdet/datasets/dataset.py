@@ -342,12 +342,14 @@ class DatasetTemplate(torch_data.Dataset):
                 elif key in ['gt_data']:
                     val = [torch.cat((torch.full((val[i].shape[0], 1), i), val[i]), dim=1) for i in range(len(val))]
                     ret[key] = torch.cat(val)
-                elif key in ['label']:
-                    ret[key] = np.concatenate(val,axis=0)
+                elif key in ['targets_dict']:
+                    temp = dict()
+                    for sub_key in val[0].keys():
+                        temp[sub_key] = torch.stack([sub_val[sub_key] for sub_val in val])
+                    ret[key] = temp
                 else:
                     ret[key] = np.stack(val, axis=0)
-
-
+                    
             except:
                 print('Error in collate_batch: key=%s' % key)
                 raise TypeError
