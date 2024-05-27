@@ -807,19 +807,19 @@ class DENet4Head(RoIHeadTemplate):
         proposals_list = batch_dict['proposals_list']
         self.anchor_sampler = build_voxel_sampler_anchor(roi_scores.device)
         num_sample = self.num_lidar_points
-        # anchors_rois= self.anchor_sampler(batch_size,cur_batch_boxes,num_sample,batch_dict['roi_scores'],batch_dict,num_anchors = batch_dict['num_anchors'],return_boxes = True)
-        # anchors_rois = anchors_rois.transpose(1,2)
+        if not self.model_cfg.get('PRE_AUG',False):
+            anchors_rois= self.anchor_sampler(batch_size,cur_batch_boxes,num_sample,batch_dict['roi_scores'],batch_dict,num_anchors = batch_dict['num_anchors'],return_boxes = True)
+            anchors_rois = anchors_rois.transpose(1,2)
+            backward_rois = self.generate_trajectory_msf(anchors_rois.reshape(batch_size, -1, anchors_rois.shape[-1]),
+                                                         batch_dict)
+            batch_dict['backward_rois'] = backward_rois
 
 
         # trajectory_rois,valid = self.generate_trajectory_mppnet(cur_batch_boxes,proposals_list, batch_dict)
-
-
-        # backward_rois = self.generate_trajectory_msf(anchors_rois.reshape(batch_size,-1,anchors_rois.shape[-1]),batch_dict)
-
         # batch_dict['traj_memory'] = trajectory_rois
         batch_dict['has_class_labels'] = True
         # batch_dict['trajectory_rois'] = trajectory_rois
-        # batch_dict['backward_rois'] = backward_rois
+        
 
         # if self.voxel_sampler is None:
         #     self.voxel_sampler = build_voxel_sampler(device)
@@ -833,8 +833,10 @@ class DENet4Head(RoIHeadTemplate):
             # batch_dict['roi_labels'] = batch_dict['roi_labels'][0][mask][None,:]
             return batch_dict
         if self.training:
-            # targets_dict = self.assign_targets(batch_dict)
-            targets_dict = batch_dict['targets_dict']
+            if not self.model_cfg.get('PRE_AUG',False):
+                targets_dict = self.assign_targets(batch_dict)
+            else:
+                targets_dict = batch_dict['targets_dict']
             batch_dict['roi_boxes'] = targets_dict['rois']
             # batch_dict['roi_scores'] = targets_dict['roi_scores']
             batch_dict['roi_labels'] = targets_dict['roi_labels']

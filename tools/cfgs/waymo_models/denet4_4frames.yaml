@@ -101,7 +101,7 @@ MODEL:
             voxel_size: .4
             pc_range: [-75.2, -75.2, -10, 75.2, 75.2, 10]
             max_points_per_voxel: 32
-
+        PRE_AUG: False
         ROI_GRID_POOL:
             GRID_SIZE: 4
             MLPS: [[128,128], [128,128]]
@@ -131,7 +131,7 @@ MODEL:
 
         TARGET_CONFIG:
             BOX_CODER: ResidualCoder
-            ROI_PER_IMAGE: 96
+            ROI_PER_IMAGE: 80
             FG_RATIO: 0.7
             REG_AUG_METHOD: single
             ROI_FG_AUG_TIMES: 10
@@ -184,7 +184,7 @@ OPTIMIZATION:
     NUM_EPOCHS: 6
 
     OPTIMIZER: adam_onecycle
-    LR: 0.003
+    LR: 0.002
     WEIGHT_DECAY: 0.01
     MOMENTUM: 0.9
 
