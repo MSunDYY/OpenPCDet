@@ -54,7 +54,7 @@ DATA_CONFIG:
             }
 
         - NAME: anchor_aug
-          ROI_PER_IMAGE: 96
+          ROI_PER_IMAGE: 80
           FG_RATIO: 0.7
           REG_AUG_METHOD: single
           ROI_FG_AUG_TIMES: 10
@@ -87,7 +87,7 @@ MODEL:
 
     ROI_HEAD:
         NAME: DENet4Head
-        TRANS_INPUT: 128
+        TRANS_INPUT: 256
         NUM_ANCHORS: 1
         CLASS_AGNOSTIC: True
         USE_BOX_ENCODING:

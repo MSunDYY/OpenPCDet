@@ -117,7 +117,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
             roi_scores[index]
 
             if 'valid_length' in batch_dict.keys():
-                cur_valid_length = valid_length[index].to(device)
+                cur_valid_length = batch_dict['valid_length'][index].to(device)
 
             k = cur_gt.__len__() - 1
             while k > 0 and cur_gt[k].sum() == 0:
@@ -365,7 +365,7 @@ class DENet4Head(RoIHeadTemplate):
     def __init__(self,model_cfg, num_class=1,**kwargs):
         super().__init__(num_class=num_class, model_cfg=model_cfg)
         self.model_cfg = model_cfg
-        self.proposal_target_layer = ProposalTargetLayerMPPNet(roi_sampler_cfg=self.model_cfg.TARGET_CONFIG)
+        # self.proposal_target_layer = ProposalTargetLayerMPPNet(roi_sampler_cfg=self.model_cfg.TARGET_CONFIG)
         self.proposal_target_layer = msf_head.ProposalTargetLayerMPPNet(roi_sampler_cfg=self.model_cfg.TARGET_CONFIG)
         self.use_time_stamp = self.model_cfg.get('USE_TIMESTAMP',None)
         self.num_lidar_points = self.model_cfg.Transformer.num_lidar_points
@@ -847,7 +847,7 @@ class DENet4Head(RoIHeadTemplate):
             batch_dict['roi_labels'] = targets_dict['roi_labels']
             # targets_dict['backward_rois'][:,batch_dict['cur_frame_idx'],:,:] = batch_dict['roi_boxes']
             # trajectory_rois = targets_dict['trajectory_rois']
-            backward_rois = targets_dict['backward_rois']
+            backward_rois = targets_dict['backward_rois'][:,:,:,:9]
             empty_mask = batch_dict['roi_boxes'][:,torch.arange(batch_dict['roi_boxes'].shape[1]//self.num_anchors)*self.num_anchors,:6].sum(-1)==0
             valid_length = targets_dict['valid_length']
         else:
@@ -860,48 +860,61 @@ class DENet4Head(RoIHeadTemplate):
         num_anchors  =batch_dict['num_anchors']
         
         backward_rois = backward_rois.reshape(batch_size,num_frames,-1,batch_dict['num_anchors'],backward_rois.shape[-1])
-        src1,src1_features = self.voxel_sampler(batch_size, torch.mean(backward_rois,dim=-2), num_sample, batch_dict)
-
-
-        # src2 = rois.new_zeros(batch_size, num_rois, num_sample, 5)
-        # src2 = self.voxel_sampler_traj(batch_size, trajectory_rois, num_sample, batch_dict,valid_length)
-
-        # src1 = self.voxel_sampler(batch_size,backward_rois,num_sample,batch_dict)
-        # src2[~valid_length]=0
-        src1 = src1[:,:,None,:,:].repeat(1,1,batch_dict['num_anchors'],1,1).view(batch_size * num_rois, -1, src1.shape[-1])
-        # src2 = src2.view(batch_size * num_rois,-1,src2.shape[-1])
-        # xyz1 = src1[:, :, :3]
-        backward_rois = backward_rois.view(batch_size,num_frames,-1,backward_rois.shape[-1])
-        # xyz2 = src2[:, :, :3]
-        src_backward_feature = self.get_proposal_aware_geometry_feature(src1,batch_size,backward_rois,num_rois)
-        # src_trajectory_feature = self.get_proposal_aware_geometry_feature(src2, batch_size, trajectory_rois, num_rois)
-
-        src_motion_feature1 = self.get_proposal_aware_motion_feature(src1, batch_size, backward_rois, num_rois)
-        # src_motion_feature2 = self.get_proposal_aware_motion_feature(src2,batch_size,trajectory_rois,num_rois)
-        
-        src1 = src_backward_feature + src_motion_feature1
-        # src2 = src_trajectory_feature+src_motion_feature2
-        src1 = src1.reshape(-1,batch_dict['num_anchors'],src1.shape[-2],src1.shape[-1])
-        src1_features = src1_features.view(batch_size*num_rois//num_anchors,-1,src1_features.shape[-1])
-        if self.model_cfg.get('USE_POINTNET',False):
-            src1 = self.fuse(torch.concat([src1.transpose(1,2).reshape(-1,src1.shape[-2],self.num_anchors*self.hidden_dim),src1_features],dim=-1))
-        
-        else:
-            src1 = self.fuse(src1.transpose(1,2).reshape(-1,src1.shape[-2],self.num_anchors*self.hidden_dim))
-
-        # num_rois_all = src1.shape[0]
-        # src = src_geometry_feature + src_motion_feature
-        # src = self.conv(torch.concat([src_trajectory_feature,src_backward_feature],dim=-1).permute(0,2,1)).permute(0,2,1)
-        box_reg, feat_box = self.trajectories_auxiliary_branch(backward_rois)
-        feat_box = self.fuse_box(feat_box.reshape(-1,self.num_anchors*feat_box.shape[-1]))
-        if self.model_cfg.get('USE_TRAJ_EMPTY_MASK',None):
-            src1[empty_mask.view(-1)] = 0
-            # src2[empty_mask.view(-1)] = 0
+        signal=False
+        if signal:
+            src1,src1_features = self.voxel_sampler(batch_size, torch.mean(backward_rois,dim=-2), num_sample, batch_dict)
     
-        hs1, tokens1 = self.transformer(src1,pos=None)
-        # hs2,tokens2 = self.transformer(src2,pos=None)
-        # hs2,tokens2 = self.transformer2(src2,pos=None)
-        # hs = hs[:,:num_rois_all]
+            src1 = src1[:,:,None,:,:].repeat(1,1,batch_dict['num_anchors'],1,1).view(batch_size * num_rois, -1, src1.shape[-1])
+            # src2 = src2.view(batch_size * num_rois,-1,src2.shape[-1])
+            # xyz1 = src1[:, :, :3]
+            backward_rois = backward_rois.view(batch_size,num_frames,-1,backward_rois.shape[-1])
+            # xyz2 = src2[:, :, :3]
+            src_backward_feature = self.get_proposal_aware_geometry_feature(src1,batch_size,backward_rois,num_rois)
+            # src_trajectory_feature = self.get_proposal_aware_geometry_feature(src2, batch_size, trajectory_rois, num_rois)
+    
+            src_motion_feature1 = self.get_proposal_aware_motion_feature(src1, batch_size, backward_rois, num_rois)
+            # src_motion_feature2 = self.get_proposal_aware_motion_feature(src2,batch_size,trajectory_rois,num_rois)
+            
+            src1 = src_backward_feature + src_motion_feature1
+            # src2 = src_trajectory_feature+src_motion_feature2
+            src1 = src1.reshape(-1,batch_dict['num_anchors'],src1.shape[-2],src1.shape[-1])
+            src1_features = src1_features.view(batch_size*num_rois//num_anchors,-1,src1_features.shape[-1])
+            if self.model_cfg.get('USE_POINTNET',False):
+                src1 = self.fuse(torch.concat([src1.transpose(1,2).reshape(-1,src1.shape[-2],self.num_anchors*self.hidden_dim),src1_features],dim=-1))
+            else:
+                # src1 = self.fuse(src1.transpose(1,2).reshape(-1,src1.shape[-2],self.num_anchors*self.hidden_dim))
+                src1 = src1.reshape(-1,src1.shape[-2],self.num_anchors*self.hidden_dim)
+            # num_rois_all = src1.shape[0]
+            # src = src_geometry_feature + src_motion_feature
+            # src = self.conv(torch.concat([src_trajectory_feature,src_backward_feature],dim=-1).permute(0,2,1)).permute(0,2,1)
+            box_reg, feat_box = self.trajectories_auxiliary_branch(backward_rois)
+            # feat_box = self.fuse_box(feat_box.reshape(-1,self.num_anchors*feat_box.shape[-1]))
+            if self.model_cfg.get('USE_TRAJ_EMPTY_MASK',None):
+                src1[empty_mask.view(-1)] = 0
+                # src2[empty_mask.view(-1)] = 0
+        
+            hs1, tokens1 = self.transformer(src1,pos=None)
+            # hs2,tokens2 = self.transformer(src2,pos=None)
+            # hs2,tokens2 = self.transformer2(src2,pos=None)
+            # hs = hs[:,:num_rois_all]
+        else:
+            trajectory_rois = backward_rois[:,:,:,0].clone()
+            src = self.voxel_sampler(batch_size, trajectory_rois, num_sample, batch_dict)[0]
+
+            src = src.view(batch_size * num_rois, -1, src.shape[-1])
+        
+            src_geometry_feature = self.get_proposal_aware_geometry_feature(src, batch_size, trajectory_rois, num_rois)
+
+            src_motion_feature = self.get_proposal_aware_motion_feature(src, batch_size, trajectory_rois, num_rois)
+
+            src = src_geometry_feature + src_motion_feature
+
+            box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
+
+            if self.model_cfg.get('USE_TRAJ_EMPTY_MASK', None):
+                src[empty_mask.view(-1)] = 0
+
+            hs1, tokens1 = self.transformer(src, pos=None)
         
         point_cls_list = []
         point_reg_list = []
@@ -980,6 +993,164 @@ class DENet4Head(RoIHeadTemplate):
             self.forward_ret_dict = targets_dict
 
         return batch_dict
+
+    def get_box_cls_layer_loss1(self, forward_ret_dict):
+        loss_cfgs = self.model_cfg.LOSS_CONFIG
+        rcnn_cls = forward_ret_dict['rcnn_cls']
+        rcnn_cls_labels = forward_ret_dict['rcnn_cls_labels'].view(-1)
+
+        if loss_cfgs.CLS_LOSS == 'BinaryCrossEntropy':
+
+            rcnn_cls_flat = rcnn_cls.view(-1)
+
+            groups = rcnn_cls_flat.shape[0] // rcnn_cls_labels.shape[0]
+            if groups != 1:
+                rcnn_loss_cls = 0
+                slice = rcnn_cls_labels.shape[0]
+                for i in range(groups):
+                    batch_loss_cls = F.binary_cross_entropy(torch.sigmoid(rcnn_cls_flat[i * slice:(i + 1) * slice]),
+                                                            rcnn_cls_labels.float(), reduction='none')
+
+                    cls_valid_mask = (rcnn_cls_labels >= 0).float()
+                    rcnn_loss_cls = rcnn_loss_cls + (batch_loss_cls * cls_valid_mask).sum() / torch.clamp(
+                        cls_valid_mask.sum(), min=1.0)
+
+                rcnn_loss_cls = rcnn_loss_cls / groups
+
+            else:
+
+                batch_loss_cls = F.binary_cross_entropy(torch.sigmoid(rcnn_cls_flat), rcnn_cls_labels.float(),
+                                                        reduction='none')
+                cls_valid_mask = (rcnn_cls_labels >= 0).float()
+                rcnn_loss_cls = (batch_loss_cls * cls_valid_mask).sum() / torch.clamp(cls_valid_mask.sum(), min=1.0)
+
+
+        elif loss_cfgs.CLS_LOSS == 'CrossEntropy':
+            batch_loss_cls = F.cross_entropy(rcnn_cls, rcnn_cls_labels, reduction='none', ignore_index=-1)
+            cls_valid_mask = (rcnn_cls_labels >= 0).float()
+            rcnn_loss_cls = (batch_loss_cls * cls_valid_mask).sum() / torch.clamp(cls_valid_mask.sum(), min=1.0)
+
+        else:
+            raise NotImplementedError
+
+        rcnn_loss_cls = rcnn_loss_cls * loss_cfgs.LOSS_WEIGHTS['rcnn_cls_weight']
+
+        tb_dict = {'rcnn_loss_cls': rcnn_loss_cls.item()}
+        return rcnn_loss_cls, tb_dict
+    def get_box_reg_layer_loss1(self, forward_ret_dict):
+        loss_cfgs = self.model_cfg.LOSS_CONFIG
+        code_size = self.box_coder.code_size
+        reg_valid_mask = forward_ret_dict['reg_valid_mask'].view(-1)
+
+        gt_boxes3d_ct = forward_ret_dict['gt_of_rois'][..., 0:code_size]
+        gt_of_rois_src = forward_ret_dict['gt_of_rois_src'][..., 0:code_size].view(-1, code_size)
+
+        rcnn_reg = forward_ret_dict['rcnn_reg']
+
+        roi_boxes3d = forward_ret_dict['rois']
+
+        rcnn_batch_size = gt_boxes3d_ct.view(-1, code_size).shape[0]
+
+        fg_mask = (reg_valid_mask > 0)
+        fg_sum = fg_mask.long().sum().item()
+
+        tb_dict = {}
+
+        if loss_cfgs.REG_LOSS == 'smooth-l1':
+
+            rois_anchor = roi_boxes3d.clone().detach()[:, :, :7].contiguous().view(-1, code_size)
+            rois_anchor[:, 0:3] = 0
+            rois_anchor[:, 6] = 0
+            reg_targets = self.box_coder.encode_torch(
+                gt_boxes3d_ct.view(rcnn_batch_size, code_size), rois_anchor
+            )
+            rcnn_loss_reg = self.reg_loss_func(
+                rcnn_reg.view(rcnn_batch_size, -1).unsqueeze(dim=0),
+                reg_targets.unsqueeze(dim=0),
+            )  # [B, M, 7]
+            rcnn_loss_reg = (rcnn_loss_reg.view(rcnn_batch_size, -1) * fg_mask.unsqueeze(dim=-1).float()).sum() / max(
+                fg_sum, 1)
+            rcnn_loss_reg = rcnn_loss_reg * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight'] * \
+                            loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][0]
+
+            tb_dict['rcnn_loss_reg'] = rcnn_loss_reg.item()
+
+            if self.model_cfg.USE_AUX_LOSS:
+                point_reg = forward_ret_dict['point_reg']
+
+                groups = point_reg.shape[0] // reg_targets.shape[0]
+                if groups != 1:
+                    point_loss_regs = 0
+                    slice = reg_targets.shape[0]
+                    for i in range(groups):
+                        point_loss_reg = self.reg_loss_func(
+                            point_reg[i * slice:(i + 1) * slice].view(slice, -1).unsqueeze(dim=0),
+                            reg_targets.unsqueeze(dim=0), )
+                        point_loss_reg = (point_loss_reg.view(slice, -1) * fg_mask.unsqueeze(
+                            dim=-1).float()).sum() / max(fg_sum, 1)
+                        point_loss_reg = point_loss_reg * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight'] * \
+                                         loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][2]
+
+                        point_loss_regs += point_loss_reg
+                    point_loss_regs = point_loss_regs / groups
+                    tb_dict['point_loss_reg'] = point_loss_regs.item()
+                    rcnn_loss_reg += point_loss_regs
+
+                else:
+                    point_loss_reg = self.reg_loss_func(point_reg.view(rcnn_batch_size, -1).unsqueeze(dim=0),
+                                                        reg_targets.unsqueeze(dim=0), )
+                    point_loss_reg = (point_loss_reg.view(rcnn_batch_size, -1) * fg_mask.unsqueeze(
+                        dim=-1).float()).sum() / max(fg_sum, 1)
+                    point_loss_reg = point_loss_reg * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight'] * \
+                                     loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][2]
+                    tb_dict['point_loss_reg'] = point_loss_reg.item()
+                    rcnn_loss_reg += point_loss_reg
+
+                seqbox_reg = forward_ret_dict['box_reg']
+                seqbox_loss_reg = self.reg_loss_func(seqbox_reg.view(rcnn_batch_size, -1).unsqueeze(dim=0),
+                                                     reg_targets.unsqueeze(dim=0), )
+                seqbox_loss_reg = (seqbox_loss_reg.view(rcnn_batch_size, -1) * fg_mask.unsqueeze(
+                    dim=-1).float()).sum() / max(fg_sum, 1)
+                seqbox_loss_reg = seqbox_loss_reg * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight'] * \
+                                  loss_cfgs.LOSS_WEIGHTS['traj_reg_weight'][1]
+                tb_dict['seqbox_loss_reg'] = seqbox_loss_reg.item()
+                rcnn_loss_reg += seqbox_loss_reg
+
+            if loss_cfgs.CORNER_LOSS_REGULARIZATION and fg_sum > 0:
+                fg_rcnn_reg = rcnn_reg.view(rcnn_batch_size, -1)[fg_mask]
+                fg_roi_boxes3d = roi_boxes3d[:, :, :7].contiguous().view(-1, code_size)[fg_mask]
+
+                fg_roi_boxes3d = fg_roi_boxes3d.view(1, -1, code_size)
+                batch_anchors = fg_roi_boxes3d.clone().detach()
+                roi_ry = fg_roi_boxes3d[:, :, 6].view(-1)
+                roi_xyz = fg_roi_boxes3d[:, :, 0:3].view(-1, 3)
+                batch_anchors[:, :, 0:3] = 0
+                rcnn_boxes3d = self.box_coder.decode_torch(
+                    fg_rcnn_reg.view(batch_anchors.shape[0], -1, code_size), batch_anchors
+                ).view(-1, code_size)
+
+                rcnn_boxes3d = common_utils.rotate_points_along_z(
+                    rcnn_boxes3d.unsqueeze(dim=1), roi_ry
+                ).squeeze(dim=1)
+                rcnn_boxes3d[:, 0:3] += roi_xyz
+
+                corner_loss_func = loss_utils.get_corner_loss_lidar
+
+                loss_corner = corner_loss_func(
+                    rcnn_boxes3d[:, 0:7],
+                    gt_of_rois_src[fg_mask][:, 0:7])
+
+                loss_corner = loss_corner.mean()
+                loss_corner = loss_corner * loss_cfgs.LOSS_WEIGHTS['rcnn_corner_weight']
+
+                rcnn_loss_reg += loss_corner
+                tb_dict['rcnn_loss_corner'] = loss_corner.item()
+
+        else:
+            raise NotImplementedError
+
+        return rcnn_loss_reg, tb_dict
+
 
     def get_loss(self, tb_dict=None):
         tb_dict = {} if tb_dict is None else tb_dict
