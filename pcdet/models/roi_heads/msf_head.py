@@ -85,7 +85,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
         cur_frame_idx = 0
         batch_size = batch_dict['batch_size']
         rois = batch_dict['trajectory_rois'][:,cur_frame_idx,:,:]
-        roi_scores = batch_dict['roi_scores'][:,:,cur_frame_idx]
+        roi_scores = batch_dict['roi_scores']
         roi_labels = batch_dict['roi_labels']
         gt_boxes = batch_dict['gt_boxes']
 
@@ -100,7 +100,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
 
         trajectory_rois = batch_dict['trajectory_rois']
         batch_trajectory_rois = rois.new_zeros(batch_size, trajectory_rois.shape[1],self.roi_sampler_cfg.ROI_PER_IMAGE,trajectory_rois.shape[-1])
-
+        
         valid_length = batch_dict['valid_length']
         batch_valid_length = rois.new_zeros((batch_size, batch_dict['trajectory_rois'].shape[1], self.roi_sampler_cfg.ROI_PER_IMAGE))
 
@@ -478,7 +478,7 @@ class MSFHead(RoIHeadTemplate):
         trajectory_rois = cur_batch_boxes[:,None,:,:].repeat(1, num_frames, 1, 1)
         trajectory_rois[:, 0, :, :]= cur_batch_boxes
         batch_dict['valid_length'] = torch.ones([batch_dict['batch_size'], num_frames,trajectory_rois.shape[2]])
-        batch_dict['roi_scores'] = batch_dict['roi_scores'][:, :, None].repeat(1, 1, num_frames)
+        # batch_dict['roi_scores'] = batch_dict['roi_scores'][:, :, None].repeat(1, 1, num_frames)
         
         # simply propagate proposal based on velocity
         for i in range(1,num_frames):

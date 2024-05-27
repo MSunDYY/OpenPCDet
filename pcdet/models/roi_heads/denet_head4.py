@@ -9,7 +9,7 @@ from ...utils import common_utils, loss_utils
 from .roi_head_template import RoIHeadTemplate
 from ..model_utils.denet_utils import build_transformer, PointNet, MLP,SpatialMixerBlock, build_voxel_sampler_denet
 from ..model_utils.msf_utils import build_voxel_sampler,build_voxel_sampler_traj,build_voxel_sampler_anchor
-
+from . import msf_head
 from .target_assigner.proposal_target_layer import ProposalTargetLayer
 from pcdet.ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_stack_modules
 from pcdet import device
@@ -366,6 +366,7 @@ class DENet4Head(RoIHeadTemplate):
         super().__init__(num_class=num_class, model_cfg=model_cfg)
         self.model_cfg = model_cfg
         self.proposal_target_layer = ProposalTargetLayerMPPNet(roi_sampler_cfg=self.model_cfg.TARGET_CONFIG)
+        self.proposal_target_layer = msf_head.ProposalTargetLayerMPPNet(roi_sampler_cfg=self.model_cfg.TARGET_CONFIG)
         self.use_time_stamp = self.model_cfg.get('USE_TIMESTAMP',None)
         self.num_lidar_points = self.model_cfg.Transformer.num_lidar_points
         self.avg_stage1_score = self.model_cfg.get('AVG_STAGE1_SCORE', None)
@@ -702,7 +703,7 @@ class DENet4Head(RoIHeadTemplate):
         num_frames = batch_dict['num_frames']
         trajectory_rois = cur_batch_boxes[:, None, :, :].repeat(1, num_frames, 1, 1)
         trajectory_rois[:, 0, :, :] = cur_batch_boxes
-        # batch_dict['valid_length'] = torch.ones([batch_dict['batch_size'], num_frames, trajectory_rois.shape[2]])
+        batch_dict['valid_length'] = torch.ones([batch_dict['batch_size'], num_frames, trajectory_rois.shape[2]])
         # batch_dict['roi_scores'] = batch_dict['roi_scores'][:, :, None].repeat(1, 1, num_frames)
 
         # simply propagate proposal based on velocity
@@ -813,6 +814,8 @@ class DENet4Head(RoIHeadTemplate):
             backward_rois = self.generate_trajectory_msf(anchors_rois.reshape(batch_size, -1, anchors_rois.shape[-1]),
                                                          batch_dict)
             batch_dict['backward_rois'] = backward_rois
+            batch_dict['trajectory_rois'] = backward_rois
+            batch_dict['roi_labels'] = backward_rois[:,0,:,-1].long()
 
 
         # trajectory_rois,valid = self.generate_trajectory_mppnet(cur_batch_boxes,proposals_list, batch_dict)
@@ -835,6 +838,8 @@ class DENet4Head(RoIHeadTemplate):
         if self.training:
             if not self.model_cfg.get('PRE_AUG',False):
                 targets_dict = self.assign_targets(batch_dict)
+                if 'backward_rois' not in targets_dict:
+                    targets_dict['backward_rois'] = targets_dict['trajectory_rois']
             else:
                 targets_dict = batch_dict['targets_dict']
             batch_dict['roi_boxes'] = targets_dict['rois']
