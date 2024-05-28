@@ -393,7 +393,7 @@ class DENet4Head(RoIHeadTemplate):
         self.up_dimension_back = MLP(input_dim = 29, hidden_dim = 64, output_dim = hidden_dim, num_layers = 3)
         self.up_dimension_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
         self.up_dimension_back_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
-        self.voxel_sampler = build_voxel_sampler(device, return_point_feature=True)
+        self.voxel_sampler = build_voxel_sampler(device, return_point_feature=model_cfg.USE_POINTNET)
         
         self.transformer = build_transformer(model_cfg.Transformer)
         # self.transformer2 = build_transformer(model_cfg.Transformer)
@@ -900,7 +900,7 @@ class DENet4Head(RoIHeadTemplate):
             # hs = hs[:,:num_rois_all]
         else:
             trajectory_rois = backward_rois[:,:,:,0].clone()
-            src = self.voxel_sampler(batch_size, trajectory_rois, num_sample, batch_dict)[0]
+            src = self.voxel_sampler(batch_size, trajectory_rois, num_sample, batch_dict)
 
             src = src.view(batch_size * num_rois, -1, src.shape[-1])
         
