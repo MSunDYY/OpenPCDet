@@ -782,10 +782,143 @@ class DENet4Head(RoIHeadTemplate):
             batch_dict['valid_length'] = valid_length
 
         return backward_rois,trajectory_rois
-       
-
 
     def forward(self, batch_dict):
+        """
+        :param input_data: input dict
+        :return:
+        """
+
+        roi_scores = batch_dict['roi_scores'][:, 0, :]
+        batch_dict['roi_scores'] = roi_scores[:, roi_scores.sum(0) > 0]
+        batch_dict['roi_boxes'] = batch_dict['roi_boxes'][:, 0, :][:, roi_scores.sum(0) > 0]
+        batch_dict['roi_labels'] = batch_dict['roi_labels'][:, 0, :][:, roi_scores.sum(0) > 0]
+        batch_dict['num_frames'] = batch_dict['num_points_all'].shape[-1]
+        num_rois = batch_dict['roi_boxes'].shape[1]
+        batch_dict['roi_labels'] = batch_dict['roi_labels'].long()
+        batch_size = batch_dict['batch_size']
+        cur_batch_boxes = copy.deepcopy(batch_dict['roi_boxes'].detach())
+        batch_dict['cur_frame_idx'] = 0
+
+        trajectory_rois = self.generate_trajectory_msf(cur_batch_boxes, batch_dict)
+
+        batch_dict['traj_memory'] = trajectory_rois
+        batch_dict['has_class_labels'] = True
+        batch_dict['trajectory_rois'] = trajectory_rois
+
+        if self.training:
+            targets_dict = self.assign_targets(batch_dict)
+            batch_dict['roi_boxes'] = targets_dict['rois']
+            batch_dict['roi_scores'] = targets_dict['roi_scores']
+            batch_dict['roi_labels'] = targets_dict['roi_labels']
+            targets_dict['trajectory_rois'][:, batch_dict['cur_frame_idx'], :, :] = batch_dict['roi_boxes']
+            trajectory_rois = targets_dict['trajectory_rois']
+            empty_mask = batch_dict['roi_boxes'][:, :, :6].sum(-1) == 0
+
+        else:
+            empty_mask = batch_dict['roi_boxes'][:, :, :6].sum(-1) == 0
+            batch_dict['valid_traj_mask'] = ~empty_mask
+
+        rois = batch_dict['roi_boxes']
+        num_rois = batch_dict['roi_boxes'].shape[1]
+        num_sample = self.num_lidar_points
+
+        if self.voxel_sampler is None:
+            self.voxel_sampler = build_voxel_sampler(rois.device)
+            # self.voxel_sampler = build
+        src = self.voxel_sampler(batch_size, trajectory_rois, num_sample, batch_dict)
+
+        src = src.view(batch_size * num_rois, -1, src.shape[-1])
+
+        src_geometry_feature = self.get_proposal_aware_geometry_feature(src, batch_size, trajectory_rois, num_rois)
+
+        src_motion_feature = self.get_proposal_aware_motion_feature(src, batch_size, trajectory_rois, num_rois)
+
+        src = src_geometry_feature + src_motion_feature
+
+        box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
+
+        if self.model_cfg.get('USE_TRAJ_EMPTY_MASK', None):
+            src[empty_mask.view(-1)] = 0
+
+        hs, tokens = self.transformer(src, pos=None)
+
+        point_cls_list = []
+        point_reg_list = []
+
+        for i in range(self.num_enc_layer):
+            point_cls_list.append(self.class_embed[0](tokens[i][0]))
+
+        for i in range(hs.shape[0]):
+            for j in range(self.num_enc_layer):
+                point_reg_list.append(self.bbox_embed[i](tokens[j][i]))
+
+        point_cls = torch.cat(point_cls_list, 0)
+
+        point_reg = torch.cat(point_reg_list, 0)
+        hs = hs.permute(1, 0, 2).reshape(hs.shape[1], -1)
+
+        joint_reg = self.jointembed(torch.cat([hs, feat_box], -1))
+
+        rcnn_cls = point_cls
+        rcnn_reg = joint_reg
+
+        if not self.training:
+            rcnn_cls = rcnn_cls[-rcnn_cls.shape[0] // self.num_enc_layer:]
+            batch_cls_preds, batch_box_preds = self.generate_predicted_boxes(
+                batch_size=batch_dict['batch_size'], rois=batch_dict['roi_boxes'], cls_preds=rcnn_cls,
+                box_preds=rcnn_reg
+            )
+
+            batch_dict['batch_box_preds'] = batch_box_preds
+
+            batch_dict['cls_preds_normalized'] = False
+            if self.avg_stage1_score:
+                stage1_score = batch_dict['roi_scores'][:, :, :1]
+                batch_cls_preds = F.sigmoid(batch_cls_preds)
+                if self.model_cfg.get('IOU_WEIGHT', None):
+                    batch_box_preds_list = []
+                    roi_labels_list = []
+                    batch_cls_preds_list = []
+                    for bs_idx in range(batch_size):
+                        car_mask = batch_dict['roi_labels'][bs_idx] == 1
+                        batch_cls_preds_car = batch_cls_preds[bs_idx].pow(self.model_cfg.IOU_WEIGHT[0]) * \
+                                              stage1_score[bs_idx].pow(1 - self.model_cfg.IOU_WEIGHT[0])
+                        batch_cls_preds_car = batch_cls_preds_car[car_mask][None]
+                        batch_cls_preds_pedcyc = batch_cls_preds[bs_idx].pow(self.model_cfg.IOU_WEIGHT[1]) * \
+                                                 stage1_score[bs_idx].pow(1 - self.model_cfg.IOU_WEIGHT[1])
+                        batch_cls_preds_pedcyc = batch_cls_preds_pedcyc[~car_mask][None]
+                        cls_preds = torch.cat([batch_cls_preds_car, batch_cls_preds_pedcyc], 1)
+                        box_preds = torch.cat([batch_dict['batch_box_preds'][bs_idx][car_mask],
+                                               batch_dict['batch_box_preds'][bs_idx][~car_mask]], 0)[None]
+                        roi_labels = torch.cat([batch_dict['roi_labels'][bs_idx][car_mask],
+                                                batch_dict['roi_labels'][bs_idx][~car_mask]], 0)[None]
+                        batch_box_preds_list.append(box_preds)
+                        roi_labels_list.append(roi_labels)
+                        batch_cls_preds_list.append(cls_preds)
+                    batch_dict['batch_box_preds'] = torch.cat(batch_box_preds_list, 0)
+                    batch_dict['roi_labels'] = torch.cat(roi_labels_list, 0)
+                    batch_cls_preds = torch.cat(batch_cls_preds_list, 0)
+
+                else:
+                    batch_cls_preds = torch.sqrt(batch_cls_preds * stage1_score)
+                batch_dict['cls_preds_normalized'] = True
+
+            batch_dict['batch_cls_preds'] = batch_cls_preds
+
+
+        else:
+            targets_dict['batch_size'] = batch_size
+            targets_dict['rcnn_cls'] = rcnn_cls
+            targets_dict['rcnn_reg'] = rcnn_reg
+            targets_dict['box_reg'] = box_reg
+            targets_dict['point_reg'] = point_reg
+            targets_dict['point_cls'] = point_cls
+            self.forward_ret_dict = targets_dict
+
+        return batch_dict
+
+    def forward1(self, batch_dict):
         """
         :param input_data: input dict
         :return:
