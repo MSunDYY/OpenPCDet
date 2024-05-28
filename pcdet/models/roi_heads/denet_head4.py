@@ -793,7 +793,7 @@ class DENet4Head(RoIHeadTemplate):
         num_frames = batch_dict['num_points_all'].shape[-1]
         roi_scores = batch_dict['roi_scores'][:, 0, :]
         batch_dict['roi_scores'] = roi_scores[:,roi_scores.sum(0)>0]
-        batch_dict['proposals_list'] = batch_dict['roi_boxes']
+        # batch_dict['proposals_list'] = batch_dict['roi_boxes']
         batch_dict['roi_boxes'] = batch_dict['roi_boxes'][:,0,:][:,roi_scores.sum(0)>0]
         batch_dict['roi_labels'] = batch_dict['roi_labels'][:, 0, :][:, roi_scores.sum(0) > 0].long()
         batch_dict['num_frames'] = batch_dict['num_points_all'].shape[-1]
@@ -805,7 +805,7 @@ class DENet4Head(RoIHeadTemplate):
         cur_batch_boxes = copy.deepcopy(batch_dict['roi_boxes'].detach())
         # cur_batch_boxes = torch.concat([cur_batch_boxes,batch_dict['roi_labels'][:,:,None].float()],dim=-1)
         batch_dict['cur_frame_idx'] = 0
-        proposals_list = batch_dict['proposals_list']
+        # proposals_list = batch_dict['proposals_list']
         self.anchor_sampler = build_voxel_sampler_anchor(roi_scores.device)
         num_sample = self.num_lidar_points
         if not self.model_cfg.get('PRE_AUG',False):

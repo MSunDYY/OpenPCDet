@@ -8,7 +8,7 @@ DATA_CONFIG:
         'train': train,
         'test': train
     }
-    TRAIN_WITH_SPEED: True
+    TRAIN_WITH_SPEED: False
     SAMPLED_INTERVAL: {
         'train': 1,
         'test': 200
