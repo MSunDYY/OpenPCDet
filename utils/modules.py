@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from .gconv import SetConv3
-from lib.pointops.functions import pointops 
+# from lib.pointops.functions import pointops 
 
 class learn_SLIC_calc_mutual(nn.Module):
     """

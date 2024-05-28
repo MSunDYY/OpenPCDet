@@ -813,10 +813,10 @@ class DENet4Head(RoIHeadTemplate):
             anchors_rois = anchors_rois.transpose(1,2)
             backward_rois = self.generate_trajectory_msf(anchors_rois.reshape(batch_size, -1, anchors_rois.shape[-1]),
                                                          batch_dict)
-            batch_dict['backward_rois'] = backward_rois
-            batch_dict['trajectory_rois'] = backward_rois
+            batch_dict['backward_rois'] = backward_rois[:,:,:,:-1]
+            batch_dict['trajectory_rois'] = batch_dict['backward_rois']
             batch_dict['roi_labels'] = backward_rois[:,0,:,-1].long()
-
+            batch_dict['roi_boxes'] = batch_dict['backward_rois'][:, 0]
 
         # trajectory_rois,valid = self.generate_trajectory_mppnet(cur_batch_boxes,proposals_list, batch_dict)
         # batch_dict['traj_memory'] = trajectory_rois

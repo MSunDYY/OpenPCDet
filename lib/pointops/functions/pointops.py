@@ -4,7 +4,7 @@ import torch
 from torch.autograd import Function
 import torch.nn as nn
 
-import pointops_cuda
+# import pointops_cuda
 
 import numpy as np
 
