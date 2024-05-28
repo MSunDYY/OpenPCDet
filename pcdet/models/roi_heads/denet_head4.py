@@ -799,8 +799,6 @@ class DENet4Head(RoIHeadTemplate):
         batch_dict['num_frames'] = batch_dict['num_points_all'].shape[-1]
         batch_dict['num_anchors'] = self.model_cfg.NUM_ANCHORS
         num_rois = batch_dict['roi_boxes'].shape[1]
-        # batch_dict['roi_labels'] = batch_dict['roi_labels'][:,0].long()
-        # batch_dict['roi_scores'] = batch_dict['roi_scores'][:,0]
         batch_size = batch_dict['batch_size']
         cur_batch_boxes = copy.deepcopy(batch_dict['roi_boxes'].detach())
         # cur_batch_boxes = torch.concat([cur_batch_boxes,batch_dict['roi_labels'][:,:,None].float()],dim=-1)
@@ -846,9 +844,10 @@ class DENet4Head(RoIHeadTemplate):
             batch_dict['roi_boxes'] = targets_dict['rois']
             # batch_dict['roi_scores'] = targets_dict['roi_scores']
             batch_dict['roi_labels'] = targets_dict['roi_labels']
+            batch_dict['roi_scores'] = targets_dict['roi_scores']
             # targets_dict['backward_rois'][:,batch_dict['cur_frame_idx'],:,:] = batch_dict['roi_boxes']
             # trajectory_rois = targets_dict['trajectory_rois']
-            backward_rois = targets_dict['backward_rois'][:,:,:,:9]
+            backward_rois = targets_dict['backward_rois']
             empty_mask = batch_dict['roi_boxes'][:,torch.arange(batch_dict['roi_boxes'].shape[1]//self.num_anchors)*self.num_anchors,:6].sum(-1)==0
             valid_length = targets_dict['valid_length']
         else:
