@@ -803,7 +803,7 @@ class DENet4Head(RoIHeadTemplate):
         # batch_dict['roi_scores'] = batch_dict['roi_scores'][:,0]
         batch_size = batch_dict['batch_size']
         cur_batch_boxes = copy.deepcopy(batch_dict['roi_boxes'].detach())
-        cur_batch_boxes = torch.concat([cur_batch_boxes,batch_dict['roi_labels'][:,:,None].float()],dim=-1)
+        # cur_batch_boxes = torch.concat([cur_batch_boxes,batch_dict['roi_labels'][:,:,None].float()],dim=-1)
         batch_dict['cur_frame_idx'] = 0
         proposals_list = batch_dict['proposals_list']
         self.anchor_sampler = build_voxel_sampler_anchor(roi_scores.device)
@@ -813,7 +813,7 @@ class DENet4Head(RoIHeadTemplate):
             # anchors_rois = anchors_rois.transpose(1,2)
             # backward_rois = self.generate_trajectory_msf(anchors_rois.reshape(batch_size, -1, anchors_rois.shape[-1]),
             #                                              batch_dict)
-            backward_rois = self.generate_trajectory_msf(cur_batch_boxes[:,:,:-1], batch_dict)
+            backward_rois = self.generate_trajectory_msf(cur_batch_boxes, batch_dict)
             batch_dict['backward_rois'] = backward_rois
             batch_dict['trajectory_rois'] = batch_dict['backward_rois']
             # batch_dict['roi_labels'] = backward_rois[:,0,:,-1].long()
