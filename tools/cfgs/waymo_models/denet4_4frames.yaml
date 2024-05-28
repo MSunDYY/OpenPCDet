@@ -53,27 +53,27 @@ DATA_CONFIG:
                 'test': True
             }
 
-        - NAME: anchor_aug
-          ROI_PER_IMAGE: 80
-          FG_RATIO: 0.7
-          REG_AUG_METHOD: single
-          ROI_FG_AUG_TIMES: 10
-          RATIO: 0.2
-          USE_ROI_AUG: True
-          USE_BG_ROI_AUG: True
-          USE_TRAJ_AUG:
-              ENABLED: True
-              THRESHOD: 0.8
-          SAMPLE_ROI_BY_EACH_CLASS: True
-          CLS_SCORE_TYPE: roi_iou
-
-          CLS_FG_THRESH: 0.75
-          CLS_BG_THRESH: 0.25
-          CLS_BG_THRESH_LO: 0.1
-          HARD_BG_RATIO: 0.8
-
-          REG_FG_THRESH: 0.55
-          REG_BG_THRESH: 0.7
+#        - NAME: anchor_aug
+#          ROI_PER_IMAGE: 80
+#          FG_RATIO: 0.7
+#          REG_AUG_METHOD: single
+#          ROI_FG_AUG_TIMES: 10
+#          RATIO: 0.2
+#          USE_ROI_AUG: True
+#          USE_BG_ROI_AUG: True
+#          USE_TRAJ_AUG:
+#              ENABLED: True
+#              THRESHOD: 0.8
+#          SAMPLE_ROI_BY_EACH_CLASS: True
+#          CLS_SCORE_TYPE: roi_iou
+#
+#          CLS_FG_THRESH: 0.75
+#          CLS_BG_THRESH: 0.25
+#          CLS_BG_THRESH_LO: 0.1
+#          HARD_BG_RATIO: 0.8
+#
+#          REG_FG_THRESH: 0.55
+#          REG_BG_THRESH: 0.7
 
     POINT_FEATURE_ENCODING: {
         encoding_type: absolute_coordinates_encoding, 
@@ -133,7 +133,7 @@ MODEL:
         TARGET_CONFIG:
             BOX_CODER: ResidualCoder
             ROI_PER_IMAGE: 80
-            FG_RATIO: 0.7
+            FG_RATIO: 0.5
             REG_AUG_METHOD: single
             ROI_FG_AUG_TIMES: 10
             RATIO: 0.2
@@ -185,7 +185,7 @@ OPTIMIZATION:
     NUM_EPOCHS: 6
 
     OPTIMIZER: adam_onecycle
-    LR: 0.002
+    LR: 0.003
     WEIGHT_DECAY: 0.01
     MOMENTUM: 0.9
 

@@ -1155,11 +1155,11 @@ class DENet4Head(RoIHeadTemplate):
     def get_loss(self, tb_dict=None):
         tb_dict = {} if tb_dict is None else tb_dict
         rcnn_loss = 0
-        rcnn_loss_cls, cls_tb_dict = self.get_box_cls_layer_loss(self.forward_ret_dict)
+        rcnn_loss_cls, cls_tb_dict = self.get_box_cls_layer_loss1(self.forward_ret_dict)
         rcnn_loss += rcnn_loss_cls
         tb_dict.update(cls_tb_dict)
 
-        rcnn_loss_reg, reg_tb_dict = self.get_box_reg_layer_loss(self.forward_ret_dict)
+        rcnn_loss_reg, reg_tb_dict = self.get_box_reg_layer_loss1(self.forward_ret_dict)
         rcnn_loss += rcnn_loss_reg
         tb_dict.update(reg_tb_dict)
         tb_dict['rcnn_loss'] = rcnn_loss.item()
