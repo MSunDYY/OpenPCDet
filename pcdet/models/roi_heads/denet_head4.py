@@ -8,7 +8,7 @@ from pcdet.ops.iou3d_nms import iou3d_nms_utils
 from ...utils import common_utils, loss_utils
 from .roi_head_template import RoIHeadTemplate
 from ..model_utils.denet_utils import build_transformer, PointNet, MLP,SpatialMixerBlock, build_voxel_sampler_denet
-from ..model_utils.msf_utils import build_voxel_sampler,build_voxel_sampler_traj,build_voxel_sampler_anchor
+from ..model_utils.msf_utils import build_voxel_sampler,build_voxel_sampler_traj,build_voxel_sampler_anchor,build_transformer
 from . import msf_head
 from .target_assigner.proposal_target_layer import ProposalTargetLayer
 from pcdet.ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_stack_modules
