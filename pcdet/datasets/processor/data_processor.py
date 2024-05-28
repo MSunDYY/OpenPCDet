@@ -460,7 +460,7 @@ class DataProcessor(object):
             else:
                 batch_backward_rois = cur_backward_rois[:, sampled_inds]
                 # batch_trajectory_rois[index] = cur_trajectory_rois[:,sampled_inds]
-            return batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_labels, batch_backward_rois, batch_valid_length
+            return batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_labels, batch_backward_rois[...,:-1], batch_valid_length
 
         anchors = torch.from_numpy(data_dict['anchors'])
         backward_rois = generate_trajectory_msf(anchors.reshape(-1, anchors.shape[-1]),
@@ -488,12 +488,12 @@ class DataProcessor(object):
                 (batch_roi_ious[interval_mask] - iou_bg_thresh) / (iou_fg_thresh - iou_bg_thresh)
         else:
             raise NotImplementedError
-
+        # batch_backward_rois[0] = batch_rois
         targets_dict = {'rois': batch_rois, 'gt_of_rois': batch_gt_of_rois,
                         'gt_iou_of_rois': batch_roi_ious,  # 'roi_scores': batch_roi_scores,
                         'roi_labels': batch_roi_labels, 'reg_valid_mask': reg_valid_mask,
                         'rcnn_cls_labels': batch_cls_labels,
-                        'backward_rois': batch_backward_rois,
+                        'trajectory_rois': batch_backward_rois,
                         'valid_length': batch_valid_length,
                         }
 

@@ -8,7 +8,7 @@ from pcdet.ops.iou3d_nms import iou3d_nms_utils
 from ...utils import common_utils, loss_utils
 from .roi_head_template import RoIHeadTemplate
 from ..model_utils.denet_utils import build_transformer, PointNet, MLP,SpatialMixerBlock, build_voxel_sampler_denet
-from ..model_utils.msf_utils import build_voxel_sampler,build_voxel_sampler_traj,build_voxel_sampler_anchor,build_transformer
+from ..model_utils.msf_utils import build_voxel_sampler_traj,build_voxel_sampler_anchor,build_transformer,build_voxel_sampler
 from . import msf_head
 from .target_assigner.proposal_target_layer import ProposalTargetLayer
 from pcdet.ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_stack_modules
@@ -365,8 +365,8 @@ class DENet4Head(RoIHeadTemplate):
     def __init__(self,model_cfg, num_class=1,**kwargs):
         super().__init__(num_class=num_class, model_cfg=model_cfg)
         self.model_cfg = model_cfg
-        # self.proposal_target_layer = ProposalTargetLayerMPPNet(roi_sampler_cfg=self.model_cfg.TARGET_CONFIG)
-        self.proposal_target_layer = msf_head.ProposalTargetLayerMPPNet(roi_sampler_cfg=self.model_cfg.TARGET_CONFIG)
+        self.proposal_target_layer = ProposalTargetLayerMPPNet(roi_sampler_cfg=self.model_cfg.TARGET_CONFIG)
+        # self.proposal_target_layer = msf_head.ProposalTargetLayerMPPNet(roi_sampler_cfg=self.model_cfg.TARGET_CONFIG)
         self.use_time_stamp = self.model_cfg.get('USE_TIMESTAMP',None)
         self.num_lidar_points = self.model_cfg.Transformer.num_lidar_points
         self.avg_stage1_score = self.model_cfg.get('AVG_STAGE1_SCORE', None)
@@ -977,8 +977,8 @@ class DENet4Head(RoIHeadTemplate):
             batch_dict['roi_boxes'] = targets_dict['rois']
             # batch_dict['roi_scores'] = targets_dict['roi_scores']
             batch_dict['roi_labels'] = targets_dict['roi_labels']
-            batch_dict['roi_scores'] = targets_dict['roi_scores']
-            # targets_dict['backward_rois'][:,batch_dict['cur_frame_idx'],:,:] = batch_dict['roi_boxes']
+            # batch_dict['roi_scores'] = targets_dict['roi_scores']
+            targets_dict['trajectory_rois'][:,batch_dict['cur_frame_idx'],:,:] = batch_dict['roi_boxes']
             # trajectory_rois = targets_dict['trajectory_rois']
             trajectory_rois = targets_dict['trajectory_rois']
             empty_mask = batch_dict['roi_boxes'][:,torch.arange(batch_dict['roi_boxes'].shape[1]//self.num_anchors)*self.num_anchors,:6].sum(-1)==0
@@ -992,36 +992,36 @@ class DENet4Head(RoIHeadTemplate):
         num_rois = batch_dict['roi_boxes'].shape[1]
         num_anchors  =batch_dict['num_anchors']
         
-        # backward_rois = backward_rois.reshape(batch_size,num_frames,-1,batch_dict['num_anchors'],backward_rois.shape[-1])
-        signal=False
+        trajectory_rois = trajectory_rois.reshape(batch_size,num_frames,-1,batch_dict['num_anchors'],trajectory_rois.shape[-1])
+        signal=True
         if signal:
-            src1,src1_features = self.voxel_sampler(batch_size, torch.mean(backward_rois,dim=-2), num_sample, batch_dict)
+            src1,src1_features = self.voxel_sampler(batch_size, torch.mean(trajectory_rois,dim=-2), num_sample, batch_dict)
     
             src1 = src1[:,:,None,:,:].repeat(1,1,batch_dict['num_anchors'],1,1).view(batch_size * num_rois, -1, src1.shape[-1])
             # src2 = src2.view(batch_size * num_rois,-1,src2.shape[-1])
             # xyz1 = src1[:, :, :3]
-            backward_rois = backward_rois.view(batch_size,num_frames,-1,backward_rois.shape[-1])
+            trajectory_rois = trajectory_rois.view(batch_size,num_frames,-1,trajectory_rois.shape[-1])
             # xyz2 = src2[:, :, :3]
-            src_backward_feature = self.get_proposal_aware_geometry_feature(src1,batch_size,backward_rois,num_rois)
+            src_trajectory_feature = self.get_proposal_aware_geometry_feature(src1,batch_size,trajectory_rois,num_rois)
             # src_trajectory_feature = self.get_proposal_aware_geometry_feature(src2, batch_size, trajectory_rois, num_rois)
     
-            src_motion_feature1 = self.get_proposal_aware_motion_feature(src1, batch_size, backward_rois, num_rois)
+            src_motion_feature1 = self.get_proposal_aware_motion_feature(src1, batch_size, trajectory_rois, num_rois)
             # src_motion_feature2 = self.get_proposal_aware_motion_feature(src2,batch_size,trajectory_rois,num_rois)
             
-            src1 = src_backward_feature + src_motion_feature1
+            src1 = src_trajectory_feature + src_motion_feature1
             # src2 = src_trajectory_feature+src_motion_feature2
             src1 = src1.reshape(-1,batch_dict['num_anchors'],src1.shape[-2],src1.shape[-1])
             src1_features = src1_features.view(batch_size*num_rois//num_anchors,-1,src1_features.shape[-1])
             if self.model_cfg.get('USE_POINTNET',False):
                 src1 = self.fuse(torch.concat([src1.transpose(1,2).reshape(-1,src1.shape[-2],self.num_anchors*self.hidden_dim),src1_features],dim=-1))
             else:
-                # src1 = self.fuse(src1.transpose(1,2).reshape(-1,src1.shape[-2],self.num_anchors*self.hidden_dim))
-                src1 = src1.reshape(-1,src1.shape[-2],self.num_anchors*self.hidden_dim)
+                src1 = self.fuse(src1.transpose(1,2).reshape(-1,src1.shape[-2],self.num_anchors*self.hidden_dim))
+                # src1 = src1.reshape(-1,src1.shape[-2],self.num_anchors*self.hidden_dim)
             # num_rois_all = src1.shape[0]
             # src = src_geometry_feature + src_motion_feature
             # src = self.conv(torch.concat([src_trajectory_feature,src_backward_feature],dim=-1).permute(0,2,1)).permute(0,2,1)
-            box_reg, feat_box = self.trajectories_auxiliary_branch(backward_rois)
-            # feat_box = self.fuse_box(feat_box.reshape(-1,self.num_anchors*feat_box.shape[-1]))
+            box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
+            feat_box = self.fuse_box(feat_box.reshape(-1,self.num_anchors*feat_box.shape[-1]))
             if self.model_cfg.get('USE_TRAJ_EMPTY_MASK',None):
                 src1[empty_mask.view(-1)] = 0
                 # src2[empty_mask.view(-1)] = 0
@@ -1057,9 +1057,8 @@ class DENet4Head(RoIHeadTemplate):
 
         for i in range(hs1.shape[0]):
             for j in range(self.num_enc_layer):
-                # tokens1[j][i] = tokens1[j][i]+tokens2[j][i]
                 point_reg_list.append(self.bbox_embed[i](tokens1[j][i]))
-                # point_reg_list.append(self.bbox_embed[i](tokens[j][i]))
+
 
         point_cls = torch.cat(point_cls_list,0)
 
@@ -1067,7 +1066,7 @@ class DENet4Head(RoIHeadTemplate):
         # hs2 = hs2.permute(1,0,2).reshape(hs2.shape[1],-1)
         hs1 = hs1.permute(1,0,2).reshape(hs1.shape[1],-1)
 
-        # hs2 = hs2.permute(1,0,2).reshape(hs2.shape[1],-1)
+
         joint_reg = self.jointembed(torch.cat([hs1,feat_box],-1))
 
         rcnn_cls = point_cls
@@ -1288,11 +1287,11 @@ class DENet4Head(RoIHeadTemplate):
     def get_loss(self, tb_dict=None):
         tb_dict = {} if tb_dict is None else tb_dict
         rcnn_loss = 0
-        rcnn_loss_cls, cls_tb_dict = self.get_box_cls_layer_loss1(self.forward_ret_dict)
+        rcnn_loss_cls, cls_tb_dict = self.get_box_cls_layer_loss(self.forward_ret_dict)
         rcnn_loss += rcnn_loss_cls
         tb_dict.update(cls_tb_dict)
 
-        rcnn_loss_reg, reg_tb_dict = self.get_box_reg_layer_loss1(self.forward_ret_dict)
+        rcnn_loss_reg, reg_tb_dict = self.get_box_reg_layer_loss(self.forward_ret_dict)
         rcnn_loss += rcnn_loss_reg
         tb_dict.update(reg_tb_dict)
         tb_dict['rcnn_loss'] = rcnn_loss.item()
