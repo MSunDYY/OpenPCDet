@@ -971,7 +971,6 @@ class DENet4Head(RoIHeadTemplate):
         if self.training:
             if not self.model_cfg.get('PRE_AUG',False):
                 targets_dict = self.assign_targets(batch_dict)
-
             else:
                 targets_dict = batch_dict['targets_dict']
             batch_dict['roi_boxes'] = targets_dict['rois']
