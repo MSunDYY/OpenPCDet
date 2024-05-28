@@ -68,7 +68,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
                         'gt_iou_of_rois': batch_roi_ious,#'roi_scores': batch_roi_scores,
                         'roi_labels': batch_roi_labels,'reg_valid_mask': reg_valid_mask, 
                         'rcnn_cls_labels': batch_cls_labels,
-                        'backward_rois':batch_backward_rois,
+                        'trajectory_rois':batch_backward_rois,
                         'valid_length': batch_valid_length,
                         }
 
@@ -87,7 +87,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
         """
         cur_frame_idx = 0
         batch_size = batch_dict['batch_size']
-        rois = batch_dict['backward_rois'][:, cur_frame_idx, :, :]
+        rois = batch_dict['trajectory_rois'][:, cur_frame_idx, :, :]
         roi_scores = batch_dict['roi_scores']
         roi_labels = batch_dict['roi_labels']
         gt_boxes = batch_dict['gt_boxes']
@@ -98,7 +98,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
         batch_roi_ious = rois.new_zeros(batch_size,self.roi_sampler_cfg.ROI_PER_IMAGE * num_anchors)
         batch_roi_scores = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE*num_anchors)
         batch_roi_labels = rois.new_zeros((batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE*num_anchors), dtype=torch.long)
-        backward_rois = batch_dict['backward_rois']
+        backward_rois = batch_dict['trajectory_rois']
         # trajectory_rois = batch_dict['trajectory_rois']
         # batch_trajectory_rois = rois.new_zeros(batch_size, trajectory_rois.shape[1], self.roi_sampler_cfg.ROI_PER_IMAGE,
         #                                         trajectory_rois.shape[-1])
@@ -107,7 +107,7 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
 
         # valid_length = batch_dict['valid_length']
         batch_valid_length = rois.new_zeros(
-            (batch_size, batch_dict['backward_rois'].shape[1], self.roi_sampler_cfg.ROI_PER_IMAGE))
+            (batch_size, batch_dict['trajectory_rois'].shape[1], self.roi_sampler_cfg.ROI_PER_IMAGE))
 
         for index in range(batch_size):
 
@@ -167,8 +167,8 @@ class ProposalTargetLayerMPPNet(ProposalTargetLayer):
 
             # batch_roi_scores[index] = cur_roi_scores[sampled_inds]
 
-            if 'valid_length' in batch_dict.keys():
-                batch_valid_length[index] = cur_valid_length[:, sampled_inds]
+            # if 'valid_length' in batch_dict.keys():
+            #     batch_valid_length[index] = cur_valid_length[:, sampled_inds]
 
             if self.roi_sampler_cfg.USE_TRAJ_AUG.ENABLED:
                 batch_backward_rois_list = []
