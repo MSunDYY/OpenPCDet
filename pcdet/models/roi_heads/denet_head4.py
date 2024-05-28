@@ -783,7 +783,7 @@ class DENet4Head(RoIHeadTemplate):
 
         return backward_rois,trajectory_rois
 
-    def forward(self, batch_dict):
+    def forward1(self, batch_dict):
         """
         :param input_data: input dict
         :return:
@@ -918,7 +918,7 @@ class DENet4Head(RoIHeadTemplate):
 
         return batch_dict
 
-    def forward1(self, batch_dict):
+    def forward(self, batch_dict):
         """
         :param input_data: input dict
         :return:
@@ -944,9 +944,10 @@ class DENet4Head(RoIHeadTemplate):
             # anchors_rois = anchors_rois.transpose(1,2)
             # backward_rois = self.generate_trajectory_msf(anchors_rois.reshape(batch_size, -1, anchors_rois.shape[-1]),
             #                                              batch_dict)
-            backward_rois = self.generate_trajectory_msf(cur_batch_boxes, batch_dict)
-            batch_dict['backward_rois'] = backward_rois
-            batch_dict['trajectory_rois'] = batch_dict['backward_rois']
+            trajectory_rois = self.generate_trajectory_msf(cur_batch_boxes, batch_dict)
+            # batch_dict['backward_rois'] = backward_rois
+            batch_dict['trajectory_rois'] = trajectory_rois
+            batch_dict['traj_memory'] = trajectory_rois
             # batch_dict['roi_labels'] = backward_rois[:,0,:,-1].long()
             # batch_dict['roi_boxes'] = batch_dict['backward_rois'][:, 0]
 
@@ -970,8 +971,7 @@ class DENet4Head(RoIHeadTemplate):
         if self.training:
             if not self.model_cfg.get('PRE_AUG',False):
                 targets_dict = self.assign_targets(batch_dict)
-                if 'backward_rois' not in targets_dict:
-                    targets_dict['backward_rois'] = targets_dict['trajectory_rois']
+
             else:
                 targets_dict = batch_dict['targets_dict']
             batch_dict['roi_boxes'] = targets_dict['rois']
@@ -980,7 +980,7 @@ class DENet4Head(RoIHeadTemplate):
             batch_dict['roi_scores'] = targets_dict['roi_scores']
             # targets_dict['backward_rois'][:,batch_dict['cur_frame_idx'],:,:] = batch_dict['roi_boxes']
             # trajectory_rois = targets_dict['trajectory_rois']
-            backward_rois = targets_dict['backward_rois']
+            trajectory_rois = targets_dict['trajectory_rois']
             empty_mask = batch_dict['roi_boxes'][:,torch.arange(batch_dict['roi_boxes'].shape[1]//self.num_anchors)*self.num_anchors,:6].sum(-1)==0
             valid_length = targets_dict['valid_length']
         else:
@@ -992,7 +992,7 @@ class DENet4Head(RoIHeadTemplate):
         num_rois = batch_dict['roi_boxes'].shape[1]
         num_anchors  =batch_dict['num_anchors']
         
-        backward_rois = backward_rois.reshape(batch_size,num_frames,-1,batch_dict['num_anchors'],backward_rois.shape[-1])
+        # backward_rois = backward_rois.reshape(batch_size,num_frames,-1,batch_dict['num_anchors'],backward_rois.shape[-1])
         signal=False
         if signal:
             src1,src1_features = self.voxel_sampler(batch_size, torch.mean(backward_rois,dim=-2), num_sample, batch_dict)
@@ -1031,7 +1031,7 @@ class DENet4Head(RoIHeadTemplate):
             # hs2,tokens2 = self.transformer2(src2,pos=None)
             # hs = hs[:,:num_rois_all]
         else:
-            trajectory_rois = backward_rois[:,:,:,0].clone()
+
             src = self.voxel_sampler(batch_size, trajectory_rois, num_sample, batch_dict)
 
             src = src.view(batch_size * num_rois, -1, src.shape[-1])
