@@ -347,9 +347,16 @@ class DatasetTemplate(torch_data.Dataset):
                     for sub_key in val[0].keys():
                         temp[sub_key] = torch.stack([sub_val[sub_key] for sub_val in val])
                     ret[key] = temp
+                elif key in ['anchors']:
+                    max_num_anchor = max([anchor.shape[0] for anchor in val])
+                    temp = [torch.concat([anchor,torch.zeros(max_num_anchor-anchor.shape[0],anchor.shape[-2],anchor.shape[-1])],dim=0) for anchor in val]
+                    ret[key] = torch.stack(temp)
+
+
                 else:
                     ret[key] = np.stack(val, axis=0)
-                    
+
+
             except:
                 print('Error in collate_batch: key=%s' % key)
                 raise TypeError

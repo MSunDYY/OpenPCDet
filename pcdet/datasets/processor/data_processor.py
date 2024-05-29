@@ -340,7 +340,7 @@ class DataProcessor(object):
             # batch_size = batch_dict['batch_size']
             rois = batch_dict['backward_rois'][cur_frame_idx, :, :]
             # roi_scores = batch_dict['roi_scores'][:, :, cur_frame_idx]
-            anchor_labels = batch_dict['backward_rois'][cur_frame_idx, :, -1]
+            anchor_labels = batch_dict['backward_rois'][cur_frame_idx, :, -1].long()
             gt_boxes = torch.from_numpy(batch_dict['gt_boxes']).float()
             num_anchors = batch_dict['num_anchors']
             code_size = rois.shape[-1]
@@ -461,72 +461,73 @@ class DataProcessor(object):
                 batch_backward_rois = cur_backward_rois[:, sampled_inds]
                 # batch_trajectory_rois[index] = cur_trajectory_rois[:,sampled_inds]
             return batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_labels, batch_backward_rois[...,:-1], batch_valid_length
+        with torch.no_grad():
+            anchors = torch.from_numpy(data_dict['anchors'])
+            data_dict['anchors'] = anchors
+            backward_rois = generate_trajectory_msf(anchors.reshape(-1, anchors.shape[-1]),
+                                                    data_dict)
+            data_dict['backward_rois'] = backward_rois
+            data_dict['num_anchors'] = data_dict['anchors'].shape[-2]
+            data_dict['num_frames'] = data_dict['num_points_all'].shape[0]
+            batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_labels, batch_backward_rois, batch_valid_length = sample_rois_for_mppnet(
+                batch_dict=data_dict, config=config)
+            reg_valid_mask = (batch_roi_ious > config.REG_FG_THRESH).long()
+            if config.CLS_SCORE_TYPE == 'cls':
+                batch_cls_labels = (batch_roi_ious > config.CLS_FG_THRESH).long()
+                ignore_mask = (batch_roi_ious > config.CLS_BG_THRESH) & \
+                              (batch_roi_ious < config.CLS_FG_THRESH)
+                batch_cls_labels[ignore_mask > 0] = -1
+            elif config.CLS_SCORE_TYPE == 'roi_iou':
+                iou_bg_thresh = config.CLS_BG_THRESH
+                iou_fg_thresh = config.CLS_FG_THRESH
+                fg_mask = batch_roi_ious > iou_fg_thresh
+                bg_mask = batch_roi_ious < iou_bg_thresh
+                interval_mask = (fg_mask == 0) & (bg_mask == 0)
 
-        anchors = torch.from_numpy(data_dict['anchors'])
-        backward_rois = generate_trajectory_msf(anchors.reshape(-1, anchors.shape[-1]),
-                                                data_dict)
-        data_dict['backward_rois'] = backward_rois
-        data_dict['num_anchors'] = data_dict['anchors'].shape[-2]
-        data_dict['num_frames'] = data_dict['num_points_all'].shape[0]
-        batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_labels, batch_backward_rois, batch_valid_length = sample_rois_for_mppnet(
-            batch_dict=data_dict, config=config)
-        reg_valid_mask = (batch_roi_ious > config.REG_FG_THRESH).long()
-        if config.CLS_SCORE_TYPE == 'cls':
-            batch_cls_labels = (batch_roi_ious > config.CLS_FG_THRESH).long()
-            ignore_mask = (batch_roi_ious > config.CLS_BG_THRESH) & \
-                          (batch_roi_ious < config.CLS_FG_THRESH)
-            batch_cls_labels[ignore_mask > 0] = -1
-        elif config.CLS_SCORE_TYPE == 'roi_iou':
-            iou_bg_thresh = config.CLS_BG_THRESH
-            iou_fg_thresh = config.CLS_FG_THRESH
-            fg_mask = batch_roi_ious > iou_fg_thresh
-            bg_mask = batch_roi_ious < iou_bg_thresh
-            interval_mask = (fg_mask == 0) & (bg_mask == 0)
+                batch_cls_labels = (fg_mask > 0).float()
+                batch_cls_labels[interval_mask] = \
+                    (batch_roi_ious[interval_mask] - iou_bg_thresh) / (iou_fg_thresh - iou_bg_thresh)
+            else:
+                raise NotImplementedError
+            # batch_backward_rois[0] = batch_rois
+            targets_dict = {'rois': batch_rois, 'gt_of_rois': batch_gt_of_rois,
+                            'gt_iou_of_rois': batch_roi_ious,  # 'roi_scores': batch_roi_scores,
+                            'roi_labels': batch_roi_labels, 'reg_valid_mask': reg_valid_mask,
+                            'rcnn_cls_labels': batch_cls_labels,
+                            'trajectory_rois': batch_backward_rois,
+                            'valid_length': batch_valid_length,
+                            }
 
-            batch_cls_labels = (fg_mask > 0).float()
-            batch_cls_labels[interval_mask] = \
-                (batch_roi_ious[interval_mask] - iou_bg_thresh) / (iou_fg_thresh - iou_bg_thresh)
-        else:
-            raise NotImplementedError
-        # batch_backward_rois[0] = batch_rois
-        targets_dict = {'rois': batch_rois, 'gt_of_rois': batch_gt_of_rois,
-                        'gt_iou_of_rois': batch_roi_ious,  # 'roi_scores': batch_roi_scores,
-                        'roi_labels': batch_roi_labels, 'reg_valid_mask': reg_valid_mask,
-                        'rcnn_cls_labels': batch_cls_labels,
-                        'trajectory_rois': batch_backward_rois,
-                        'valid_length': batch_valid_length,
-                        }
+            rois = targets_dict['rois']  # (B, N, 7 + C)
+            gt_of_rois = targets_dict['gt_of_rois']  # (B, N, 7 + C + 1)
+            targets_dict['gt_of_rois_src'] = gt_of_rois.clone().detach()
 
-        rois = targets_dict['rois']  # (B, N, 7 + C)
-        gt_of_rois = targets_dict['gt_of_rois']  # (B, N, 7 + C + 1)
-        targets_dict['gt_of_rois_src'] = gt_of_rois.clone().detach()
+            # canonical transformation
+            roi_center = rois[:,  0:3]
+            roi_ry = rois[:,  6] % (2 * np.pi)
+            gt_of_rois[:,  0:3] = gt_of_rois[:,  0:3] - roi_center
+            gt_of_rois[:,  6] = gt_of_rois[:,  6] - roi_ry
 
-        # canonical transformation
-        roi_center = rois[:,  0:3]
-        roi_ry = rois[:,  6] % (2 * np.pi)
-        gt_of_rois[:,  0:3] = gt_of_rois[:,  0:3] - roi_center
-        gt_of_rois[:,  6] = gt_of_rois[:,  6] - roi_ry
+            # transfer LiDAR coords to local coords
+            gt_of_rois = common_utils.rotate_points_along_z(
+                points=gt_of_rois.view(-1, 1, gt_of_rois.shape[-1]), angle=-roi_ry.view(-1)
+            ).view( -1, gt_of_rois.shape[-1])
 
-        # transfer LiDAR coords to local coords
-        gt_of_rois = common_utils.rotate_points_along_z(
-            points=gt_of_rois.view(-1, 1, gt_of_rois.shape[-1]), angle=-roi_ry.view(-1)
-        ).view( -1, gt_of_rois.shape[-1])
+            # flip orientation if rois have opposite orientation
+            heading_label = gt_of_rois[:,  6] % (2 * np.pi)  # 0 ~ 2pi
+            opposite_flag = (heading_label > np.pi * 0.5) & (heading_label < np.pi * 1.5)
+            heading_label[opposite_flag] = (heading_label[opposite_flag] + np.pi) % (2 * np.pi)  # (0 ~ pi/2, 3pi/2 ~ 2pi)
+            flag = heading_label > np.pi
+            heading_label[flag] = heading_label[flag] - np.pi * 2  # (-pi/2, pi/2)
+            heading_label = torch.clamp(heading_label, min=-np.pi / 2, max=np.pi / 2)
 
-        # flip orientation if rois have opposite orientation
-        heading_label = gt_of_rois[:,  6] % (2 * np.pi)  # 0 ~ 2pi
-        opposite_flag = (heading_label > np.pi * 0.5) & (heading_label < np.pi * 1.5)
-        heading_label[opposite_flag] = (heading_label[opposite_flag] + np.pi) % (2 * np.pi)  # (0 ~ pi/2, 3pi/2 ~ 2pi)
-        flag = heading_label > np.pi
-        heading_label[flag] = heading_label[flag] - np.pi * 2  # (-pi/2, pi/2)
-        heading_label = torch.clamp(heading_label, min=-np.pi / 2, max=np.pi / 2)
-
-        gt_of_rois[:,  6] = heading_label
-        targets_dict['gt_of_rois'] = gt_of_rois
-        data_dict['targets_dict'] = targets_dict
-        poped_key = ['anchors','backward_rois','num_anchors','num_frames']
-        for key in poped_key:
-            data_dict.pop(key)
-        return data_dict
+            gt_of_rois[:,  6] = heading_label
+            targets_dict['gt_of_rois'] = gt_of_rois
+            data_dict['targets_dict'] = targets_dict
+            poped_key = ['backward_rois','num_anchors','num_frames']
+            for key in poped_key:
+                data_dict.pop(key)
+            return data_dict
 
 
 

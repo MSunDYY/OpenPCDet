@@ -27,6 +27,8 @@ def load_data_to_gpu(batch_dict):
             if key=='targets_dict':
                 for sub_key,sub_val in val.items():
                     batch_dict[key][sub_key]=sub_val.to(device)
+            elif key=='anchors':
+                batch_dict[key] = val.to(device)
             continue
         elif key in ['frame_id', 'metadata', 'calib', 'image_paths','ori_shape','img_process_infos']:
             continue

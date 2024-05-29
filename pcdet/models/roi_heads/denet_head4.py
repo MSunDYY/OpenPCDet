@@ -952,11 +952,12 @@ class DENet4Head(RoIHeadTemplate):
         self.anchor_sampler = build_voxel_sampler_anchor(roi_scores.device)
         num_sample = self.num_lidar_points
         if not self.model_cfg.get('PRE_AUG', False):
-            anchors_rois = self.anchor_sampler(batch_size,
-                                               torch.concat([cur_batch_boxes, batch_dict['roi_labels'][:, :, None]],
-                                                            dim=-1), num_sample, batch_dict['roi_scores'], batch_dict,
-                                               num_anchors=batch_dict['num_anchors'], return_boxes=True)
+            # anchors_rois = self.anchor_sampler(batch_size,
+            #                                    torch.concat([cur_batch_boxes, batch_dict['roi_labels'][:, :, None]],
+            #                                                 dim=-1), num_sample, batch_dict['roi_scores'], batch_dict,
+            #                                    num_anchors=batch_dict['num_anchors'], return_boxes=True)
             # anchors_rois = anchors_rois.transpose(1,2)
+            anchors_rois = batch_dict['anchors']
             trajectory_rois = self.generate_trajectory_msf(anchors_rois.reshape(batch_size, -1, anchors_rois.shape[-1]),
                                                            batch_dict)
             # trajectory_rois = self.generate_trajectory_msf(cur_batch_boxes, batch_dict)
