@@ -96,7 +96,9 @@ MODEL:
         USE_TRAJ_EMPTY_MASK: True
         USE_AUX_LOSS: True
         IOU_WEIGHT: [0.5,0.4]
-        USE_POINTNET: True
+        USE_POINTNET:
+            ENABLE: True
+            USE_ABSOLUTE_XYZ: True
 
         VoxelSampler:
             voxel_size: .4

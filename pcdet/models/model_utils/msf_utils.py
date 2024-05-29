@@ -517,7 +517,7 @@ class VoxelPointsSampler(nn.Module):
     GAMMA = 1.1
 
     def __init__(self, device, voxel_size, pc_range, max_points_per_voxel, num_point_features=5,
-                 return_point_feature=False):
+                 config=None):
         super().__init__()
 
         self.voxel_size = voxel_size
@@ -530,13 +530,13 @@ class VoxelPointsSampler(nn.Module):
             max_num_points_per_voxel=max_points_per_voxel,
             device=device
         )
-
+        self.use_absolute_xyz = config.USE_ABSOLUTE_XYZ
         self.pc_start = torch.FloatTensor(pc_range[:2]).to(device)
         self.k = max_points_per_voxel
         self.grid_x = int((pc_range[3] - pc_range[0]) / voxel_size)
         self.grid_y = int((pc_range[4] - pc_range[1]) / voxel_size)
-        self.return_point_feature = return_point_feature
-        if return_point_feature == True:
+        self.return_point_feature = config.ENABLE
+        if config.ENABLE == True:
             self.set_abstraction = pointnet2_modules.PointnetSAModuleMSG(
                 npoint=4096,
                 radii=[0.8, 1.6],
@@ -647,7 +647,8 @@ class VoxelPointsSampler(nn.Module):
         query_points_features = self.set_abstraction(cur_points[None, :, :3].contiguous(),
                                                      cur_points[None, :, 3:].transpose(1, 2).contiguous(),
                                                      query_points[None, :, :3].contiguous())
-        query_points_features = query_points_features[1].transpose(1, 2).squeeze()
+        if self.use_absolute_xyz:
+            query_points_features = torch.concat([query_points_features[0].squeeze(),query_points_features[1].transpose(1, 2).squeeze()],dim=-1)
         points_features = query_points_features[idx]
 
         sampled_idx = sampled_idx.view(-1, 1).repeat(1, cur_points.shape[-1])
@@ -935,7 +936,7 @@ def build_voxel_sampler(device, return_point_feature=False):
             pc_range=[-75.2, -75.2, -10, 75.2, 75.2, 10],
             max_points_per_voxel=32,
             num_point_features=5,
-            return_point_feature=return_point_feature
+            config=return_point_feature,
         )
 
 
