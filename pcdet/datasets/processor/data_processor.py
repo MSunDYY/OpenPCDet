@@ -240,7 +240,7 @@ class DataProcessor(object):
             num_frames = batch_dict['num_points_all'].shape[0]
             trajectory_rois = cur_batch_boxes[None, :, :].repeat(num_frames,1,1)
             # trajectory_rois[:, 0, :, :] = cur_batch_boxes
-            # batch_dict['valid_length'] = torch.ones([batch_dict['batch_size'], num_frames, trajectory_rois.shape[2]])
+            batch_dict['valid_length'] = torch.ones(num_frames, trajectory_rois.shape[1])
             # batch_dict['roi_scores'] = batch_dict['roi_scores'][:, :, None].repeat(1, 1, num_frames)
 
             # simply propagate proposal based on velocity
@@ -370,7 +370,7 @@ class DataProcessor(object):
             cur_roi, cur_gt, cur_roi_labels = rois[:, :-1], gt_boxes, rois[:, -1].long()
 
             if 'valid_length' in batch_dict.keys():
-                cur_valid_length = valid_length[index].to(device)
+                cur_valid_length = batch_dict['valid_length']
 
             k = cur_gt.__len__() - 1
             while k > 0 and cur_gt[k].sum() == 0:
@@ -469,6 +469,7 @@ class DataProcessor(object):
             data_dict['backward_rois'] = backward_rois
             data_dict['num_anchors'] = data_dict['anchors'].shape[-2]
             data_dict['num_frames'] = data_dict['num_points_all'].shape[0]
+            data_dict['has_class_labels'] = True
             batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_labels, batch_backward_rois, batch_valid_length = sample_rois_for_mppnet(
                 batch_dict=data_dict, config=config)
             reg_valid_mask = (batch_roi_ious > config.REG_FG_THRESH).long()
@@ -524,7 +525,7 @@ class DataProcessor(object):
             gt_of_rois[:,  6] = heading_label
             targets_dict['gt_of_rois'] = gt_of_rois
             data_dict['targets_dict'] = targets_dict
-            poped_key = ['backward_rois','num_anchors','num_frames']
+            poped_key = ['backward_rois','num_anchors','num_frames','valid_length']
             for key in poped_key:
                 data_dict.pop(key)
             return data_dict
