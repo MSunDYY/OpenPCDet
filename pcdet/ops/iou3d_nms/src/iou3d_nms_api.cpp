@@ -17,4 +17,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 	m.def("nms_normal_gpu", &nms_normal_gpu, "nms gpu");
 	m.def("boxes_aligned_iou_bev_cpu", &boxes_aligned_iou_bev_cpu, "aligned oriented boxes iou");
 	m.def("boxes_iou_bev_cpu", &boxes_iou_bev_cpu, "oriented boxes iou");
+
 }
