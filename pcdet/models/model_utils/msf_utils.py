@@ -648,7 +648,9 @@ class VoxelPointsSampler(nn.Module):
                                                      cur_points[None, :, 3:].transpose(1, 2).contiguous(),
                                                      query_points[None, :, :3].contiguous())
         if self.use_absolute_xyz:
-            query_points_features = torch.concat([query_points_features[0].squeeze(),query_points_features[1].transpose(1, 2).squeeze()],dim=-1)
+            query_points_features = torch.concat([query_points_features[0][0],query_points_features[1].transpose(1, 2)[0]],dim=-1)
+        else:
+            query_points_features = query_points_features[1].transpose(1,2).squeeze()
         points_features = query_points_features[idx]
 
         sampled_idx = sampled_idx.view(-1, 1).repeat(1, cur_points.shape[-1])

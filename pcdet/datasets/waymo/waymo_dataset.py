@@ -48,15 +48,13 @@ class WaymoDataset(DatasetTemplate):
 
         if self.dataset_cfg.get('USE_PREDBOX', False):
             self.pred_boxes_dict = self.load_pred_boxes_to_dict(
-                pred_boxes_path=self.dataset_cfg.ROI_BOXES_PATH[self.mode]
+                pred_boxes_path=self.dataset_cfg.ROI_BOXES_PATH[self.mode],return_anchors=self.dataset_cfg.get('USE_ANCHOR',False)
             )
         else:
             self.pred_boxes_dict = {}
 
         if self.dataset_cfg.get('USE_ANCHOR',False):
-            self.pred_anchors_dict = self.load_pred_anchors_to_dict(
-                pred_anchors_path=self.dataset_cfg.ROI_BOXES_PATH[self.mode]
-            )
+            self.pred_boxes_dict,self.pred_anchors_dict =self.pred_boxes_dict
 
         import GPUtil
         if (GPUtil.getGPUs()[0].name.endswith('3080') and self.training) or (GPUtil.getGPUs()[0].name.endswith('1650')):
@@ -114,7 +112,7 @@ class WaymoDataset(DatasetTemplate):
             seq_name_to_infos = None
         return seq_name_to_infos
 
-    def load_pred_boxes_to_dict(self, pred_boxes_path):
+    def load_pred_boxes_to_dict(self, pred_boxes_path,return_anchors=False):
         self.logger.info(f'Loading and reorganizing pred_boxes to dict from path: {pred_boxes_path}')
         with open(pred_boxes_path, 'rb') as f:
             pred_dicts = pickle.load(f)
@@ -125,10 +123,14 @@ class WaymoDataset(DatasetTemplate):
             seq_name = box_dict['frame_id'][:-4].replace('training_', '').replace('validation_', '')
             sample_idx = int(box_dict['frame_id'][-3:])
 
+            if return_anchors:
+                if seq_name not in pred_boxes_dict:
+                    pred_anchors_dict[seq_name] = {}
+                pred_anchors_dict[seq_name][sample_idx] = box_dict['pred_anchors']
             if seq_name not in pred_boxes_dict:
                 pred_boxes_dict[seq_name] = {}
-                if 'pred_anchors' in pred_boxes_dict:
-                    pred_anchors_dict[seq_name] = {}
+
+
             pred_labels = np.array(
                 [self.class_names.index(box_dict['name'][k]) + 1 for k in range(box_dict['name'].shape[0])])
             pred_boxes = np.concatenate(
@@ -139,7 +141,7 @@ class WaymoDataset(DatasetTemplate):
 
 
 
-        return pred_boxes_dict
+        return pred_boxes_dict if not return_anchors else pred_boxes_dict,pred_anchors_dict
 
     def load_pred_anchors_to_dict(self, pred_anchors_path):
         self.logger.info(f'Loading and reorganizing pred_boxes to dict from path: {pred_anchors_path}')

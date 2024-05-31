@@ -104,7 +104,7 @@ MODEL:
             voxel_size: .4
             pc_range: [-75.2, -75.2, -10, 75.2, 75.2, 10]
             max_points_per_voxel: 32
-        PRE_AUG: False
+        PRE_AUG: True
         ROI_GRID_POOL:
             GRID_SIZE: 4
             MLPS: [[128,128], [128,128]]
