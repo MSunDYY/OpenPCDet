@@ -139,9 +139,7 @@ class WaymoDataset(DatasetTemplate):
 
         self.logger.info(f'Predicted boxes has been loaded, total sequences: {len(pred_boxes_dict)}')
 
-
-
-        return pred_boxes_dict if not return_anchors else pred_boxes_dict,pred_anchors_dict
+        return pred_boxes_dict if not return_anchors else (pred_boxes_dict,pred_anchors_dict)
 
     def load_pred_anchors_to_dict(self, pred_anchors_path):
         self.logger.info(f'Loading and reorganizing pred_boxes to dict from path: {pred_anchors_path}')
@@ -536,7 +534,7 @@ class WaymoDataset(DatasetTemplate):
         }
 
         if self.dataset_cfg.get('TRANSFORMED_POINTS',False):
-            data_tag = 'waymo_processed_data_v0_5_0_full' if self.training else 'waymo_processed_data_v0_5_0_full'
+            data_tag = 'waymo_processed_data_v0_5_0_full' if self.training else 'waymo_processed_data_v0_5_0_full_val'
             file_name = self.root_path/data_tag/sequence_name/('%04d.npy'%sample_idx)
             points = np.load(file_name)
         else:

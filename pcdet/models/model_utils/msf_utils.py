@@ -537,6 +537,7 @@ class VoxelPointsSampler(nn.Module):
         self.grid_y = int((pc_range[4] - pc_range[1]) / voxel_size)
         self.return_point_feature = config.ENABLE
         if config.ENABLE == True:
+
             self.set_abstraction = pointnet2_modules.PointnetSAModuleMSG(
                 npoint=4096,
                 radii=[0.8, 1.6],
