@@ -588,7 +588,7 @@ class MSFHead(RoIHeadTemplate):
 
             batch_dict['cls_preds_normalized'] = False
             if self.avg_stage1_score:
-                stage1_score = batch_dict['roi_scores'][:,:,:1]
+                stage1_score = batch_dict['roi_scores'][:,:,None]
                 batch_cls_preds = F.sigmoid(batch_cls_preds)
                 if self.model_cfg.get('IOU_WEIGHT', None):
                     batch_box_preds_list = []
