@@ -8,8 +8,7 @@ from pcdet.ops.iou3d_nms import iou3d_nms_utils
 from ...utils import common_utils, loss_utils
 from .roi_head_template import RoIHeadTemplate
 from ..model_utils.denet_utils import build_transformer, PointNet, MLP, SpatialMixerBlock, build_voxel_sampler_denet
-from ..model_utils.msf_utils import build_voxel_sampler_traj, build_voxel_sampler_anchor, build_transformer, \
-    build_voxel_sampler
+from ..model_utils.msf_utils import build_voxel_sampler_traj, build_voxel_sampler_anchor,build_voxel_sampler
 from . import msf_head
 from .target_assigner.proposal_target_layer import ProposalTargetLayer
 from pcdet.ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_stack_modules
@@ -392,13 +391,13 @@ class DENet4Head(RoIHeadTemplate):
         )
         self.cross = nn.ModuleList([CrossAttention(3, 4, 256, None) for i in range(4)])
         self.seqboxembed = PointNet(8, model_cfg=self.model_cfg)
-        self.jointembed = MLP(model_cfg.Transformer.hidden_dim * (self.num_groups + 1),
-                              model_cfg.Transformer.hidden_dim,
+        self.jointembed = MLP((model_cfg.Transformer.hidden_dim+model_cfg.Transformer.point_dim) * (self.num_groups + 1),
+                              model_cfg.Transformer.hidden_dim+model_cfg.Transformer.point_dim,
                               self.box_coder.code_size * self.num_class * self.num_anchors, 4)
 
         self.up_dimension_geometry = MLP(input_dim=29, hidden_dim=64, output_dim=hidden_dim, num_layers=3)
         self.fuse = MLP(input_dim=hidden_dim * self.num_anchors + (
-            (96 if model_cfg.get('USE_POINTNET', False) else 0) + (3 if model_cfg.get('USE_POINTNET', False).get(
+            (0 if model_cfg.get('USE_POINTNET', False) else 0) + (0 if model_cfg.get('USE_POINTNET', False).get(
                 'USE_ABSOLUTE_XYZ', False) else 0)), hidden_dim=model_cfg.Transformer.hidden_dim,
                         output_dim=model_cfg.Transformer.hidden_dim, num_layers=2)
         self.fuse_box = MLP(input_dim=hidden_dim * self.num_anchors, hidden_dim=model_cfg.Transformer.hidden_dim,
@@ -413,11 +412,11 @@ class DENet4Head(RoIHeadTemplate):
         # self.voxel_sampler = None
 
         self.class_embed = nn.ModuleList()
-        self.class_embed.append(nn.Linear(model_cfg.Transformer.hidden_dim, self.num_anchors))
+        self.class_embed.append(nn.Linear(model_cfg.Transformer.hidden_dim+model_cfg.Transformer.point_dim, self.num_anchors))
 
         self.bbox_embed = nn.ModuleList()
         for _ in range(self.num_groups):
-            self.bbox_embed.append(MLP(model_cfg.Transformer.hidden_dim, model_cfg.Transformer.hidden_dim,
+            self.bbox_embed.append(MLP(model_cfg.Transformer.hidden_dim+model_cfg.Transformer.point_dim, model_cfg.Transformer.hidden_dim+model_cfg.Transformer.point_dim,
                                        self.box_coder.code_size * self.num_class * self.num_anchors, 4))
 
     def init_weights(self, weight_init='xavier'):
@@ -1012,9 +1011,11 @@ class DENet4Head(RoIHeadTemplate):
                                                   trajectory_rois.shape[-1])
         signal = True
         if signal:
-            src1, src1_features = self.voxel_sampler(batch_size, torch.mean(trajectory_rois, dim=-2), num_sample,
+            src1, src1_features,query_points_features = self.voxel_sampler(batch_size, torch.mean(trajectory_rois, dim=-2), num_sample,
                                                      batch_dict)
-
+            src1,src_idx1 =src1[...,:-1], src1[...,-1].long()
+            batch_dict['src_idx1'] = src_idx1.view(batch_size*num_rois//num_anchors,num_frames,-1).permute(2,1,0).reshape(-1,batch_size*num_rois//num_anchors*num_frames)
+            batch_dict['query_points_features1'] = query_points_features
             src1 = src1[:, :, None, :, :].repeat(1, 1, batch_dict['num_anchors'], 1, 1).view(batch_size * num_rois, -1,
                                                                                              src1.shape[-1])
             # src2 = src2.view(batch_size * num_rois,-1,src2.shape[-1])
@@ -1025,20 +1026,22 @@ class DENet4Head(RoIHeadTemplate):
                                                                               num_rois)
             # src_trajectory_feature = self.get_proposal_aware_geometry_feature(src2, batch_size, trajectory_rois, num_rois)
 
-            src_motion_feature1 = self.get_proposal_aware_motion_feature(src1, batch_size, trajectory_rois, num_rois)
+            src_motion_feature = self.get_proposal_aware_motion_feature(src1, batch_size, trajectory_rois, num_rois)
             # src_motion_feature2 = self.get_proposal_aware_motion_feature(src2,batch_size,trajectory_rois,num_rois)
 
-            src1 = src_trajectory_feature + src_motion_feature1
+            src1 = src_trajectory_feature + src_motion_feature
             # src2 = src_trajectory_feature+src_motion_feature2
             src1 = src1.reshape(-1, batch_dict['num_anchors'], src1.shape[-2], src1.shape[-1])
             src1_features = src1_features.view(batch_size * num_rois // num_anchors, -1, src1_features.shape[-1])
-            if self.model_cfg.get('USE_POINTNET', False):
-                src1 = self.fuse(torch.concat(
-                    [src1.transpose(1, 2).reshape(-1, src1.shape[-2], self.num_anchors * self.hidden_dim),
-                     src1_features], dim=-1))
-            else:
-                src1 = self.fuse(src1.transpose(1, 2).reshape(-1, src1.shape[-2], self.num_anchors * self.hidden_dim))
+            # if self.model_cfg.get('USE_POINTNET', False):
+            #     src1 = self.fuse(torch.concat(
+            #         [src1.transpose(1, 2).reshape(-1, src1.shape[-2], self.num_anchors * self.hidden_dim),
+            #          src1_features], dim=-1))
+            # else:
+            #     src1 = self.fuse(src1.transpose(1, 2).reshape(-1, src1.shape[-2], self.num_anchors * self.hidden_dim))
                 # src1 = src1.reshape(-1,src1.shape[-2],self.num_anchors*self.hidden_dim)
+            src1 = self.fuse(src1.transpose(1, 2).reshape(-1, src1.shape[-2], self.num_anchors * self.hidden_dim))
+
             # num_rois_all = src1.shape[0]
             # src = src_geometry_feature + src_motion_feature
             # src = self.conv(torch.concat([src_trajectory_feature,src_backward_feature],dim=-1).permute(0,2,1)).permute(0,2,1)
@@ -1048,7 +1051,7 @@ class DENet4Head(RoIHeadTemplate):
                 src1[empty_mask.view(-1)] = 0
                 # src2[empty_mask.view(-1)] = 0
 
-            hs1, tokens1 = self.transformer(src1, pos=None)
+            hs1, tokens1 = self.transformer(src1,src1_features,batch_dict,pos=None)
             # hs2,tokens2 = self.transformer(src2,pos=None)
             # hs2,tokens2 = self.transformer2(src2,pos=None)
             # hs = hs[:,:num_rois_all]

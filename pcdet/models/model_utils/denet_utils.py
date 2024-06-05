@@ -110,7 +110,7 @@ class MLP(nn.Module):
 
 class SpatialMixerBlock(nn.Module):
 
-    def __init__(self, hidden_dim, grid_size,channels,config=None, dropout=0.0):
+    def __init__(self, channels,config=None, dropout=0.0):
         super().__init__()
 
         self.mixer = nn.MultiheadAttention(channels, 8, dropout=dropout)
@@ -125,21 +125,52 @@ class SpatialMixerBlock(nn.Module):
                                nn.Dropout(dropout),
                                nn.Linear(2*channels, channels),
                                )
-        self.config = config
-        self.grid_size = grid_size
-
-    def forward(self, src):
+    def forward(self, src,return_weight=False):
        
-        src2 = self.mixer(src, src, src)[0]
+        src2,weight = self.mixer(src, src, src)
         
         src = src + self.dropout(src2)
         src_mixer = self.norm(src)
 
         src_mixer = src_mixer + self.ffn(src_mixer)
         src_mixer = self.norm_channel(src_mixer)
+        if return_weight:
+            return src_mixer,weight
+        else:
+            return src_mixer
 
-        return src_mixer
 
+class CrossMixerBlock(nn.Module):
+
+    def __init__(self, channels, config=None, dropout=0.0):
+        super().__init__()
+
+        self.mixer = nn.MultiheadAttention(channels, 8, dropout=dropout)
+
+        self.dropout = nn.Dropout(dropout)
+        self.norm = nn.LayerNorm(channels)
+
+        self.norm_channel = nn.LayerNorm(channels)
+        self.ffn = nn.Sequential(
+            nn.Linear(channels, 2 * channels),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(2 * channels, channels),
+        )
+
+    def forward(self, query,key, return_weight=False):
+
+        src2, weight = self.mixer(query, key, key)
+
+        query = query + self.dropout(src2)
+        src_mixer = self.norm(query)
+
+        src_mixer = src_mixer + self.ffn(src_mixer)
+        src_mixer = self.norm_channel(src_mixer)
+        if return_weight:
+            return src_mixer, weight
+        else:
+            return src_mixer
 class Transformer(nn.Module):
 
     def __init__(self, config, d_model=512, nhead=8, num_encoder_layers=6,
@@ -162,8 +193,7 @@ class Transformer(nn.Module):
 
         encoder_norm = nn.LayerNorm(d_model) if normalize_before else None
         self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers, encoder_norm,self.config)
-
-        self.token = nn.Parameter(torch.zeros(self.num_groups, 1, d_model))
+        self.token = nn.Parameter(torch.zeros(self.num_groups, 1, d_model+96))
 
         
         if self.num_frames >4:
@@ -181,19 +211,20 @@ class Transformer(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, src, pos=None):
+    def forward(self, src,src_features,batch_dict, pos=None):
 
         BS, N, C = src.shape
         if not pos is None:
             pos = pos.permute(1, 0, 2)
             
-        
+        if src_features is not None:
+            src = torch.concat([src,src_features],dim=-1)
         token_list = [self.token[i:(i+1)].repeat(BS,1,1) for i in range(self.num_groups)]
         src = [torch.cat([token_list[i],src[:,i*self.num_lidar_points:(i+1)*self.num_lidar_points]],dim=1) for i in range(self.num_groups)]
         src = torch.cat(src,dim=0)
 
         src = src.permute(1, 0, 2)
-        memory,tokens = self.encoder(src,pos=pos) 
+        memory,tokens = self.encoder(src,batch_dict,pos=pos)
 
         memory = torch.cat(memory[0:1].chunk(4,dim=1),0)
         return memory, tokens
@@ -208,13 +239,13 @@ class TransformerEncoder(nn.Module):
         self.norm = norm
         self.config = config
 
-    def forward(self, src,
+    def forward(self, src,batch_dict,
                 pos: Optional[Tensor] = None):
 
         token_list = []
         output = src
         for layer in self.layers:
-            output,tokens = layer(output,pos=pos)
+            output,tokens = layer(output,batch_dict,pos=pos)
             token_list.append(tokens)
         if self.norm is not None:
             output = self.norm(output)
@@ -264,14 +295,15 @@ class TransformerEncoderLayer(nn.Module):
         self.config = config
         self.num_point = num_points
         self.num_groups= num_groups
-        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.point_feature = 96
+        self.self_attn = nn.MultiheadAttention(d_model+self.point_feature, nhead, dropout=dropout)
         # self.self_attn = vector_attention(d_model, nhead=4)
-        self.linear1 = nn.Linear(d_model, dim_feedforward)
+        self.linear1 = nn.Linear(d_model+self.point_feature, dim_feedforward)
         self.dropout = nn.Dropout(dropout)
-        self.linear2 = nn.Linear(dim_feedforward, d_model)
+        self.linear2 = nn.Linear(dim_feedforward, d_model+self.point_feature)
 
-        self.norm1 = nn.LayerNorm(d_model)
-        self.norm2 = nn.LayerNorm(d_model)
+        self.norm1 = nn.LayerNorm(d_model+self.point_feature)
+        self.norm2 = nn.LayerNorm(d_model+self.point_feature)
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
 
@@ -285,25 +317,33 @@ class TransformerEncoderLayer(nn.Module):
         self.normalize_before = normalize_before
 
         self.mlp_mixer_3d = SpatialMixerBlock(
-                        self.config.use_mlp_mixer.hidden_dim, 
-                        self.config.use_mlp_mixer.get('grid_size', 4), 
                         self.config.hidden_dim, 
                         self.config.use_mlp_mixer
         )
 
+        self.point_attention = CrossMixerBlock(
+            channels=96
+        )
+
+        if self.layer_count<=self.config.enc_layers-1:
+            from pcdet.ops.pointnet2.pointnet2_batch import pointnet2_utils
+            self.group = pointnet2_utils.QueryAndGroup(config.sampler.radius[self.layer_count-1],config.sampler.nsample[self.layer_count-1],use_xyz=False)
 
     def with_pos_embed(self, tensor, pos: Optional[Tensor]):
         return tensor if pos is None else tensor + pos
 
     def forward_post(self,
-                     src,
+                     src,batch_dict,
                      pos: Optional[Tensor] = None):
+        query_points_features = batch_dict['query_points_features'+str(self.layer_count)]
+        src_idx = batch_dict['src_idx'+str(self.layer_count)]
 
-        src_intra_group_fusion = self.mlp_mixer_3d(src[1:])
-        src = torch.cat([src[:1],src_intra_group_fusion],0)
+        src_intra_group_fusion,weight = self.mlp_mixer_3d(src[1:,:,:self.config.hidden_dim],return_weight=True)
+
+        src_intra_group_fusion = torch.concat([src_intra_group_fusion, src[1:,:,self.config.hidden_dim:]], dim=-1)
 
         token = src[:1]
-        
+
         if not pos is None:
             key = self.with_pos_embed(src_intra_group_fusion, pos[1:])
         else:
@@ -320,26 +360,53 @@ class TransformerEncoderLayer(nn.Module):
 
 
         if self.layer_count <= self.config.enc_layers-1:
+            weight = weight.sum(1).transpose(0, 1)
+            # src = torch.cat([src[:1],src_intra_group_fusion],0)
+            sampled_inds = torch.topk(weight, dim=0, k=weight.shape[0] // 2)[1]
+            new_src_idx = torch.gather(src_idx, 0, sampled_inds)
+            new_query_idx = new_src_idx.transpose(0, 1).reshape(batch_dict['num_frames'] * batch_dict['batch_size'], -1)
+            new_query_idx = [torch.unique(new_query_idx[i]) for i in range(new_query_idx.shape[0])]
+            num_new_query = max([n.shape[0] for n in new_query_idx])
+            new_query_idx = torch.stack([F.pad(n, (0, num_new_query - n.shape[0])) for n in new_query_idx])
+            new_query_xyz, new_query_features = torch.split(torch.gather(query_points_features, 1,
+                                                                     new_query_idx[:, :, None].repeat(1, 1,query_points_features.shape[-1])),
+                                                        [3, query_points_features.shape[-1] - 3], dim=-1)
+            new_query_features_grouped = self.group(query_points_features[..., :3].contiguous(), new_query_xyz.contiguous(),
+                                                  query_points_features[..., 3:].transpose(-1, -2).contiguous())
+            new_src_features = self.point_attention(new_query_features.reshape(1, -1, new_query_features.shape[-1]),
+                                                    new_query_features_grouped.permute(3, 0, 2, 1).flatten(1, 2)).reshape(
+                -1, new_query_xyz.shape[1], new_query_features.shape[-1])
+            new_query_points_features = torch.zeros_like(query_points_features)
+            new_query_points_features.scatter_(1, new_query_idx[:, :, None].repeat(1, 1,
+                                                                                 new_query_points_features.shape[-1]),
+                                               torch.concat([new_src_features, new_query_xyz], dim=-1))
+            batch_dict['query_points_features' + str(self.layer_count + 1)] = new_query_points_features
+            batch_dict['src_idx'+str(self.layer_count+1)] = torch.gather(src_idx,0,sampled_inds)
+            src_point_feature = torch.gather(new_query_points_features,1,new_src_idx.transpose(0,1).reshape(batch_dict['batch_size']*batch_dict['num_frames'],-1,1).repeat(1,1,new_query_points_features.shape[-1]))
+            src_point_feature = src_point_feature.reshape(-1,sampled_inds.shape[0],src_point_feature.shape[-1]).transpose(0,1)
+
+            src_intra_group_fusion = torch.gather(src_intra_group_fusion, 0, sampled_inds[:, :, None].repeat(1, 1,
+                                                                                                             src_intra_group_fusion.shape[-1]))
             num_points = src.shape[0]-1
-            src_all_groups = src[1:].view((src.shape[0]-1)*4,-1,src.shape[-1])
-            src_groups_list = src_all_groups.chunk(self.num_groups,0)
-            # src_groups_list = [src_all_groups[torch.arange(num_points)*4+i] for i in range(4)]
+            src_all_groups = src_intra_group_fusion.view((src_intra_group_fusion.shape[0])*4,-1,src_intra_group_fusion.shape[-1])
+            # src_groups_list = src_all_groups.chunk(self.num_groups,0)
+            src_groups_list = [src_all_groups[torch.arange(sampled_inds.shape[0])*4+i] for i in range(4)]
 
             src_all_groups = torch.stack(src_groups_list, 0)
-
+            src_all_groups,src_features = src_all_groups[...,:self.config.hidden_dim],src_all_groups[...,self.config.hidden_dim:]
             src_max_groups = torch.max(src_all_groups, 1, keepdim=True).values
             src_past_groups =  torch.cat([src_all_groups[1:],\
-                 src_max_groups[:-1].repeat(1, (src.shape[0]-1), 1, 1)], -1)
+                 src_max_groups[:-1].repeat(1, src_intra_group_fusion.shape[0], 1, 1)], -1)
             src_all_groups[1:] = self.cross_norm_1(self.cross_conv_1(src_past_groups) + src_all_groups[1:])
 
             src_max_groups = torch.max(src_all_groups, 1, keepdim=True).values
             src_past_groups =  torch.cat([src_all_groups[:-1],\
-                 src_max_groups[1:].repeat(1, (src.shape[0]-1), 1, 1)], -1)
+                 src_max_groups[1:].repeat(1, src_intra_group_fusion.shape[0], 1, 1)], -1)
             src_all_groups[:-1] = self.cross_norm_2(self.cross_conv_2(src_past_groups) + src_all_groups[:-1])
 
             src_inter_group_fusion = src_all_groups.permute(1, 0, 2, 3).contiguous().flatten(1,2)
             
-            src = torch.cat([src[:1],src_inter_group_fusion],0)
+            src = torch.cat([src[:1],torch.concat([src_inter_group_fusion,src_point_feature[...,3:]],-1)],0)
         
         return src, torch.cat(src[:1].chunk(4,1),0)
 
@@ -354,12 +421,12 @@ class TransformerEncoderLayer(nn.Module):
         src = src + self.dropout2(src2)
         return src
 
-    def forward(self, src,
+    def forward(self, src,batch_dict,
                 pos: Optional[Tensor] = None):
 
         if self.normalize_before:
             return self.forward_pre(src, pos)
-        return self.forward_post(src,  pos)
+        return self.forward_post(src,batch_dict,  pos)
 
 
 def _get_activation_fn(activation):

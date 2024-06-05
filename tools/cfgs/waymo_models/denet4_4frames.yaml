@@ -54,7 +54,7 @@ DATA_CONFIG:
             }
 
         - NAME: anchor_aug
-          ROI_PER_IMAGE: 80
+          ROI_PER_IMAGE: 8
           FG_RATIO: 0.5
           REG_AUG_METHOD: single
           ROI_FG_AUG_TIMES: 10
@@ -119,6 +119,7 @@ MODEL:
             enc_layers: 3
             dim_feedforward: 512
             hidden_dim: 256 #equal to ROI_HEAD.TRANS_INPUT
+            point_dim: 96
             dropout: 0.1
             nheads: 4
             pre_norm: False
@@ -127,7 +128,9 @@ MODEL:
             use_grid_pos:
                 enabled: True
                 init_type: index
-
+            sampler:
+                radius: [0.4,0.8]
+                nsample: [4,4]
             use_mlp_mixer:
                 enabled: True
                 hidden_dim: 16
