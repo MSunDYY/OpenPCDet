@@ -373,13 +373,14 @@ class TransformerEncoderLayer(nn.Module):
                                                         [3, query_points_features.shape[-1] - 3], dim=-1)
             new_query_features_grouped = self.group(query_points_features[..., :3].contiguous(), new_query_xyz.contiguous(),
                                                   query_points_features[..., 3:].transpose(-1, -2).contiguous())
-            new_src_features = self.point_attention(new_query_features.reshape(1, -1, new_query_features.shape[-1]),
+            new_query_features = self.point_attention(new_query_features.reshape(1, -1, new_query_features.shape[-1]),
                                                     new_query_features_grouped.permute(3, 0, 2, 1).flatten(1, 2)).reshape(
                 -1, new_query_xyz.shape[1], new_query_features.shape[-1])
             new_query_points_features = torch.zeros_like(query_points_features)
+
             new_query_points_features.scatter_(1, new_query_idx[:, :, None].repeat(1, 1,
                                                                                  new_query_points_features.shape[-1]),
-                                               torch.concat([new_src_features, new_query_xyz], dim=-1))
+                                               torch.concat([new_query_xyz,new_query_features], dim=-1))
             batch_dict['query_points_features' + str(self.layer_count + 1)] = new_query_points_features
             batch_dict['src_idx'+str(self.layer_count+1)] = torch.gather(src_idx,0,sampled_inds)
             src_point_feature = torch.gather(new_query_points_features,1,new_src_idx.transpose(0,1).reshape(batch_dict['batch_size']*batch_dict['num_frames'],-1,1).repeat(1,1,new_query_points_features.shape[-1]))
