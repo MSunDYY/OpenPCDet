@@ -577,7 +577,7 @@ class VoxelPointsSampler(nn.Module):
                 query_coords = (cur_frame_boxes[:, :2] - self.pc_start) // self.voxel_size
 
                 radiis = torch.ceil(
-                    torch.norm(cur_frame_boxes[:, 3:5] / 2, dim=-1) * gamma / self.voxel_size)
+                    torch.norm(cur_frame_boxes[:, 3:5] / 2, dim=-1) * gamma*1.2 / self.voxel_size)
 
                 # h_table = torch.zeros(self.grid_x*self.grid_y).fill_(-1).to(coords)
                 # coords_ = coords[:, 0] * self.grid_y + coords[:, 1]
@@ -647,8 +647,8 @@ class VoxelPointsSampler(nn.Module):
         dis = torch.norm(
             (cur_points[:, :2].unsqueeze(0) - cur_boxes[:, :2].unsqueeze(1).repeat(1, cur_points.shape[0], 1)), dim=2)
         point_mask = (dis <= cur_radiis.unsqueeze(-1))
-        valid_points_mask = (point_mask.sum(0))!=0
-        cur_points,point_mask = cur_points[valid_points_mask],point_mask[:,valid_points_mask]
+        # valid_points_mask = (point_mask.sum(0))!=0
+        # cur_points,point_mask = cur_points[valid_points_mask],point_mask[:,valid_points_mask]
 
         sampled_mask, sampled_idx = torch.topk(point_mask.float(), num_sample,1)
 
