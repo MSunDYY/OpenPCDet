@@ -19,11 +19,12 @@ DATA_CONFIG:
     SEQUENCE_CONFIG:
         ENABLED: True
         SAMPLE_OFFSET: [-3,0]
+        USE_PRE_PREDBOX: False
 
     USE_PREDBOX: True
     ROI_BOXES_PATH: {
-        'train': '../output/waymo_models/centerpoint_4frames/default/eval/epoch_0/train/Interval1/result.pkl',  # example: predicted boxes of RPN in training set
-        'test': '../output/waymo_models/centerpoint_4frames/default/eval/epoch_0/val/Interval1/result.pkl',  # example: predicted boxes of RPN in evalulation set
+        'train': '../output/waymo_models/centerpoint_4frames/Interval5/eval/epoch_0/train/Interval1/result.pkl',  # example: predicted boxes of RPN in training set
+        'test': '../output/waymo_models/centerpoint_4frames/Interval5/eval/epoch_0/val/Interval1/result.pkl',  # example: predicted boxes of RPN in evalulation set
     }
 
     DATA_AUGMENTOR:
@@ -48,6 +49,27 @@ DATA_CONFIG:
                 'train': True,
                 'test': True
             }
+        - NAME: anchor_aug
+          ROI_PER_IMAGE: 80
+          FG_RATIO: 0.5
+          REG_AUG_METHOD: single
+          ROI_FG_AUG_TIMES: 10
+          RATIO: 0.2
+          USE_ROI_AUG: True
+          USE_BG_ROI_AUG: True
+          USE_TRAJ_AUG:
+              ENABLED: True
+              THRESHOD: 0.8
+          SAMPLE_ROI_BY_EACH_CLASS: True
+          CLS_SCORE_TYPE: roi_iou
+
+          CLS_FG_THRESH: 0.75
+          CLS_BG_THRESH: 0.25
+          CLS_BG_THRESH_LO: 0.1
+          HARD_BG_RATIO: 0.8
+
+          REG_FG_THRESH: 0.55
+          REG_BG_THRESH: 0.7
 
 
     POINT_FEATURE_ENCODING: {
@@ -62,7 +84,7 @@ MODEL:
 
     ROI_HEAD:
         NAME: DENet3Head
-        TRANS_INPUT: 128
+        TRANS_INPUT: 256
         CLASS_AGNOSTIC: True
         USE_BOX_ENCODING:
             ENABLED: True 
@@ -70,7 +92,14 @@ MODEL:
         USE_TRAJ_EMPTY_MASK: True
         USE_AUX_LOSS: True
         IOU_WEIGHT: [0.5,0.4]
-        REG1: False
+
+        PRE_AUG: True
+
+        USE_POINTNET:
+            ENABLE: True
+            USE_ABSOLUTE_XYZ: False
+            USE_SPHER: True
+            mlps: [[2,64,64]]
         VoxelSampler:
             voxel_size: .4
             pc_range: [-75.2, -75.2, -10, 75.2, 75.2, 10]
@@ -89,7 +118,7 @@ MODEL:
             pos_hidden_dim: 64
             enc_layers: 3
             dim_feedforward: 512
-            hidden_dim: 128 #equal to ROI_HEAD.TRANS_INPUT
+            hidden_dim: 256 #equal to ROI_HEAD.TRANS_INPUT
             dropout: 0.1
             nheads: 4
             pre_norm: False
@@ -98,7 +127,11 @@ MODEL:
             use_grid_pos:
                 enabled: True
                 init_type: index
-
+            sampler:
+                USE_SPHER: True
+                radius: [[0.4],[0.8]]
+                nsample: [[4],[4]]
+                mlp: [[[64,96,96]],[[96,128,128]]]
             use_mlp_mixer:
                 enabled: True
                 hidden_dim: 16
@@ -132,6 +165,7 @@ MODEL:
                 'rcnn_cls_weight': 1.0,
                 'rcnn_reg_weight': 1.0,
                 'rcnn_corner_weight': 2.0,
+                'joint_cls_weight': 1.0,
                 'traj_reg_weight': [2.0, 2.0, 2.0],
                 'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
             }

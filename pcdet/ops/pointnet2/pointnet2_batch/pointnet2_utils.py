@@ -229,15 +229,20 @@ ball_query = BallQuery.apply
 
 
 class QueryAndGroup(nn.Module):
-    def __init__(self, radius: float, nsample: int, use_xyz: bool = True):
+    def __init__(self, radius: float, nsample: int, use_xyz: bool = True,use_spher:bool=False):
         """
         :param radius: float, radius of ball
         :param nsample: int, maximum number of features to gather in the ball
         :param use_xyz:
         """
         super().__init__()
-        self.radius, self.nsample, self.use_xyz = radius, nsample, use_xyz
+        self.radius, self.nsample, self.use_xyz ,self.use_spher = radius, nsample, use_xyz,use_spher
 
+    def spherical_coordinate(self,grouped_xyz):
+        dis = (grouped_xyz[:,0]**2+grouped_xyz[:,1]**2+grouped_xyz[:,2]**2)**0.5
+        phi = torch.atan2(grouped_xyz[:,1],grouped_xyz[:,2])
+        the = torch.acos(grouped_xyz[:,2]/(dis+1e-5))
+        return torch.stack([dis,phi,the],dim=1)
     def forward(self, xyz: torch.Tensor, new_xyz: torch.Tensor, features: torch.Tensor = None) -> Tuple[torch.Tensor]:
         """
         :param xyz: (B, N, 3) xyz coordinates of the features
@@ -254,6 +259,8 @@ class QueryAndGroup(nn.Module):
         if features is not None:
             grouped_features = grouping_operation(features, idx)
             if self.use_xyz:
+                if self.use_spher:
+                    grouped_xyz = self.spherical_coordinate(grouped_xyz)
                 new_features = torch.cat([grouped_xyz, grouped_features], dim=1)  # (B, C + 3, npoint, nsample)
             else:
                 new_features = grouped_features

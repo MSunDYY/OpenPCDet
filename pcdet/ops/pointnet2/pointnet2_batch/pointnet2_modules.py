@@ -59,7 +59,7 @@ class PointnetSAModuleMSG(_PointnetSAModuleBase):
     """Pointnet set abstraction layer with multiscale grouping"""
 
     def __init__(self, *, npoint: int, radii: List[float], nsamples: List[int], mlps: List[List[int]], bn: bool = True,
-                 use_xyz: bool = True, pool_method='max_pool'):
+                 use_xyz: bool = True, pool_method='max_pool',use_spher:bool=False):
         """
         :param npoint: int
         :param radii: list of float, list of radii to group with
@@ -80,7 +80,7 @@ class PointnetSAModuleMSG(_PointnetSAModuleBase):
             radius = radii[i]
             nsample = nsamples[i]
             self.groupers.append(
-                pointnet2_utils.QueryAndGroup(radius, nsample, use_xyz=use_xyz)
+                pointnet2_utils.QueryAndGroup(radius, nsample, use_xyz=use_xyz,use_spher=use_spher)
                 if npoint is not None else pointnet2_utils.GroupAll(use_xyz)
             )
             mlp_spec = mlps[i]

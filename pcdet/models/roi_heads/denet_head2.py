@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from pcdet.ops.iou3d_nms import iou3d_nms_utils
 from ...utils import common_utils, loss_utils
 from .roi_head_template import RoIHeadTemplate
-from ..model_utils.denet_utils import build_transformer, PointNet, MLP,SpatialMixerBlock, build_voxel_sampler_denet
+from ..model_utils.denet2_utils import build_transformer, PointNet, MLP,SpatialMixerBlock
 from ..model_utils.msf_utils import build_voxel_sampler,build_voxel_sampler_traj
 
 from .target_assigner.proposal_target_layer import ProposalTargetLayer
@@ -374,30 +374,32 @@ class DENet2Head(RoIHeadTemplate):
             # nn.ReLU(inplace=False),
         )
         self.cross = nn.ModuleList([CrossAttention(3,4,256,None) for i in range(4)])
-        self.seqboxembed1 = PointNet(8,model_cfg=self.model_cfg)
+        self.seqboxembed = PointNet(8,model_cfg=self.model_cfg)
         self.seqboxembed2 = PointNet(8,model_cfg=self.model_cfg)
-        self.jointembed1 = MLP(self.hidden_dim*(self.num_groups+1), model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
+        self.jointembed = MLP(self.hidden_dim*(self.num_groups+1), model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
         self.jointembed2 = MLP(self.hidden_dim*(self.num_groups+1), model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
 
-        self.up_dimension_traj = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
-        self.up_dimension_back = MLP(input_dim = 29, hidden_dim = 64, output_dim = hidden_dim, num_layers = 3)
-        self.up_dimension_traj_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
-        self.up_dimension_back_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
+        # self.up_dimension_traj = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
+        # self.up_dimension_back = MLP(input_dim = 29, hidden_dim = 64, output_dim = hidden_dim, num_layers = 3)
+        # self.up_dimension_traj_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
+        # self.up_dimension_back_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
 
-        
-        self.transformer1 = build_transformer(model_cfg.Transformer)
-        self.transformer2 = build_transformer(model_cfg.Transformer)
+        self.up_dimension_geometry = MLP(input_dim=29, hidden_dim=64, output_dim=hidden_dim, num_layers=3)
+        self.up_dimension_motion = MLP(input_dim=30, hidden_dim=64, output_dim=hidden_dim, num_layers=3)
+
+        self.transformer = build_transformer(model_cfg.Transformer)
+        # self.transformer2 = build_transformer(model_cfg.Transformer)
         self.voxel_sampler = None
   
-        self.class_embed1 = nn.ModuleList()
-        self.class_embed1.append(nn.Linear(model_cfg.Transformer.hidden_dim, 1))
+        self.class_embed = nn.ModuleList()
+        self.class_embed.append(nn.Linear(model_cfg.Transformer.hidden_dim, 1))
         self.class_embed2 = nn.ModuleList()
         self.class_embed2.append(nn.Linear(model_cfg.Transformer.hidden_dim, 1))
 
-        self.bbox_embed1 = nn.ModuleList()
+        self.bbox_embed = nn.ModuleList()
         self.bbox_embed2 = nn.ModuleList()
         for _ in range(self.num_groups):
-            self.bbox_embed1.append(MLP(model_cfg.Transformer.hidden_dim, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4))
+            self.bbox_embed.append(MLP(model_cfg.Transformer.hidden_dim, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4))
             self.bbox_embed2.append(MLP(model_cfg.Transformer.hidden_dim, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4))
 
 
@@ -581,7 +583,7 @@ class DENet2Head(RoIHeadTemplate):
 
         return src_gemoetry
 
-    def trajectories_auxiliary_branch1(self,trajectory_rois):
+    def trajectories_auxiliary_branch(self,trajectory_rois):
 
         time_stamp = torch.ones([trajectory_rois.shape[0],trajectory_rois.shape[1],trajectory_rois.shape[2],1]).cuda()
         for i in range(time_stamp.shape[1]):
@@ -604,7 +606,7 @@ class DENet2Head(RoIHeadTemplate):
 
         batch_rcnn = box_seq.shape[0]*box_seq.shape[2]
 
-        box_reg, box_feat, _ = self.seqboxembed1(box_seq.permute(0,2,3,1).contiguous().view(batch_rcnn,box_seq.shape[-1],box_seq.shape[1]))
+        box_reg, box_feat, _ = self.seqboxembed(box_seq.permute(0,2,3,1).contiguous().view(batch_rcnn,box_seq.shape[-1],box_seq.shape[1]))
         
         return box_reg, box_feat
 
@@ -719,8 +721,63 @@ class DENet2Head(RoIHeadTemplate):
                     :] = cur_roi_points_sample
 
         return src
-    
-    
+
+    def get_proposal_aware_geometry_feature(self, src, batch_size, trajectory_rois, num_rois):
+        proposal_aware_feat_list = []
+
+        for i in range(trajectory_rois.shape[1]):
+            corner_points, _ = self.get_corner_points_of_roi(trajectory_rois[:, i, :, :].contiguous())
+
+            corner_points = corner_points.view(batch_size, num_rois, -1, corner_points.shape[-1])
+            corner_points = corner_points.view(batch_size * num_rois, -1)
+            trajectory_roi_center = trajectory_rois[:, i, :, :].contiguous().reshape(batch_size * num_rois, -1)[:, :3]
+            corner_add_center_points = torch.cat([corner_points, trajectory_roi_center], dim=-1)
+            proposal_aware_feat = src[:, i * self.num_lidar_points:(i + 1) * self.num_lidar_points, :3].repeat(1, 1,
+                                                                                                               9) - \
+                                  corner_add_center_points.unsqueeze(1).repeat(1, self.num_lidar_points, 1)
+
+            lwh = trajectory_rois[:, i, :, :].reshape(batch_size * num_rois, -1)[:, 3:6].unsqueeze(1).repeat(1,
+                                                                                                             proposal_aware_feat.shape[
+                                                                                                                 1], 1)
+            diag_dist = (lwh[:, :, 0] ** 2 + lwh[:, :, 1] ** 2 + lwh[:, :, 2] ** 2) ** 0.5
+            proposal_aware_feat = self.spherical_coordinate(proposal_aware_feat, diag_dist=diag_dist.unsqueeze(-1))
+            proposal_aware_feat_list.append(proposal_aware_feat)
+
+        proposal_aware_feat = torch.cat(proposal_aware_feat_list, dim=1)
+        proposal_aware_feat = torch.cat([proposal_aware_feat, src[:, :, 3:]], dim=-1)
+        src_gemoetry = self.up_dimension_geometry(proposal_aware_feat)
+
+        return src_gemoetry
+
+    def get_proposal_aware_motion_feature(self, proxy_point, batch_size, trajectory_rois, num_rois):
+
+        time_stamp = torch.ones([proxy_point.shape[0], proxy_point.shape[1], 1]).cuda()
+        padding_zero = torch.zeros([proxy_point.shape[0], proxy_point.shape[1], 2]).cuda()
+        point_time_padding = torch.cat([padding_zero, time_stamp], -1)
+
+        num_frames = trajectory_rois.shape[1]
+
+        for i in range(num_frames):
+            point_time_padding[:, i * self.num_lidar_points:(i + 1) * self.num_lidar_points, -1] = i * 0.1
+
+        corner_points, _ = self.get_corner_points_of_roi(trajectory_rois[:, 0, :, :].contiguous())
+        corner_points = corner_points.view(batch_size, num_rois, -1, corner_points.shape[-1])
+        corner_points = corner_points.view(batch_size * num_rois, -1)
+        trajectory_roi_center = trajectory_rois[:, 0, :, :].reshape(batch_size * num_rois, -1)[:, :3]
+        corner_add_center_points = torch.cat([corner_points, trajectory_roi_center], dim=-1)
+
+        proposal_aware_feat = proxy_point[:, :, :3].repeat(1, 1, 9) - corner_add_center_points.unsqueeze(1)
+
+        lwh = trajectory_rois[:, 0, :, :].reshape(batch_size * num_rois, -1)[:, 3:6].unsqueeze(1).repeat(1,
+                                                                                                         proxy_point.shape[
+                                                                                                             1], 1)
+        diag_dist = (lwh[:, :, 0] ** 2 + lwh[:, :, 1] ** 2 + lwh[:, :, 2] ** 2) ** 0.5
+        proposal_aware_feat = self.spherical_coordinate(proposal_aware_feat, diag_dist=diag_dist.unsqueeze(-1))
+
+        proposal_aware_feat = torch.cat([proposal_aware_feat, point_time_padding], -1)
+        proxy_point_motion_feat = self.up_dimension_motion(proposal_aware_feat)
+
+        return proxy_point_motion_feat
     def generate_trajectory_msf(self, cur_batch_boxes, batch_dict):
         num_frames = batch_dict['num_frames']
         trajectory_rois = cur_batch_boxes[:, None, :, :].repeat(1, num_frames, 1, 1)
@@ -863,7 +920,7 @@ class DENet2Head(RoIHeadTemplate):
             self.voxel_sampler_traj = build_voxel_sampler_traj(rois.device)
         src1 = self.voxel_sampler(batch_size, backward_rois, num_sample, batch_dict)
 
-        src2 = self.voxel_sampler_traj(batch_size, trajectory_rois, num_sample, batch_dict,valid_length)
+        # src2 = self.voxel_sampler_traj(batch_size, trajectory_rois, num_sample, batch_dict,valid_length)
         # src1 = self.voxel_sampler(batch_size,backward_rois,num_sample,batch_dict)
         # src2[~valid_length]=0
 
@@ -871,30 +928,28 @@ class DENet2Head(RoIHeadTemplate):
         trajectory_rois = backward_rois.clone()
 
         src1 = src1.view(batch_size * num_rois, -1, src1.shape[-1])
-        src2 = src2.view(batch_size * num_rois,-1,src2.shape[-1])
+        # src2 = src2.view(batch_size * num_rois,-1,src2.shape[-1])
         xyz1 = src1[:, :, :3]
-        xyz2 = src2[:, :, :3]
-        src_backward_feature = self.get_proposal_aware_backward_feature(src1,batch_size,backward_rois,num_rois)
-        src_trajectory_feature = self.get_proposal_aware_trajectory_feature(src2, batch_size, trajectory_rois, num_rois,valid_length)
+        # xyz2 = src2[:, :, :3]
+        src_geometry_feature = self.get_proposal_aware_geometry_feature(src1, batch_size, trajectory_rois, num_rois)
 
-        src_motion_feature1 = self.get_proposal_aware_backward_motion(src1, batch_size, backward_rois, num_rois)
-        src_motion_feature2 = self.get_proposal_aware_trajectory_motion(src2,batch_size,trajectory_rois,num_rois)
-        
-        src1 = src_backward_feature + src_motion_feature1
-        src2 = src_trajectory_feature+src_motion_feature2
+        src_motion_feature = self.get_proposal_aware_motion_feature(src1, batch_size, trajectory_rois, num_rois)
+
+        src1 = src_geometry_feature + src_motion_feature
+        # src2 = src_trajectory_feature+src_motion_feature2
 
         # num_rois_all = src1.shape[0]
         # src = src_geometry_feature + src_motion_feature
         # src = self.conv(torch.concat([src_trajectory_feature,src_backward_feature],dim=-1).permute(0,2,1)).permute(0,2,1)
-        box_reg1, feat_box1 = self.trajectories_auxiliary_branch1(backward_rois)
-        box_reg2,feat_box2 = self.trajectories_auxiliary_branch2(trajectory_rois)
+        box_reg1, feat_box1 = self.trajectories_auxiliary_branch(backward_rois)
+        # box_reg2,feat_box2 = self.trajectories_auxiliary_branch2(trajectory_rois)
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK',None):
             src1[empty_mask.view(-1)] = 0
-            src2[empty_mask.view(-1)] = 0
             # src2[empty_mask.view(-1)] = 0
-    
-        hs1, tokens1 = self.transformer1(src1,pos=None)
-        hs2,tokens2 = self.transformer2(src2,pos=None)
+            # src2[empty_mask.view(-1)] = 0
+        src1 = torch.concat([src1,xyz1],dim=-1)
+        hs1, tokens1 = self.transformer(src1,pos=None)
+        # hs2,tokens2 = self.transformer2(src2,pos=None)
         # hs2,tokens2 = self.transformer2(src2,pos=None)
         # hs = hs[:,:num_rois_all]
         
@@ -904,33 +959,33 @@ class DENet2Head(RoIHeadTemplate):
         point_reg_list2 = []
 
         for i in range(self.num_enc_layer):
-            point_cls_list1.append(self.class_embed1[0](tokens1[i][0]))
-            point_cls_list2.append(self.class_embed2[0](tokens2[i][0]))
+            point_cls_list1.append(self.class_embed[0](tokens1[i][0]))
+            # point_cls_list2.append(self.class_embed2[0](tokens2[i][0]))
         for i in range(hs1.shape[0]):
             for j in range(self.num_enc_layer):
                 # tokens1[j][i] = tokens1[j][i]+tokens2[j][i]
-                point_reg_list1.append(self.bbox_embed1[i](tokens1[j][i]))
-                point_reg_list2.append(self.bbox_embed2[i](tokens2[j][i]))
+                point_reg_list1.append(self.bbox_embed[i](tokens1[j][i]))
+                # point_reg_list2.append(self.bbox_embed2[i](tokens2[j][i]))
                 # point_reg_list.append(self.bbox_embed[i](tokens[j][i]))
 
         point_cls1 = torch.cat(point_cls_list1,0)
-        point_cls2 = torch.cat(point_cls_list2,0)
+        # point_cls2 = torch.cat(point_cls_list2,0)
         point_reg1 = torch.cat(point_reg_list1,0)
-        point_reg2 = torch.cat(point_reg_list2,0)
+        # point_reg2 = torch.cat(point_reg_list2,0)
         hs1 = hs1.permute(1,0,2).reshape(hs1.shape[1],-1)
-        hs2 = hs2.permute(1,0,2).reshape(hs2.shape[1],-1)
         # hs2 = hs2.permute(1,0,2).reshape(hs2.shape[1],-1)
-        joint_reg1 = self.jointembed1(torch.cat([hs1,feat_box1],-1))
-        joint_reg2 = self.jointembed2(torch.cat([hs2,feat_box2],-1))
+        # hs2 = hs2.permute(1,0,2).reshape(hs2.shape[1],-1)
+        joint_reg1 = self.jointembed(torch.cat([hs1,feat_box1],-1))
+        # joint_reg2 = self.jointembed2(torch.cat([hs2,feat_box2],-1))
 
         rcnn_cls1 = point_cls1
-        rcnn_cls2 = point_cls2
+        # rcnn_cls2 = point_cls2
         rcnn_reg1 = joint_reg1
-        rcnn_reg2 = joint_reg2
+        # rcnn_reg2 = joint_reg2
         if not self.training:
             rcnn_cls = rcnn_cls1[-rcnn_cls1.shape[0]//self.num_enc_layer:]
             batch_cls_preds, batch_box_preds = self.generate_predicted_boxes(
-                batch_size=batch_dict['batch_size'], rois=batch_dict['roi_boxes'], cls_preds=rcnn_cls, box_preds=rcnn_reg2
+                batch_size=batch_dict['batch_size'], rois=batch_dict['roi_boxes'], cls_preds=rcnn_cls, box_preds=rcnn_reg1
             )
 
             batch_dict['batch_box_preds'] = batch_box_preds
@@ -972,16 +1027,16 @@ class DENet2Head(RoIHeadTemplate):
 
         else:
             targets_dict['batch_size'] = batch_size
-            targets_dict['rcnn_cls1'] = rcnn_cls1
-            targets_dict['rcnn_cls2'] = rcnn_cls2
+            targets_dict['rcnn_cls'] = rcnn_cls1
+            # targets_dict['rcnn_cls2'] = rcnn_cls2
             targets_dict['rcnn_reg1'] = rcnn_reg1
-            targets_dict['rcnn_reg2'] = rcnn_reg2
+            # targets_dict['rcnn_reg2'] = rcnn_reg2
             targets_dict['box_reg1'] = box_reg1
             targets_dict['box_reg2'] = box_reg2
             targets_dict['point_reg1'] = point_reg1
-            targets_dict['point_reg2'] = point_reg2
+            # targets_dict['point_reg2'] = point_reg2
             targets_dict['point_cls1'] = point_cls1
-            targets_dict['point_cls2'] = point_cls2
+            # targets_dict['point_cls2'] = point_cls2
             self.forward_ret_dict = targets_dict
 
         return batch_dict

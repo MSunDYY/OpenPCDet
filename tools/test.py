@@ -29,7 +29,7 @@ current_file_path = os.path.dirname(__file__)
 
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
-    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/msf_4frames.yaml',
+    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/denet2_4frames.yaml',
                         help='specify the config for training')
 
     parser.add_argument('--batch_size', type=int, default=1, required=False, help='batch size for training')

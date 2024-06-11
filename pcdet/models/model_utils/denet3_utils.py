@@ -7,94 +7,15 @@ from typing import Optional, List
 from torch import Tensor
 from torch.nn.init import xavier_uniform_, zeros_, kaiming_normal_
 from spconv.pytorch.utils import PointToVoxel
-
+from pcdet.ops.pointnet2.pointnet2_stack.pointnet2_modules import StackSAModuleMSG
+from pcdet.ops.pointnet2.pointnet2_batch.pointnet2_modules import PointnetSAModuleMSG
+from pcdet import device
 # from torch.utils.cpp_extension import load
 # scatter = load(name='scatter', sources=['../cuda/scatter.cpp', '../cuda/scatter.cu'])
-class CrossAttention(nn.Module):
-
-    def __init__(self, hidden_dim, grid_size, channels, config=None, dropout=0.0):
-        super().__init__()
-
-        self.mixer = nn.MultiheadAttention(channels, 8, dropout=dropout)
-
-        self.dropout = nn.Dropout(dropout)
-        self.norm = nn.LayerNorm(channels)
-        self.pos_linear = nn.Linear(3,channels)
-
-        self.norm_channel = nn.LayerNorm(channels)
-        self.ffn = nn.Sequential(
-            nn.Linear(channels, 2 * channels),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(2 * channels, channels),
-        )
-        self.config = config
-        self.grid_size = grid_size
-
-    def forward(self, src1,src2,xyz1,xyz2):
-        xyz1 = self.pos_linear(xyz1).permute(1,0,2)
-        xyz2 = self.pos_linear(xyz2).permute(1,0,2)
-        src1 = src1.permute(1,0,2)
-        src2 = src2.permute(1,0,2)
-        src = self.mixer(src1+xyz1, src2+xyz2, src2)[0]
-
-        src = src1 + self.dropout(src)
-        src_mixer = self.norm(src)
-
-        src_mixer = src_mixer + self.ffn(src_mixer)
-        src_mixer = self.norm_channel(src_mixer)
-
-        return src_mixer.permute(1,0,2)
-
-class BioCrossAttention(nn.Module):
-
-    def __init__(self, hidden_dim, grid_size, channels, config=None, dropout=0.0):
-        super().__init__()
-
-        self.mixer1 = nn.MultiheadAttention(channels, 4, dropout=dropout)
-        self.mixer2 = nn.MultiheadAttention(channels, 4, dropout=dropout)
-
-        self.dropout = nn.Dropout(dropout)
-        self.norm = nn.LayerNorm(channels)
-        self.pos_linear = nn.Linear(3,channels)
-
-        self.norm_channel = nn.LayerNorm(channels)
-        self.ffn1 = nn.Sequential(
-            nn.Linear(channels, 2 * channels),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(2 * channels, channels),
-        )
-        self.ffn2 = nn.Sequential(
-            nn.Linear(channels, 2 * channels),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(2 * channels, channels),
-        )
-
-        self.config = config
-        self.grid_size = grid_size
-
-    def forward(self, src1,src2,xyz1,xyz2,return_xyz=False):
-        xyz1_emb = xyz1
-        xyz2_emb = xyz2
-        # src1 = src1.permute(1,0,2)
-        # src2 = src2.permute(1,0,2)
-        src1_= self.mixer1(src1+xyz1_emb, src2+xyz2_emb, src2)[0]
-        src2_ = self.mixer2(src2+xyz2_emb,src1+xyz1_emb,src1)[0]
-        src1 = src1 + self.dropout(src1_)
-        src2 = src2 + self.dropout(src2_)
-        src_mixer1 = self.norm(src1)
-        src_mixer2 = self.norm(src2)
-
-        src_mixer1 = src_mixer1 + self.ffn1(src_mixer1)
-        src_mixer2 = src_mixer2 + self.ffn2(src_mixer2)
-        src_mixer1 = self.norm_channel(src_mixer1)
-        src_mixer2 = self.norm_channel(src_mixer2)
-        if return_xyz:
-            return torch.concat([src_mixer1,xyz1],dim=-1),torch.concat([src_mixer2,xyz2],dim=-1)
-        else:
-            return src_mixer1,src_mixer2
+def unflatten(tensor,dim,sizes):
+    shape = list(tensor.shape)
+    shape = shape[:dim]+list(sizes)+shape[dim+1:]
+    return tensor.reshape(shape)
 class PointNetfeat(nn.Module):
     def __init__(self, input_dim, x=1,outchannel=512):
         super(PointNetfeat, self).__init__()
@@ -193,9 +114,23 @@ class MLP(nn.Module):
             x = F.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
         return x
 
+class SpatialMixerBlockCompress(nn.Module):
+    def __init__(self,hidden_dim,grid_size,dropout=0.0):
+        super().__init__()
+        self.grid_size = grid_size
+        self.mixer_x = MLP(input_dim=grid_size,hidden_dim=hidden_dim,output_dim=grid_size,num_layers=3)
+        self.mixer_y = MLP(input_dim=grid_size,hidden_dim=hidden_dim,output_dim=grid_size,num_layers=3)
+        self.mixer_z = MLP(input_dim=grid_size,hidden_dim=hidden_dim,output_dim=grid_size,num_layers=3)
+
+    def forward(self,src):
+        src3d = src.reshape(src.shape[0],src.shape[1],self.grid_size,self.grid_size,self.grid_size)
+        src2d = torch.max(self.mixer_x(src3d),dim=-1).values
+        src1d = torch.max(self.mixer_y(src2d),dim=-1).values
+        src0d = torch.max(self.mixer_z(src1d),dim=-1).values
+        return src0d
 class SpatialMixerBlock(nn.Module):
 
-    def __init__(self, hidden_dim, grid_size,channels,config=None, dropout=0.0):
+    def __init__(self, channels,config=None, dropout=0.0):
         super().__init__()
 
         self.mixer = nn.MultiheadAttention(channels, 8, dropout=dropout)
@@ -210,21 +145,52 @@ class SpatialMixerBlock(nn.Module):
                                nn.Dropout(dropout),
                                nn.Linear(2*channels, channels),
                                )
-        self.config = config
-        self.grid_size = grid_size
-
-    def forward(self, src):
+    def forward(self, src,return_weight=False):
        
-        src2 = self.mixer(src, src, src)[0]
+        src2,weight = self.mixer(src, src, src)
         
         src = src + self.dropout(src2)
         src_mixer = self.norm(src)
 
         src_mixer = src_mixer + self.ffn(src_mixer)
         src_mixer = self.norm_channel(src_mixer)
+        if return_weight:
+            return src_mixer,weight
+        else:
+            return src_mixer
 
-        return src_mixer
 
+class CrossMixerBlock(nn.Module):
+
+    def __init__(self, channels, config=None, dropout=0.0):
+        super().__init__()
+
+        self.mixer = nn.MultiheadAttention(channels, 8, dropout=dropout)
+
+        self.dropout = nn.Dropout(dropout)
+        self.norm = nn.LayerNorm(channels)
+
+        self.norm_channel = nn.LayerNorm(channels)
+        self.ffn = nn.Sequential(
+            nn.Linear(channels, 2 * channels),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(2 * channels, channels),
+        )
+
+    def forward(self, query,key, return_weight=False):
+
+        src2, weight = self.mixer(query, key, key)
+
+        query = query + self.dropout(src2)
+        src_mixer = self.norm(query)
+
+        src_mixer = src_mixer + self.ffn(src_mixer)
+        src_mixer = self.norm_channel(src_mixer)
+        if return_weight:
+            return src_mixer, weight
+        else:
+            return src_mixer
 class Transformer(nn.Module):
 
     def __init__(self, config, d_model=512, nhead=8, num_encoder_layers=6,
@@ -247,9 +213,8 @@ class Transformer(nn.Module):
 
         encoder_norm = nn.LayerNorm(d_model) if normalize_before else None
         self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers, encoder_norm,self.config)
+        self.token = nn.Parameter(torch.zeros(self.num_groups, 1, d_model))
 
-        self.token = nn.Parameter(torch.zeros(self.num_groups*2, 1, d_model))
-        self.token2 = nn.Parameter(torch.zeros(self.num_groups,1,d_model))
         
         if self.num_frames >4:
   
@@ -266,24 +231,22 @@ class Transformer(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, src, pos=None):
+    def forward(self, src,src_features,batch_dict, pos=None):
 
         BS, N, C = src.shape
-        # if not pos is None:
-        #     pos = pos.permute(1, 0, 2)
+        if not pos is None:
+            pos = pos.permute(1, 0, 2)
             
-        
+        if src_features is not None:
+            src = torch.concat([src,src_features],dim=-1)
         token_list = [self.token[i:(i+1)].repeat(BS,1,1) for i in range(self.num_groups)]
+        src = src[:,:,:self.config.hidden_dim]
         src = [torch.cat([token_list[i],src[:,i*self.num_lidar_points:(i+1)*self.num_lidar_points]],dim=1) for i in range(self.num_groups)]
+        # src = [src[:,i*self.num_lidar_points:(i+1)*self.num_lidar_points] for i in range(self.num_groups)]
         src = torch.cat(src,dim=0)
-        pos = [pos[:,i*self.num_lidar_points:(i+1)*self.num_lidar_points] for i in range(self.num_groups)]
-        pos = torch.cat(pos,dim=0)
-        # src2 = [torch.cat([token_list[i],src2[:,i*self.num_lidar_points:(i+1)*self.num_lidar_points]],dim=1) for i in range(self.num_groups)]
-        # src2 = torch.cat(src2,dim=0)
+
         src = src.permute(1, 0, 2)
-        pos = pos.permute(1, 0, 2)
-        # src2 = src2.permute(1,0,2)
-        memory,tokens = self.encoder(src,pos=pos)
+        memory,tokens = self.encoder(src,batch_dict,pos=pos)
 
         memory = torch.cat(memory[0:1].chunk(4,dim=1),0)
         return memory, tokens
@@ -298,13 +261,13 @@ class TransformerEncoder(nn.Module):
         self.norm = norm
         self.config = config
 
-    def forward(self, src,
+    def forward(self, src,batch_dict,
                 pos: Optional[Tensor] = None):
 
         token_list = []
         output = src
         for layer in self.layers:
-            output,tokens = layer(output,pos=pos)
+            output,tokens = layer(output,batch_dict,pos=pos)
             token_list.append(tokens)
         if self.norm is not None:
             output = self.norm(output)
@@ -354,164 +317,142 @@ class TransformerEncoderLayer(nn.Module):
         self.config = config
         self.num_point = num_points
         self.num_groups= num_groups
-        # self.self_attn = vector_attention(d_model, nhead=1)
+        self.point_feature = 96
         self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-        # self.selfattn2 = nn.MultiheadAttention(d_model,nhead,dropout=dropout)
-
+        # self.self_attn = vector_attention(d_model, nhead=4)
         self.linear1 = nn.Linear(d_model, dim_feedforward)
         self.dropout = nn.Dropout(dropout)
         self.linear2 = nn.Linear(dim_feedforward, d_model)
 
-        self.norm = nn.LayerNorm(d_model)
+        self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
-        self.dropout21 = nn.Dropout(dropout)
-        self.dropout22 = nn.Dropout(dropout)
+
         if self.layer_count <= self.config.enc_layers-1:
             self.cross_conv_1 = nn.Linear(d_model * 2, d_model)
             self.cross_norm_1 = nn.LayerNorm(d_model)
             self.cross_conv_2 = nn.Linear(d_model * 2, d_model)
             self.cross_norm_2 = nn.LayerNorm(d_model)
 
-
-        self.bio_cross_atten = BioCrossAttention(3,4,self.config.hidden_dim,None)
-        self.cross_atten = CrossAttention(3,4,self.config.hidden_dim,None)
-
         self.activation = _get_activation_fn(activation)
         self.normalize_before = normalize_before
 
         self.mlp_mixer_3d = SpatialMixerBlock(
-                        self.config.use_mlp_mixer.hidden_dim, 
-                        self.config.use_mlp_mixer.get('grid_size', 4), 
                         self.config.hidden_dim, 
                         self.config.use_mlp_mixer
         )
-        self.mlp_mixer_3d2 = SpatialMixerBlock(
-                        self.config.use_mlp_mixer.hidden_dim,
-                        self.config.use_mlp_mixer.get('grid_size', 4),
-                        self.config.hidden_dim,
-                        self.config.use_mlp_mixer
+
+        self.point_attention = CrossMixerBlock(
+            channels=96
         )
+
+        if self.layer_count<=self.config.enc_layers-1 and config.get('sampler',False) is not False:
+            from pcdet.ops.pointnet2.pointnet2_batch import pointnet2_utils
+            self.group = StackSAModuleMSG(radii=config.sampler.radius[self.layer_count-1],nsamples=config.sampler.nsample[self.layer_count-1],use_xyz=True,mlps=config.sampler.mlp[self.layer_count-1],use_spher=config.sampler.USE_SPHER)
 
     def with_pos_embed(self, tensor, pos: Optional[Tensor]):
         return tensor if pos is None else tensor + pos
 
     def forward_post(self,
-                     src,
+                     src,batch_dict,
                      pos: Optional[Tensor] = None):
-        # src = torch.cat([src1,src2],0)
-        num_rois = src.shape[1]//(self.num_groups*2)
-        # src1,src2 = src.chunk(2,1)
+        query_points_features = batch_dict['query_points_features'+str(self.layer_count)]
+        src_idx = batch_dict['src_idx'+str(self.layer_count)]
+        query_points_idx_bs = batch_dict['query_points_idx_bs'+str(self.layer_count)]
+        src_intra_group_fusion,weight = self.mlp_mixer_3d(src[1:],return_weight=True)
 
-        src_intra_group_fusion = self.mlp_mixer_3d(src[1:])
-        # src_intra_group_fusion2 = self.mlp_mixer_3d2(src2[1:])
-        # src_intra_group_fusion2 = self.mlp_mixer_3d(src2[1:])
-        src = torch.cat([src[:1],src_intra_group_fusion],0)
-        # src2 = torch.cat([src2[:1],src_intra_group_fusion2],0)
+        # src_intra_group_fusion = torch.concat([src_intra_group_fusion, src[1:,:,self.config.hidden_dim:]], dim=-1)
+
         token = src[:1]
-        # token2 = src2[:1]
-        # token2 = src2[:1]
-        # if not pos is None:
-        #     key = self.with_pos_embed(src_intra_group_fusion, pos[1:])
-        # else:
-        key = src_intra_group_fusion
 
+        if not pos is None:
+            key = self.with_pos_embed(src_intra_group_fusion, pos[1:])
+        else:
+            key = src_intra_group_fusion
+
+      
         src_summary = self.self_attn(token, key,src_intra_group_fusion)[0]
-        # src_summary2 = self.self_attn2(token2, key2,src_intra_group_fusion2)[0]
-
         token = token + self.dropout1(src_summary)
-        token = self.norm(token)
+        token = self.norm1(token)
         src_summary = self.linear2(self.dropout(self.activation(self.linear1(token))))
         token = token + self.dropout2(src_summary)
-        token = self.norm(token)
+        token = self.norm2(token)
         src = torch.cat([token,src[1:]],0)
 
+
         if self.layer_count <= self.config.enc_layers-1:
-            src_max = torch.max(src[1:],dim=0,keepdim=True)[0].repeat(src.shape[0]-1,1,1)
+            weight = weight.sum(1).transpose(0, 1)
+            # src = torch.cat([src[:1],src_intra_group_fusion],0)
+            sampled_inds = torch.topk(weight, dim=0, k=weight.shape[0] // 2)[1]
+            new_src_idx = torch.gather(src_idx, 0, sampled_inds)
+            new_src_idx = new_src_idx.transpose(0, 1).reshape(batch_dict['num_frames'] * batch_dict['batch_size'], -1)
 
-            src=torch.concat([src[:1],self.cross_norm_1(src[1:].clone()+self.cross_conv_1(torch.concat([src[1:],src_max],-1)))],0)
-            src_all_groups = torch.concat([src[1:],pos],-1)
-            # num_half = pos.shape[1]//2
-            # src_all_groups = torch.stack(src_all_groups.chunk(2,1))
-            src_all_groups = src_all_groups.chunk(self.num_groups,1)
-            if self.layer_count==1:
-                # src1 = torch.concat([src_all_groups[0],src_all_groups[2],src_all_groups[4],src_all_groups[6]],dim=1)
-                # src2 = torch.concat([src_all_groups[1],src_all_groups[3],src_all_groups[5],src_all_groups[7]],dim=1)
-                src1 = torch.concat([src_all_groups[0], src_all_groups[2]], dim=1)
-                src2 = torch.concat([src_all_groups[1], src_all_groups[3]], dim=1)
-            else:
-                # src1 = torch.concat([src_all_groups[0], src_all_groups[1],src_all_groups[4],src_all_groups[5]], dim=1)
-                # src2 = torch.concat([src_all_groups[2], src_all_groups[3],src_all_groups[6],src_all_groups[7]], dim=1)
-                src1 = torch.concat([src_all_groups[0], src_all_groups[1]], dim=1)
-                src2 = torch.concat([src_all_groups[2], src_all_groups[3]], dim=1)
+            new_query_idx = [torch.unique(new_src_idx[i]) for i in range(new_src_idx.shape[0])]
+            new_query_idx_bs = torch.tensor([i.shape[0] for i in new_query_idx],device=device,dtype=torch.int32)
+            new_query_idx = torch.concat(new_query_idx,dim=0)
+            # num_new_query = max([n.shape[0] for n in new_query_idx])
+            # new_query_idx = torch.stack([F.pad(n, (0, num_new_query - n.shape[0])) for n in new_query_idx])
+            new_query_xyz, new_query_features = torch.split(torch.gather(query_points_features, 0,
+                                                                     new_query_idx[:,  None].repeat(1,query_points_features.shape[-1])),
+                                                        [3, query_points_features.shape[-1] - 3], dim=-1)
+            new_query_features = self.group(query_points_features[..., :3].contiguous(),query_points_idx_bs,
+                                                   new_query_xyz.contiguous(),new_query_idx_bs,query_points_features[..., 3:].contiguous())
+            # new_query_features = self.point_attention(new_query_features.reshape(1, -1, new_query_features.shape[-1]),
+            #                                         new_query_features_grouped.permute(3, 0, 2, 1).flatten(1, 2)).reshape(
+            #     -1, new_query_xyz.shape[1], new_query_features.shape[-1])
+            new_query_points_features = torch.concat(new_query_features,dim=-1)
+            # new_query_points_features = torch.zeros_like(query_points_features)
+            new_src_idx = torch.searchsorted(new_query_idx,new_src_idx).reshape(-1,sampled_inds.shape[-1]).transpose(0,1)
+            # new_query_points_features.scatter_(0, new_query_idx[:,  None].repeat(1,
+            #                                                                      new_query_points_features.shape[-1]),
+            #                                    torch.concat([new_query_xyz,new_query_features], dim=-1))
+            # new_query_points_features = torch.concat([new_query_xyz,new_query_features],dim=-1)
+            batch_dict['query_points_features' + str(self.layer_count + 1)] = new_query_points_features
+            batch_dict['src_idx'+str(self.layer_count+1)] = new_src_idx
+            batch_dict['query_points_idx_bs'+str(self.layer_count+1)] = new_query_idx_bs
+            src_point_feature = torch.gather(new_query_points_features,0,new_src_idx.reshape(-1,1).repeat(1,new_query_points_features.shape[-1]))
+            src_point_feature = src_point_feature.reshape(-1,sampled_inds.shape[0],src_point_feature.shape[-1]).transpose(0,1)
 
-            # src2 = src_all_groups[1:,:num_half,:]
-            # src_cur = torch.concat([src1[:,:num_rois*(self.num_groups-1)],src2[:,:num_rois*(self.num_groups-1)]],dim=1)
-            # src_pre = torch.concat([src1[:,num_rois:],src2[:,num_rois:]],dim=1)
-            # src_cur[:,:,-5:-3]+=src_cur[:,:,-2:]
+            src_intra_group_fusion = torch.gather(src_intra_group_fusion, 0, sampled_inds[:, :, None].repeat(1, 1,
+                                                                                                             src_intra_group_fusion.shape[-1]))
+            num_points = src.shape[0]-1
+            src_all_groups = src_intra_group_fusion.view((src_intra_group_fusion.shape[0])*4,-1,src_intra_group_fusion.shape[-1])
+            # src_groups_list = src_all_groups.chunk(self.num_groups,0)
+            src_groups_list = [src_all_groups[torch.arange(sampled_inds.shape[0])*4+i] for i in range(4)]
 
+            src_all_groups = torch.stack(src_groups_list, 0)
+            src_all_groups,src_features = src_all_groups[...,:self.config.hidden_dim],src_all_groups[...,self.config.hidden_dim:]
+            src_max_groups = torch.max(src_all_groups, 1, keepdim=True).values
+            src_past_groups =  torch.cat([src_all_groups[1:],\
+                 src_max_groups[:-1].repeat(1, src_intra_group_fusion.shape[0], 1, 1)], -1)
+            src_all_groups[1:] = self.cross_norm_1(self.cross_conv_1(src_past_groups) + src_all_groups[1:])
 
-            src_1,src_2 = self.bio_cross_atten(src1[:,:,:-self.config.hidden_dim],src2[:,:,:-self.config.hidden_dim],src1[:,:,-self.config.hidden_dim:],src2[:,:,-self.config.hidden_dim:])
-            src_all_groups = src_1.chunk(self.num_groups//2,1) + src_2.chunk(self.num_groups//2,1)
-            if self.layer_count==1:
-                # indice = [0,4,1,5,2,6,3,7]
-                indice = [0,2,1,3]
-            else:
-                # indice = [0,1,5,6,2,3,6,7]
-                indice = [0,1,2,3]
-            src = torch.concat([src_all_groups[i] for i in indice],1)
-            src = torch.concat([token,src],dim=0)
-        # if self.layer_count <= self.config.enc_layers-1:
-        #
-        #     # src1 = src[:,:src.shape[1]//2]
-        #     # src2 = src[:,src.shape[1]//2:]
-        #     num_half = pos.shape[1]//2
-        #     num_points = src.shape[0]-1
-        #     src_all_groups = src[1:].view((src.shape[0]-1)*8,-1,src.shape[-1])
-        #     # pos = pos.reshape(pos.shape[0]*8,-1,pos.shape[-1])
-        #     # src_groups_list = src_all_groups.chunk(self.num_groups,0)
-        #     # src_groups_list = [src_all_groups[torch.arange(num_points)*8+i] for i in range(8)]
-        #     pos1 = pos[:,:num_half]
-        #     pos2 = pos[:,num_half:]
-        #     src_all_groups1 = src[1:,:num_half]
-        #     src_all_groups2 = src[1:,num_half:]
-        #     src_all_groups1,src_all_groups2 = self.cross_atten(src_all_groups1,src_all_groups2,pos1,pos2)
-        #
-        #     src_all_groups1 = src_all_groups1.view((src_all_groups1.shape[0])*4,-1,src.shape[-1])
-        #     src_groups_list1 = [src_all_groups1[torch.arange(num_points)*4+i] for i in range(4)]
-        #     src_all_groups1 = torch.stack(src_groups_list1)
-        #     src_max_groups1 = torch.max(src_all_groups1, 1, keepdim=True).values
-        #     src_past_groups1 =  torch.cat([src_all_groups1[1:],\
-        #          src_max_groups1[:-1].repeat(1, (src.shape[0]-1), 1, 1)], -1)
-        #     src_all_groups1[1:] = self.cross_norm_1(self.cross_conv_1(src_past_groups1) + src_all_groups1[1:])
-        #
-        #     src_max_groups1 = torch.max(src_all_groups1, 1, keepdim=True).values
-        #     src_past_groups1 =  torch.cat([src_all_groups1[:-1],\
-        #          src_max_groups1[1:].repeat(1, (src.shape[0]-1), 1, 1)], -1)
-        #     src_all_groups1[:-1] = self.cross_norm_2(self.cross_conv_2(src_past_groups1) + src_all_groups1[:-1])
-        #
-        #     src_inter_group_fusion1 = src_all_groups1.permute(1, 0, 2, 3).contiguous().flatten(1,2)
-        #
-        #     src_all_groups2 = src_all_groups2.view((src_all_groups2.shape[0]) * 4, -1, src.shape[-1])
-        #     src_groups_list2 = [src_all_groups2[torch.arange(num_points) * 4 + i] for i in range(4)]
-        #     src_all_groups2 = torch.stack(src_groups_list2)
-        #     src_max_groups2 = torch.max(src_all_groups2, 1, keepdim=True).values
-        #     src_past_groups2 = torch.cat([src_all_groups2[1:], \
-        #                                   src_max_groups2[:-1].repeat(1, (src.shape[0] - 1), 1, 1)], -1)
-        #     src_all_groups2[1:] = self.cross_norm_3(self.cross_conv_3(src_past_groups2) + src_all_groups2[1:])
-        #
-        #     src_max_groups2 = torch.max(src_all_groups2, 1, keepdim=True).values
-        #     src_past_groups2 = torch.cat([src_all_groups2[:-1], \
-        #                                   src_max_groups2[1:].repeat(1, (src.shape[0] - 1), 1, 1)], -1)
-        #     src_all_groups2[:-1] = self.cross_norm_4(self.cross_conv_4(src_past_groups2) + src_all_groups2[:-1])
-        #
-        #     src_inter_group_fusion2 = src_all_groups2.permute(1, 0, 2, 3).contiguous().flatten(1, 2)
-        #
-        #     src_inter_group_fusion = torch.concat([src_inter_group_fusion1,src_inter_group_fusion2],dim=1)
-        #     src = torch.cat([src[:1],src_inter_group_fusion],0)
-        
-        return src, torch.cat(src[:1].chunk(self.num_groups,1),0)
+            src_max_groups = torch.max(src_all_groups, 1, keepdim=True).values
+            src_past_groups =  torch.cat([src_all_groups[:-1],\
+                 src_max_groups[1:].repeat(1, src_intra_group_fusion.shape[0], 1, 1)], -1)
+            src_all_groups[:-1] = self.cross_norm_2(self.cross_conv_2(src_past_groups) + src_all_groups[:-1])
+
+            src_inter_group_fusion = src_all_groups.permute(1, 0, 2, 3).contiguous().flatten(1,2)
+            
+            src = torch.cat([src[:1],src_inter_group_fusion],0)
+
+        else:
+            new_src_idx = src_idx
+            new_src_idx = new_src_idx.transpose(0, 1).flatten()
+            # new_query_idx = [torch.unique(new_query_idx[i]) for i in range(new_query_idx.shape[0])]
+            # num_new_query = max([n.shape[0] for n in new_query_idx])
+            # new_query_idx = torch.stack([F.pad(n, (0, num_new_query - n.shape[0])) for n in new_query_idx])
+            new_src_xyz, new_src_features = torch.split(torch.gather(query_points_features, 0,
+                                                                         new_src_idx[:, None].repeat(1, query_points_features.shape[-1])),
+                                                            [3, query_points_features.shape[-1] - 3], dim=-1)
+            new_src_points_features = new_src_features.reshape(src.shape[0]-1,-1,new_src_features.shape[-1])
+            new_src_xyz = new_src_xyz.reshape(src.shape[0]-1,-1,new_src_xyz.shape[-1]).transpose(0,1)
+            new_src_points_features = unflatten(new_src_points_features.transpose(0,1),dim=0,sizes=(batch_dict['num_frames'],-1))[0]
+            new_src_xyz = unflatten(new_src_xyz,dim=0,sizes = (batch_dict['num_frames'],-1))[0]
+            batch_dict['final_src_points_features'] = new_src_points_features
+            batch_dict['final_src_xyz'] = new_src_xyz.contiguous()
+        return src, torch.cat(src[:1].chunk(4,1),0)
 
     def forward_pre(self, src,
                     pos: Optional[Tensor] = None):
@@ -524,12 +465,12 @@ class TransformerEncoderLayer(nn.Module):
         src = src + self.dropout2(src2)
         return src
 
-    def forward(self, src,
+    def forward(self, src,batch_dict,
                 pos: Optional[Tensor] = None):
 
         if self.normalize_before:
             return self.forward_pre(src, pos)
-        return self.forward_post(src,  pos)
+        return self.forward_post(src,batch_dict,  pos)
 
 
 def _get_activation_fn(activation):
@@ -571,7 +512,7 @@ class FFN(nn.Module):
 
         return tgt
 
-def build_transformer3(args):
+def build_transformer(args):
     return Transformer(
         config = args,
         d_model=args.hidden_dim,

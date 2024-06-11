@@ -75,6 +75,8 @@ DATA_CONFIG:
           REG_FG_THRESH: 0.55
           REG_BG_THRESH: 0.7
 
+
+
     POINT_FEATURE_ENCODING: {
         encoding_type: absolute_coordinates_encoding, 
         used_feature_list: ['x', 'y', 'z', 'intensity', 'elongation','time'],

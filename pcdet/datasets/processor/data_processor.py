@@ -367,7 +367,7 @@ class DataProcessor(object):
 
             cur_backward_rois = backward_rois
             # cur_trajectory_rois = trajectory_rois[index]
-            cur_roi, cur_gt, cur_roi_labels = rois[:, :-1], gt_boxes, rois[:, -1].long()
+            cur_roi, cur_gt, cur_roi_labels = rois[:, :-1], gt_boxes, data_dict['roi_labels'][0].long()
 
             if 'valid_length' in batch_dict.keys():
                 cur_valid_length = batch_dict['valid_length']
@@ -462,7 +462,10 @@ class DataProcessor(object):
                 # batch_trajectory_rois[index] = cur_trajectory_rois[:,sampled_inds]
             return batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_labels, batch_backward_rois[...,:-1], batch_valid_length
         with torch.no_grad():
+            if not 'anchors' in data_dict.keys():
+                data_dict['anchors'] = np.transpose(data_dict['roi_boxes'],(1,0,2))
             anchors = torch.from_numpy(data_dict['anchors'])
+            data_dict['roi_labels'] = torch.from_numpy(data_dict['roi_labels'])
             data_dict['anchors'] = anchors
             backward_rois = generate_trajectory_msf(anchors.reshape(-1, anchors.shape[-1]),
                                                     data_dict)

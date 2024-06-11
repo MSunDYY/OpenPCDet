@@ -325,7 +325,7 @@ class TransformerEncoderLayer(nn.Module):
             channels=96
         )
 
-        if self.layer_count<=self.config.enc_layers-1:
+        if self.layer_count<=self.config.enc_layers-1 and config.get('sampler',False) is not False:
             from pcdet.ops.pointnet2.pointnet2_batch import pointnet2_utils
             self.group = pointnet2_utils.QueryAndGroup(config.sampler.radius[self.layer_count-1],config.sampler.nsample[self.layer_count-1],use_xyz=False)
 

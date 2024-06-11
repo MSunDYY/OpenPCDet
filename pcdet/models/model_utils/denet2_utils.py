@@ -137,7 +137,7 @@ class SpatialMixerBlock(nn.Module):
         self.config = config
         self.grid_size = grid_size
 
-    def forward(self, src):
+    def forward(self, src,pos):
         src2 = self.mixer(src, src, src)[0]
 
         src = src + self.dropout(src2)
@@ -197,12 +197,14 @@ class Transformer(nn.Module):
             pos = pos.permute(1, 0, 2)
 
         token_list = [self.token[i:(i + 1)].repeat(BS, 1, 1) for i in range(self.num_groups)]
-        src = [torch.cat([token_list[i], src[:, i * self.num_lidar_points:(i + 1) * self.num_lidar_points]], dim=1) for
+        xyz = [src[:,i*self.num_lidar_points:(i+1)*self.num_lidar_points,-3:] for i in range(self.num_groups)]
+        src = [torch.cat([token_list[i], src[:, i * self.num_lidar_points:(i + 1) * self.num_lidar_points,:-3],], dim=1) for
                i in range(self.num_groups)]
         src = torch.cat(src, dim=0)
-
+        xyz = torch.cat(xyz,0)
         src = src.permute(1, 0, 2)
-        memory, tokens = self.encoder(src, pos=pos)
+        xyz = xyz.permute(1,0,2)
+        memory, tokens = self.encoder(src, pos=xyz)
 
         memory = torch.cat(memory[0:1].chunk(4, dim=1), 0)
         return memory, tokens
@@ -275,13 +277,13 @@ class TransformerEncoderLayer(nn.Module):
                      src,
                      pos: Optional[Tensor] = None):
 
-        src_intra_group_fusion = self.mlp_mixer_3d(src[1:])
+        src_intra_group_fusion = self.mlp_mixer_3d(src[1:],pos)
         src = torch.cat([src[:1], src_intra_group_fusion], 0)
 
         token = src[:1]
 
         if not pos is None:
-            key = self.with_pos_embed(src_intra_group_fusion, pos[1:])
+            key = src_intra_group_fusion
         else:
             key = src_intra_group_fusion
 
@@ -538,15 +540,14 @@ class VoxelPointsSampler(nn.Module):
         self.grid_x = int((pc_range[3] - pc_range[0]) / voxel_size)
         self.grid_y = int((pc_range[4] - pc_range[1]) / voxel_size)
         self.return_point_feature = config.ENABLE
-        # self.point_emb = nn.Linear(sum([mlp[-1] for mlp in config.mlps])+(3 if self.use_absolute_xyz else 0),96)
+        self.point_emb = nn.Linear(96+(3 if self.use_absolute_xyz else 0),96)
         if config.ENABLE == True:
             self.set_abstraction = pointnet2_modules.PointnetSAModuleMSG(
                 npoint=4096,
-                radii=[0.8,],
-                nsamples=[16],
-                mlps=config.mlps,
-                use_xyz=config.USE_ABSOLUTE_XYZ,
-                use_spher = config.USE_SPHER
+                radii=[0.8, 1.6],
+                nsamples=[16, 32],
+                mlps=[[2, 16, 16, 32], [2, 32, 32, 64]],
+                use_xyz=True
             )
 
     def get_output_feature_dim(self):
@@ -556,8 +557,8 @@ class VoxelPointsSampler(nn.Module):
 
         src = list()
         points_features_list = list()
-        query_points_features_list = [None] * batch_size*trajectory_rois.shape[1]
-        idx_checkpoint = 0
+        query_points_features_list = list()
+
         for bs_idx in range(batch_size):
 
             cur_points = batch_dict['points'][(batch_dict['points'][:, 0] == bs_idx)][:, 1:]
@@ -632,20 +633,13 @@ class VoxelPointsSampler(nn.Module):
 
                 points_features_single_list.append(points_features)
                 src_points.append(key_points)
-                query_points_features_list[idx*batch_size+bs_idx] = query_points_features
-
+                query_points_features_list.append(query_points_features)
             src.append(torch.stack(src_points))
             points_features_list.append(torch.stack(points_features_single_list))
-        # max_query_points_num = max([q.shape[0] for q in query_points_features_list])
-        # query_points_features = torch.stack([F.pad(q,(0,0,0,max_query_points_num-q.shape[0])) for q in query_points_features_list])
-        # query_points_features = query_points_features.reshape(batch_size,-1,query_points_features.shape[-2],query_points_features.shape[-1]).transpose(0,1).reshape(-1,query_points_features.shape[-2],query_points_features.shape[-1])
-        for idx in range(trajectory_rois.shape[1]):
-            for bs_idx in range(batch_size):
-                src[bs_idx][idx,:,:,-1]+=idx_checkpoint
-                idx_checkpoint += query_points_features_list[idx * batch_size + bs_idx].shape[0]
-        query_points_bs_idx = torch.tensor([points.shape[0] for points in query_points_features_list],dtype=torch.int32,device=device)
-        query_points_features = torch.concat(query_points_features_list,dim=0)
-        return torch.stack(src).permute(0, 2, 1, 3, 4).flatten(2, 3), torch.stack(points_features_list).permute(0, 2, 1,3, 4).flatten(2,3),query_points_features,query_points_bs_idx
+        max_query_points_num = max([q.shape[0] for q in query_points_features_list])
+        query_points_features = torch.stack([F.pad(q,(0,0,0,max_query_points_num-q.shape[0])) for q in query_points_features_list])
+        query_points_features = query_points_features.reshape(batch_size,-1,query_points_features.shape[-2],query_points_features.shape[-1]).transpose(0,1).reshape(-1,query_points_features.shape[-2],query_points_features.shape[-1])
+        return torch.stack(src).permute(0, 2, 1, 3, 4).flatten(2, 3), torch.stack(points_features_list).permute(0, 2, 1,3, 4).flatten(2,3),query_points_features
 
     def cylindrical_pool(self, cur_points, cur_boxes, num_sample, gamma=1.):
         if len(cur_points) < num_sample:
@@ -668,17 +662,14 @@ class VoxelPointsSampler(nn.Module):
         query_points_xyz = query_points_features[0][0]
         if self.use_absolute_xyz:
             query_points_features = torch.concat([query_points_xyz,query_points_features[1].transpose(1, 2)[0]],dim=-1)
-            query_points_features = self.point_emb(query_points_features)
 
         else:
             query_points_features = query_points_features[1].transpose(1,2).squeeze()
+        query_points_features = self.point_emb(query_points_features)
         points_features = query_points_features[idx]
 
         sampled_idx_ = sampled_idx.view(-1, 1).repeat(1, cur_points.shape[-1])
         sampled_points = torch.gather(cur_points, 0, sampled_idx_).view(len(sampled_mask), num_sample, -1)
-        sampled_mask = sampled_mask.bool()
-        # idx[sampled_mask]+=idx_checkpoint
-        idx[~sampled_mask] = 0
         sampled_points = torch.concat([sampled_points,idx[:,:,None]],dim=-1)
         sampled_points[sampled_mask == 0, :] = 0
         return sampled_points, points_features,torch.concat([query_points_xyz,query_points_features],dim=-1)

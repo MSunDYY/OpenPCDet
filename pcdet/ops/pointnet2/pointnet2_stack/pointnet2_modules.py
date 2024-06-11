@@ -30,7 +30,7 @@ def build_local_aggregation_module(input_channels, config,use_xyz = True):
 class StackSAModuleMSG(nn.Module):
 
     def __init__(self, *, radii: List[float], nsamples: List[int], mlps: List[List[int]],
-                 use_xyz: bool = True, pool_method='max_pool'):
+                 use_xyz: bool = True, pool_method='max_pool',use_spher:bool=False):
         """
         Args:
             radii: list of float, list of radii to group with
@@ -48,7 +48,7 @@ class StackSAModuleMSG(nn.Module):
         for i in range(len(radii)):
             radius = radii[i]
             nsample = nsamples[i]
-            self.groupers.append(pointnet2_utils.QueryAndGroup(radius, nsample, use_xyz=use_xyz))
+            self.groupers.append(pointnet2_utils.QueryAndGroup(radius, nsample, use_xyz=use_xyz,use_spher=use_spher))
             mlp_spec = mlps[i]
             if use_xyz:
                 mlp_spec[0] += 3
@@ -91,6 +91,7 @@ class StackSAModuleMSG(nn.Module):
             new_features, ball_idxs = self.groupers[k](
                 xyz, xyz_batch_cnt, new_xyz, new_xyz_batch_cnt, features
             )  # (M1 + M2, C, nsample)
+
             new_features = new_features.permute(1, 0, 2).unsqueeze(dim=0)  # (1, C, M1 + M2 ..., nsample)
             new_features = self.mlps[k](new_features)  # (1, C, M1 + M2 ..., nsample)
 

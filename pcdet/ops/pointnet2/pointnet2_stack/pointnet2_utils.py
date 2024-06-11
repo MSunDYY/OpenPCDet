@@ -111,7 +111,7 @@ grouping_operation = GroupingOperation.apply
 
 
 class QueryAndGroup(nn.Module):
-    def __init__(self, radius: float, nsample: int, use_xyz: bool = True):
+    def __init__(self, radius: float, nsample: int, use_xyz: bool = True,use_spher: bool=False):
         """
         Args:
             radius: float, radius of ball
@@ -119,8 +119,12 @@ class QueryAndGroup(nn.Module):
             use_xyz:
         """
         super().__init__()
-        self.radius, self.nsample, self.use_xyz = radius, nsample, use_xyz
-
+        self.radius, self.nsample, self.use_xyz , self.use_spher= radius, nsample, use_xyz,use_spher
+    def spherical_coordinate(self,grouped_xyz):
+        dis = (grouped_xyz[:,0]**2+grouped_xyz[:,1]**2+grouped_xyz[:,2]**2)**0.5
+        phi = torch.atan2(grouped_xyz[:,1],grouped_xyz[:,2])
+        the = torch.acos(grouped_xyz[:,2]/(dis+1e-5))
+        return torch.stack([dis,phi,the],dim=1)
     def forward(self, xyz: torch.Tensor, xyz_batch_cnt: torch.Tensor,
                 new_xyz: torch.Tensor, new_xyz_batch_cnt: torch.Tensor,
                 features: torch.Tensor = None):
@@ -154,6 +158,8 @@ class QueryAndGroup(nn.Module):
             grouped_features = grouping_operation(features, xyz_batch_cnt, idx, new_xyz_batch_cnt)  # (M1 + M2, C, nsample)
             grouped_features[empty_ball_mask] = 0
             if self.use_xyz:
+                if self.use_spher:
+                    grouped_xyz = self.spherical_coordinate(grouped_xyz)
                 new_features = torch.cat([grouped_xyz, grouped_features], dim=1)  # (M1 + M2 ..., C + 3, nsample)
             else:
                 new_features = grouped_features

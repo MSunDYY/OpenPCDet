@@ -824,7 +824,7 @@ class DENetHead(RoIHeadTemplate):
         src1 = self.voxel_sampler(batch_size, backward_rois, num_sample, batch_dict)
 
         # src2 = rois.new_zeros(batch_size, num_rois, num_sample, 5)
-        src2 = self.voxel_sampler_traj(batch_size, trajectory_rois, num_sample, batch_dict,valid_length)
+        # src2 = self.voxel_sampler_traj(batch_size, trajectory_rois, num_sample, batch_dict,valid_length)
 
         # src1 = self.voxel_sampler(batch_size,backward_rois,num_sample,batch_dict)
         # src2[~valid_length]=0
