@@ -237,7 +237,7 @@ class DataProcessor(object):
             return max_overlaps, gt_assignment
 
         def generate_trajectory_msf(cur_batch_boxes, batch_dict):
-            num_frames = batch_dict['num_points_all'].shape[0]
+            num_frames = batch_dict['num_frames']
             trajectory_rois = cur_batch_boxes[None, :, :].repeat(num_frames,1,1)
             # trajectory_rois[:, 0, :, :] = cur_batch_boxes
             batch_dict['valid_length'] = torch.ones(num_frames, trajectory_rois.shape[1])
@@ -462,8 +462,10 @@ class DataProcessor(object):
                 # batch_trajectory_rois[index] = cur_trajectory_rois[:,sampled_inds]
             return batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_labels, batch_backward_rois[...,:-1], batch_valid_length
         with torch.no_grad():
+
             if not 'anchors' in data_dict.keys():
                 data_dict['anchors'] = np.transpose(data_dict['roi_boxes'],(1,0,2))
+            data_dict['num_frames'] = config.NUM_FRAMES
             anchors = torch.from_numpy(data_dict['anchors'])
             data_dict['roi_labels'] = torch.from_numpy(data_dict['roi_labels'])
             data_dict['anchors'] = anchors
@@ -471,7 +473,7 @@ class DataProcessor(object):
                                                     data_dict)
             data_dict['backward_rois'] = backward_rois
             data_dict['num_anchors'] = data_dict['anchors'].shape[-2]
-            data_dict['num_frames'] = data_dict['num_points_all'].shape[0]
+            # data_dict['num_frames'] = data_dict['num_points_all'].shape[0]
             data_dict['has_class_labels'] = True
             batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_labels, batch_backward_rois, batch_valid_length = sample_rois_for_mppnet(
                 batch_dict=data_dict, config=config)

@@ -778,13 +778,13 @@ class DENet3Head(RoIHeadTemplate):
         :param input_data: input dict
         :return:
         """
-        num_frames = batch_dict['num_points_all'].shape[-1]
+        num_frames = self.model_cfg.Transformer.num_groups
         roi_scores = batch_dict['roi_scores'][:, 0, :]
         batch_dict['roi_scores'] = roi_scores[:,roi_scores.sum(0)>0]
         batch_dict['proposals_list'] = batch_dict['roi_boxes']
         batch_dict['roi_boxes'] = batch_dict['roi_boxes'][:,0,:][:,roi_scores.sum(0)>0]
         batch_dict['roi_labels'] = batch_dict['roi_labels'][:, 0, :][:, roi_scores.sum(0) > 0].long()
-        batch_dict['num_frames'] = batch_dict['num_points_all'].shape[-1]
+        batch_dict['num_frames'] = num_frames
         num_rois = batch_dict['roi_boxes'].shape[1]
         # batch_dict['roi_labels'] = batch_dict['roi_labels'][:,0].long()
         # batch_dict['roi_scores'] = batch_dict['roi_scores'][:,0]

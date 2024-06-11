@@ -248,7 +248,7 @@ class Transformer(nn.Module):
         src = src.permute(1, 0, 2)
         memory,tokens = self.encoder(src,batch_dict,pos=pos)
 
-        memory = torch.cat(memory[0:1].chunk(4,dim=1),0)
+        memory = torch.cat(memory[0:1].chunk(self.num_groups,dim=1),0)
         return memory, tokens
     
 
@@ -417,9 +417,9 @@ class TransformerEncoderLayer(nn.Module):
             src_intra_group_fusion = torch.gather(src_intra_group_fusion, 0, sampled_inds[:, :, None].repeat(1, 1,
                                                                                                              src_intra_group_fusion.shape[-1]))
             num_points = src.shape[0]-1
-            src_all_groups = src_intra_group_fusion.view((src_intra_group_fusion.shape[0])*4,-1,src_intra_group_fusion.shape[-1])
+            src_all_groups = src_intra_group_fusion.view((src_intra_group_fusion.shape[0])*self.num_groups,-1,src_intra_group_fusion.shape[-1])
             # src_groups_list = src_all_groups.chunk(self.num_groups,0)
-            src_groups_list = [src_all_groups[torch.arange(sampled_inds.shape[0])*4+i] for i in range(4)]
+            src_groups_list = [src_all_groups[torch.arange(sampled_inds.shape[0])*self.num_groups+i] for i in range(self.num_groups)]
 
             src_all_groups = torch.stack(src_groups_list, 0)
             src_all_groups,src_features = src_all_groups[...,:self.config.hidden_dim],src_all_groups[...,self.config.hidden_dim:]
@@ -452,7 +452,7 @@ class TransformerEncoderLayer(nn.Module):
             new_src_xyz = unflatten(new_src_xyz,dim=0,sizes = (batch_dict['num_frames'],-1))[0]
             batch_dict['final_src_points_features'] = new_src_points_features
             batch_dict['final_src_xyz'] = new_src_xyz.contiguous()
-        return src, torch.cat(src[:1].chunk(4,1),0)
+        return src, torch.cat(src[:1].chunk(self.num_groups,1),0)
 
     def forward_pre(self, src,
                     pos: Optional[Tensor] = None):

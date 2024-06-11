@@ -50,6 +50,7 @@ DATA_CONFIG:
                 'test': True
             }
         - NAME: anchor_aug
+          NUM_FRAMES: 1
           ROI_PER_IMAGE: 96
           FG_RATIO: 0.5
           REG_AUG_METHOD: single
@@ -122,8 +123,8 @@ MODEL:
             dropout: 0.1
             nheads: 4
             pre_norm: False
-            num_frames: 4
-            num_groups: 4
+            num_frames: 1
+            num_groups: 1
             use_grid_pos:
                 enabled: True
                 init_type: index
