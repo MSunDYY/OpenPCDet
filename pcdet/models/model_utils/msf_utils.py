@@ -677,8 +677,8 @@ class VoxelPointsSampler(nn.Module):
         sampled_idx_ = sampled_idx.view(-1, 1).repeat(1, cur_points.shape[-1])
         sampled_points = torch.gather(cur_points, 0, sampled_idx_).view(len(sampled_mask), num_sample, -1)
         sampled_mask = sampled_mask.bool()
-        # idx[sampled_mask]+=idx_checkpoint
-        idx[~sampled_mask] = 0
+
+        idx = idx*(~sampled_mask)
         sampled_points = torch.concat([sampled_points,idx[:,:,None]],dim=-1)
         sampled_points[sampled_mask == 0, :] = 0
         return sampled_points, points_features,torch.concat([query_points_xyz,query_points_features],dim=-1)

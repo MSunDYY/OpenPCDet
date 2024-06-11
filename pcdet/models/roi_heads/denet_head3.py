@@ -823,7 +823,7 @@ class DENet3Head(RoIHeadTemplate):
 
             # self.voxel_sampler_traj = build_voxel_sampler_traj(rois.device)
         src1,src1_features,query_points_features,query_points_bs_idx = self.voxel_sampler(batch_size, trajectory_rois, num_sample, batch_dict)
-
+        # src1, src1_features, query_points_features = torch.zeros_like(src1),torch.zeros_like(src1_features),torch.zeros_like(query_points_features)
         src1, src_idx1 = src1[..., :-1], src1[..., -1].long()
         batch_dict['src_idx1'] = src_idx1.view(batch_size * num_rois , num_frames, -1).permute(2, 1,0).reshape(
             -1, batch_size * num_rois * num_frames)

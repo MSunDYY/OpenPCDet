@@ -62,7 +62,7 @@ class WaymoDataset(DatasetTemplate):
         if GPUtil.getGPUs()[0].name.endswith('1650'):
             for config in self.dataset_cfg.DATA_PROCESSOR:
                 if config.NAME=='anchor_aug':
-                    config.ROI_PER_IMAGE=8
+                    config.ROI_PER_IMAGE=4
 
     def set_split(self, split):
         super().__init__(
