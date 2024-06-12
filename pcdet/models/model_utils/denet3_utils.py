@@ -445,9 +445,9 @@ class TransformerEncoderLayer(nn.Module):
             new_src_xyz, new_src_features = torch.split(torch.gather(query_points_features, 0,
                                                                          new_src_idx[:, None].repeat(1, query_points_features.shape[-1])),
                                                             [3, query_points_features.shape[-1] - 3], dim=-1)
-            new_src_points_features = new_src_features.reshape(src.shape[0]-1,-1,new_src_features.shape[-1])
-            new_src_xyz = new_src_xyz.reshape(src.shape[0]-1,-1,new_src_xyz.shape[-1]).transpose(0,1)
-            new_src_points_features = unflatten(new_src_points_features.transpose(0,1),dim=0,sizes=(batch_dict['num_frames'],-1))[0]
+            new_src_points_features = new_src_features.reshape(-1,src.shape[0]-1,new_src_features.shape[-1])
+            new_src_xyz = new_src_xyz.reshape(-1,src.shape[0]-1,new_src_xyz.shape[-1])
+            new_src_points_features = unflatten(new_src_points_features,dim=0,sizes=(batch_dict['num_frames'],-1))[0]
             new_src_xyz = unflatten(new_src_xyz,dim=0,sizes = (batch_dict['num_frames'],-1))[0]
             batch_dict['final_src_points_features'] = new_src_points_features
             batch_dict['final_src_xyz'] = new_src_xyz.contiguous()

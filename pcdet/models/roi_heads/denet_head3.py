@@ -718,7 +718,7 @@ class DENet3Head(RoIHeadTemplate):
         dense_idx = dense_idx.repeat(batch_size_rcnn, 1, 1).float()
 
         local_roi_size = rois.view(batch_size_rcnn, -1)[:, 3:6]
-        roi_grid_points = dense_idx / grid_size * local_roi_size.unsqueeze(dim=1) \
+        roi_grid_points = dense_idx / (grid_size-1) * local_roi_size.unsqueeze(dim=1) \
                           - (local_roi_size.unsqueeze(dim=1) / 2)
         return roi_grid_points
 
