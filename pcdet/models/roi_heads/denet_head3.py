@@ -356,7 +356,7 @@ class DENet3Head(RoIHeadTemplate):
         self.compress_points = SpatialMixerBlockCompress(hidden_dim=8,grid_size=3)
         self.corner_features_emb = PointnetSAModuleMSG(
                 npoint=4096,
-                radii=[1.6],
+                radii=[16],
                 nsamples=[32,],
                 mlps=[[128, 256, 256]],
                 use_xyz=True,
@@ -822,7 +822,7 @@ class DENet3Head(RoIHeadTemplate):
         num_sample = self.num_lidar_points 
 
             # self.voxel_sampler_traj = build_voxel_sampler_traj(rois.device)
-        src1,src1_features,query_points_features,query_points_bs_idx = self.voxel_sampler(batch_size, trajectory_rois, num_sample, batch_dict)
+        src1,query_points_features,query_points_bs_idx = self.voxel_sampler(batch_size, trajectory_rois, num_sample, batch_dict)
         # src1, src1_features, query_points_features = torch.zeros_like(src1),torch.zeros_like(src1_features),torch.zeros_like(query_points_features)
         src1, src_idx1 = src1[..., :-1], src1[..., -1].long()
         batch_dict['src_idx1'] = src_idx1.view(batch_size * num_rois , num_frames, -1).permute(2, 1,0).reshape(
@@ -846,7 +846,7 @@ class DENet3Head(RoIHeadTemplate):
         src1 = src_trajectory_feature + src_motion_feature
         # src2 = src_trajectory_feature+src_motion_feature2
         # src1 = src1.reshape(-1, batch_dict['num_anchors'], src1.shape[-2], src1.shape[-1])
-        src1_features = src1_features.view(batch_size * num_rois , -1, src1_features.shape[-1])
+        # src1_features = src1_features.view(batch_size * num_rois , -1, src1_features.shape[-1])
         # if self.model_cfg.get('USE_POINTNET', False):
         #     src1 = self.fuse(torch.concat(
         #         [src1.transpose(1, 2).reshape(-1, src1.shape[-2], self.num_anchors * self.hidden_dim),
@@ -866,7 +866,7 @@ class DENet3Head(RoIHeadTemplate):
             # src2[empty_mask.view(-1)] = 0
         corner_points,_ = self.get_corner_proxy_points_of_roi(trajectory_rois.transpose(0,1).reshape(-1,trajectory_rois.shape[-1]),grid_size=3)
         corner_points = unflatten(corner_points,dim=0,sizes = (num_frames,-1))[0].contiguous()
-        hs, tokens = self.transformer(src1, src1_features, batch_dict, pos=None)
+        hs, tokens = self.transformer(src1, batch_dict, pos=None)
 
         corner_points_features = self.corner_features_emb(batch_dict['final_src_xyz'],batch_dict['final_src_points_features'].transpose(1,2).contiguous(),corner_points)[1]
         # points_features = corner_points_features.view(corner_points_features.shape[0],-1)
