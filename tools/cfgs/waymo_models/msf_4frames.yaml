@@ -57,7 +57,7 @@ DATA_CONFIG:
           ROI_FG_AUG_TIMES: 10
           RATIO: 0.2
           USE_ROI_AUG: True
-          USE_BG_ROI_AUG: True
+          USE_BG_ROI_AUG: False
           USE_TRAJ_AUG:
               ENABLED: True
               THRESHOD: 0.8
@@ -105,9 +105,9 @@ MODEL:
             NSAMPLE: [16, 16]
             POOL_METHOD: max_pool
             
-        SHRINK_POINTS: False
-        Transformer:
 
+        Transformer:
+            SHRINK_POINTS: False
             num_lidar_points: 128
             pos_hidden_dim: 64
             enc_layers: 3

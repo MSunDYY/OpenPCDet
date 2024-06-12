@@ -126,8 +126,8 @@ class DataProcessor(object):
             """
 
             if config.REG_AUG_METHOD == 'single':
-                pos_shift = (torch.rand(3, device=box3d.device) - 0.5)/torch.tensor([4,4,40])*box3d[3:6]  # [-0.5 ~ 0.5]
-                hwl_scale = (torch.rand(3, device=box3d.device) - 0.5) / (0.5 / 0.1)/torch.tensor([4,4,8]) + 1.0  #
+                pos_shift = (torch.rand(3, device=box3d.device) - 0.5)  # [-0.5 ~ 0.5]
+                hwl_scale = (torch.rand(3, device=box3d.device) - 0.5) / (0.5 / 0.15) + 1.0  #
                 angle_rot = (torch.rand(1, device=box3d.device) - 0.5) / (0.5 / (np.pi / 12))  # [-pi/12 ~ pi/12]
                 aug_box3d = torch.cat(
                     [box3d[0:3] + pos_shift, box3d[3:6] * hwl_scale, box3d[6:7] + angle_rot, box3d[7:]], dim=0)
