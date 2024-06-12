@@ -520,9 +520,13 @@ class MSFHead(RoIHeadTemplate):
         batch_dict['trajectory_rois'] = trajectory_rois
 
         if self.training:
-            targets_dict = self.assign_targets(batch_dict)
+            if not self.model_cfg.get('PRE_AUG', False):
+                targets_dict = self.assign_targets(batch_dict)
+            else:
+                targets_dict = batch_dict['targets_dict']
+            # targets_dict = self.assign_targets(batch_dict)
             batch_dict['roi_boxes'] = targets_dict['rois']
-            batch_dict['roi_scores'] = targets_dict['roi_scores']
+            # batch_dict['roi_scores'] = targets_dict['roi_scores']
             batch_dict['roi_labels'] = targets_dict['roi_labels']
             targets_dict['trajectory_rois'][:,batch_dict['cur_frame_idx'],:,:] = batch_dict['roi_boxes']
             trajectory_rois = targets_dict['trajectory_rois']
