@@ -10,13 +10,13 @@ from .roi_head_template import RoIHeadTemplate
 from ..model_utils.denet_utils import build_transformer, PointNet, MLP,SpatialMixerBlock, build_voxel_sampler_denet
 from ..model_utils.denet3_utils import build_transformer,unflatten,SpatialMixerBlockCompress
 from ..model_utils.msf_utils import build_voxel_sampler,build_voxel_sampler_traj
-
+from .msf_head import ProposalTargetLayerMPPNet
 from .target_assigner.proposal_target_layer import ProposalTargetLayer
 from pcdet.ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_stack_modules
 from pcdet.ops.pointnet2.pointnet2_batch.pointnet2_modules import PointnetSAModuleMSG
 from pcdet import device
 
-class ProposalTargetLayerMPPNet(ProposalTargetLayer):
+class ProposalTargetLayerMPPNet1(ProposalTargetLayer):
     def __init__(self, roi_sampler_cfg):
         super().__init__(roi_sampler_cfg = roi_sampler_cfg)
 
@@ -669,8 +669,8 @@ class DENet3Head(RoIHeadTemplate):
         num_frames = batch_dict['num_frames']
         trajectory_rois = cur_batch_boxes[:, None, :, :].repeat(1, num_frames, 1, 1)
         trajectory_rois[:, 0, :, :] = cur_batch_boxes
-        # batch_dict['valid_length'] = torch.ones([batch_dict['batch_size'], num_frames, trajectory_rois.shape[2]])
-        batch_dict['roi_scores'] = batch_dict['roi_scores'][:, :, None].repeat(1, 1, num_frames)
+        batch_dict['valid_length'] = torch.ones([batch_dict['batch_size'], num_frames, trajectory_rois.shape[2]])
+        # batch_dict['roi_scores'] = batch_dict['roi_scores'][:, :, None].repeat(1, 1, num_frames)
 
         # simply propagate proposal based on velocity
         for i in range(1, num_frames):
@@ -794,12 +794,12 @@ class DENet3Head(RoIHeadTemplate):
         batch_dict['cur_frame_idx'] = 0
         proposals_list = batch_dict['proposals_list']
         # trajectory_rois,valid = self.generate_trajectory_mppnet(cur_batch_boxes,proposals_list, batch_dict)
-        backward_rois = self.generate_trajectory_msf(cur_batch_boxes,batch_dict)
+        trajectory_rois = self.generate_trajectory_msf(cur_batch_boxes, batch_dict)
 
         # batch_dict['traj_memory'] = trajectory_rois
         batch_dict['has_class_labels'] = True
         # batch_dict['trajectory_rois'] = trajectory_rois
-        batch_dict['backward_rois'] = backward_rois
+        batch_dict['trajectory_rois'] = trajectory_rois
         if self.training:
             if not self.model_cfg.get('PRE_AUG', False):
                 targets_dict = self.assign_targets(batch_dict)

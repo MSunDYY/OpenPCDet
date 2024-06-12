@@ -92,7 +92,7 @@ MODEL:
         USE_TRAJ_EMPTY_MASK: True
         USE_AUX_LOSS: True
         IOU_WEIGHT: [0.5,0.4]
-        PRE_AUG: True
+        PRE_AUG: False
         VoxelSampler:
             voxel_size: .4
             pc_range: [-75.2, -75.2, -10, 75.2, 75.2, 10]
