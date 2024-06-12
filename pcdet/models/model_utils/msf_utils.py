@@ -138,7 +138,7 @@ class SpatialMixerBlock(nn.Module):
         self.grid_size = grid_size
 
     def forward(self, src):
-        src2 = self.mixer(src, src, src)[0]
+        src2,weight = self.mixer(src, src, src)
 
         src = src + self.dropout(src2)
         src_mixer = self.norm(src)
@@ -146,7 +146,7 @@ class SpatialMixerBlock(nn.Module):
         src_mixer = src_mixer + self.ffn(src_mixer)
         src_mixer = self.norm_channel(src_mixer)
 
-        return src_mixer
+        return src_mixer,weight
 
 
 class Transformer(nn.Module):
@@ -275,7 +275,7 @@ class TransformerEncoderLayer(nn.Module):
                      src,
                      pos: Optional[Tensor] = None):
 
-        src_intra_group_fusion = self.mlp_mixer_3d(src[1:])
+        src_intra_group_fusion ,weight= self.mlp_mixer_3d(src[1:])
         src = torch.cat([src[:1], src_intra_group_fusion], 0)
 
         token = src[:1]
@@ -292,7 +292,10 @@ class TransformerEncoderLayer(nn.Module):
         token = token + self.dropout2(src_summary)
         token = self.norm2(token)
         src = torch.cat([token, src[1:]], 0)
+        if self.config.get('SHRINK_POINTS'):
+            sampled_inds =torch.topk(weight.sum(1),k=weight.shape[1]//2)[1]
 
+            src = torch.cat([token,torch.gather(src[1:],0,sampled_inds.transpose(0,1)[:,:,None].repeat(1,1,src.shape[-1]))],dim=0)
         if self.layer_count <= self.config.enc_layers - 1:
             src_all_groups = src[1:].view((src.shape[0] - 1) * 4, -1, src.shape[-1])
             src_groups_list = src_all_groups.chunk(self.num_groups, 0)

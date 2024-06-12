@@ -105,8 +105,9 @@ MODEL:
             NSAMPLE: [16, 16]
             POOL_METHOD: max_pool
             
-
+        SHRINK_POINTS: False
         Transformer:
+
             num_lidar_points: 128
             pos_hidden_dim: 64
             enc_layers: 3
@@ -124,6 +125,7 @@ MODEL:
             use_mlp_mixer:
                 enabled: True
                 hidden_dim: 16
+
 
         TARGET_CONFIG:
             BOX_CODER: ResidualCoder
