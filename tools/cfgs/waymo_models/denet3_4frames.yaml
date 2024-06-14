@@ -57,7 +57,7 @@ DATA_CONFIG:
           ROI_FG_AUG_TIMES: 10
           RATIO: 0.2
           USE_ROI_AUG: True
-          USE_BG_ROI_AUG: True
+          USE_BG_ROI_AUG: False
           USE_TRAJ_AUG:
               ENABLED: True
               THRESHOD: 0.8
@@ -146,7 +146,7 @@ MODEL:
             RATIO: 0.2
             USE_ROI_AUG: True
             USE_TRAJ_AUG:
-                ENABLED: False
+                ENABLED: True
                 THRESHOD: 0.8
             SAMPLE_ROI_BY_EACH_CLASS: True
             CLS_SCORE_TYPE: roi_iou
