@@ -435,9 +435,7 @@ class DataProcessor(object):
                     if idx == cur_frame_idx:
                         batch_backward_rois_list.append(
                             cur_backward_rois[cur_frame_idx:cur_frame_idx + 1, sampled_inds])
-                        # batch_trajectory_rois_list.append(
-                        #     cur_trajectory_rois[cur_frame_idx:cur_frame_idx+1,sampled_inds]
-                        # )
+
                         continue
                     fg_backs, _ = self.aug_roi_by_noise_torch(cur_backward_rois[idx, fg_inds],
                                                               cur_backward_rois[idx, fg_inds][:, :8],

@@ -548,7 +548,7 @@ class VoxelPointsSampler(nn.Module):
                 radii=[0.8, ],
                 nsamples=[16],
                 mlps=config.mlps,
-                use_xyz=config.USE_ABSOLUTE_XYZ,
+                use_xyz=True,
                 use_spher=config.USE_SPHER
             )
 
@@ -726,10 +726,9 @@ class VoxelPointsSampler(nn.Module):
             query_points_features = query_points_features[1].transpose(1, 2).squeeze()
         points_features = query_points_features[idx]
 
-        sampled_idx_ = sampled_idx.view(-1, 1).repeat(1, cur_points.shape[-1])
-        sampled_points = torch.gather(cur_points, 0, sampled_idx_).view(len(sampled_mask), num_sample, -1)
         sampled_mask = sampled_mask.bool()
-
+        sampled_idx_ = (sampled_idx*sampled_mask).view(-1, 1).repeat(1, cur_points.shape[-1])
+        sampled_points = torch.gather(cur_points, 0, sampled_idx_).view(len(sampled_mask), num_sample, -1)
         idx = idx * sampled_mask + idx_checkpoint
         sampled_points = torch.concat([sampled_points, idx[:, :, None]], dim=-1)
 
