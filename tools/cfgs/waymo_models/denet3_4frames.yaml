@@ -94,7 +94,7 @@ MODEL:
         USE_AUX_LOSS: True
         IOU_WEIGHT: [0.5,0.4]
 
-        PRE_AUG: False
+        PRE_AUG: True
 
         USE_POINTNET:
             ENABLE: True
@@ -115,7 +115,7 @@ MODEL:
             
 
         Transformer:
-            num_lidar_points: 196
+            num_lidar_points: 192
             pos_hidden_dim: 64
             enc_layers: 3
             dim_feedforward: 512
@@ -166,7 +166,7 @@ MODEL:
                 'rcnn_cls_weight': 1.0,
                 'rcnn_reg_weight': 1.0,
                 'rcnn_corner_weight': 2.0,
-                'joint_cls_weight': 1.0,
+                'joint_cls_weight': 0.0,
                 'traj_reg_weight': [2.0, 2.0, 2.0],
                 'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
             }

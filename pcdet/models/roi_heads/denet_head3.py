@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from pcdet.ops.iou3d_nms import iou3d_nms_utils
 from ...utils import common_utils, loss_utils
 from .roi_head_template import RoIHeadTemplate
-from ..model_utils.denet_utils import build_transformer, PointNet, MLP,SpatialMixerBlock, build_voxel_sampler_denet
+from ..model_utils.denet_utils import PointNet, MLP,SpatialMixerBlock, build_voxel_sampler_denet
 from ..model_utils.denet3_utils import build_transformer,unflatten,SpatialMixerBlockCompress
 from ..model_utils.msf_utils import build_voxel_sampler,build_voxel_sampler_traj
 from .msf_head import ProposalTargetLayerMPPNet
