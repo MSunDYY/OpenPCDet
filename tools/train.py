@@ -231,7 +231,7 @@ def main(args, cfgs):
     test_set, test_loader, sampler = build_dataloader(
         dataset_cfg=cfg.DATA_CONFIG,
         class_names=cfg.CLASS_NAMES,
-        batch_size=4,
+        batch_size=1,
         dist=dist_train, workers=args.workers, logger=logger, training=False
     )
     eval_output_dir = output_dir / 'eval' / 'eval_with_train'
