@@ -204,7 +204,7 @@ class Transformer(nn.Module):
         src = src.permute(1, 0, 2)
         memory, tokens = self.encoder(src, pos=pos)
 
-        memory = torch.cat(memory[0:1].chunk(4, dim=1), 0)
+        memory = torch.cat(memory[0:1].chunk(self.num_groups, dim=1), 0)
         return memory, tokens
 
 
@@ -292,12 +292,12 @@ class TransformerEncoderLayer(nn.Module):
         token = token + self.dropout2(src_summary)
         token = self.norm2(token)
         src = torch.cat([token, src[1:]], 0)
-        if self.config.get('SHRINK_POINTS'):
+        if self.config.get('SHRINK_POINTS',False):
             sampled_inds =torch.topk(weight.sum(1),k=weight.shape[1]//2)[1]
 
             src = torch.cat([token,torch.gather(src[1:],0,sampled_inds.transpose(0,1)[:,:,None].repeat(1,1,src.shape[-1]))],dim=0)
         if self.layer_count <= self.config.enc_layers - 1:
-            src_all_groups = src[1:].view((src.shape[0] - 1) * 4, -1, src.shape[-1])
+            src_all_groups = src[1:].view((src.shape[0] - 1) * self.num_groups, -1, src.shape[-1])
             src_groups_list = src_all_groups.chunk(self.num_groups, 0)
 
             src_all_groups = torch.stack(src_groups_list, 0)
@@ -316,7 +316,7 @@ class TransformerEncoderLayer(nn.Module):
 
             src = torch.cat([src[:1], src_inter_group_fusion], 0)
 
-        return src, torch.cat(src[:1].chunk(4, 1), 0)
+        return src, torch.cat(src[:1].chunk(self.num_groups, 1), 0)
 
     def forward_pre(self, src,
                     pos: Optional[Tensor] = None):
