@@ -345,7 +345,7 @@ class DENet3Head(RoIHeadTemplate):
         self.seqboxembed = PointNet(8,model_cfg=self.model_cfg)
 
         self.jointembed = MLP(self.hidden_dim*(self.num_groups+1), model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
-        self.jointclsembed = MLP(self.hidden_dim+256,256,1,num_layers=3)
+        self.jointclsembed = MLP(self.hidden_dim+256,256,1,num_layers=1)
         self.up_dimension_geometry = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
         # self.up_dimension_back = MLP(input_dim = 29, hidden_dim = 64, output_dim = hidden_dim, num_layers = 3)
         self.up_dimension_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
@@ -360,7 +360,7 @@ class DENet3Head(RoIHeadTemplate):
                                              nn.Dropout(0.2),
                                              nn.Conv1d(512,256,kernel_size=1),
                                              nn.BatchNorm1d(256),
-                                             nn.Dropout()
+                                             nn.ReLU(),
                                              )
         self.corner_features_emb = PointnetSAModuleMSG(
                 npoint=4096,

@@ -131,7 +131,7 @@ MODEL:
             sampler:
                 USE_SPHER: True
                 radius: [[0.4],[0.8]]
-                nsample: [[4],[4]]
+                nsample: [[8],[4]]
                 mlp: [[[64,96,96]],[[96,128,128]]]
             use_mlp_mixer:
                 enabled: True

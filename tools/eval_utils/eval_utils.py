@@ -139,8 +139,9 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
                 % (len(det_annos), total_pred_objects / max(1, len(det_annos))))
     if getattr(args, 'infer_time', False):
         logger.info('Average infer time %.4f/frame'%(infer_time_meter.avg))
-    with open(result_dir / 'result.pkl', 'wb') as f:
-        pickle.dump(det_annos, f)
+    if args.output_pkl:
+        with open(result_dir / 'result.pkl', 'wb') as f:
+            pickle.dump(det_annos, f)
 
     result_str, result_dict = dataset.evaluation(
         det_annos, class_names,
