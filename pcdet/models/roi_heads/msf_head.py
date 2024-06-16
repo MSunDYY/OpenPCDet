@@ -506,7 +506,7 @@ class MSFHead(RoIHeadTemplate):
         batch_dict['roi_scores'] = roi_scores[:,roi_scores.sum(0)>0]
         batch_dict['roi_boxes'] = batch_dict['roi_boxes'][:,0,:][:,roi_scores.sum(0)>0]
         batch_dict['roi_labels']  = batch_dict['roi_labels'][:,0,:][:,roi_scores.sum(0)>0]
-        batch_dict['num_frames'] = batch_dict['num_points_all'].shape[-1]
+        batch_dict['num_frames'] = self.model_cfg.Transformer.num_frames
         num_rois = batch_dict['roi_boxes'].shape[1]
         batch_dict['roi_labels'] = batch_dict['roi_labels'].long()
         batch_size = batch_dict['batch_size']
