@@ -9,7 +9,7 @@ from torch.nn.init import xavier_uniform_, zeros_, kaiming_normal_
 from spconv.pytorch.utils import PointToVoxel
 from pcdet.ops.box2map.box2map import sample_anchor, calculate_miou_gpu
 from ...ops.pointnet2.pointnet2_batch import pointnet2_modules
-
+import os
 from pcdet import device
 
 
@@ -592,6 +592,11 @@ class VoxelPointsSampler(nn.Module):
                 key_points, points_features, query_points_features = self.cylindrical_pool(key_points, cur_batch_boxes,
                                                                                            num_sample, gamma,
                                                                                            idx_checkpoint)
+                if True:
+                    root_data = '../../data/waymo/key_points/train/'
+                    os.makedirs(root_data+batch_dict['metadata'][0][:-4],exist_ok=True)
+                    np.save('../../data/waymo/key_points/train/'+batch_dict['metadata'][0][:-4]+'/%s.npy' % batch_dict['metadata'][0][-3:],key_points.cpu().numpy())
+
                 idx_checkpoint += query_points_features.shape[0]
                 src_points.append(key_points)
                 query_points_features_list.append(query_points_features)

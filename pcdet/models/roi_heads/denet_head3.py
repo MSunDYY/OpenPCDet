@@ -336,11 +336,7 @@ class DENet3Head(RoIHeadTemplate):
         self.num_groups = model_cfg.Transformer.num_groups
         self.voxel_sampler = build_voxel_sampler(device, return_point_feature=model_cfg.USE_POINTNET)
         self.grid_size = model_cfg.ROI_GRID_POOL.GRID_SIZE
-        self.conv = nn.Sequential(
-            nn.Conv1d(self.hidden_dim*2,self.hidden_dim,kernel_size=1,stride=1,padding=0),
-            nn.BatchNorm1d(self.hidden_dim),
-            # nn.ReLU(inplace=False),
-        )
+
         # self.cross = nn.ModuleList([CrossAttention(3,4,256,None) for i in range(4)])
         self.seqboxembed = PointNet(8,model_cfg=self.model_cfg)
 

@@ -36,7 +36,7 @@ def parse_config():
     parser.add_argument('--workers', type=int, default=4, help='number of workers for dataloader')
     parser.add_argument('--extra_tag', type=str, default='default', help='extra tag for this experiment')
     parser.add_argument('--ckpt', type=str,
-                        default='../output/waymo_models/msf_4frames/Interval1/ckpt/checkpoint_epoch_6.pth',
+                        default='../output/waymo_models/denet3_4frames/Interval1_preaug/ckpt/checkpoint_epoch_6.pth',
                         help='checkpoint to start from')
     parser.add_argument('--pretrained_model', type=str, default=None, help='pretrained_model')
     parser.add_argument('--launcher', choices=['none', 'pytorch', 'slurm'], default='none')
