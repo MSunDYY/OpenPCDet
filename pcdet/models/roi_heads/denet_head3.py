@@ -345,7 +345,7 @@ class DENet3Head(RoIHeadTemplate):
         self.seqboxembed = PointNet(8,model_cfg=self.model_cfg)
 
         self.jointembed = MLP(self.hidden_dim*(self.num_groups+1), model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
-        self.jointclsembed = MLP(self.hidden_dim+256,256,1,num_layers=1)
+        self.jointclsembed = MLP(self.hidden_dim+256,256,1,num_layers=2)
         self.up_dimension_geometry = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
         # self.up_dimension_back = MLP(input_dim = 29, hidden_dim = 64, output_dim = hidden_dim, num_layers = 3)
         self.up_dimension_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
@@ -903,7 +903,8 @@ class DENet3Head(RoIHeadTemplate):
         rcnn_reg = joint_reg
 
         if not self.training:
-            rcnn_cls = rcnn_cls[-rcnn_cls.shape[0]//self.num_enc_layer:]
+            # rcnn_cls = rcnn_cls[-rcnn_cls.shape[0]//self.num_enc_layer:]
+            rcnn_cls = joint_cls
             batch_cls_preds, batch_box_preds = self.generate_predicted_boxes(
                 batch_size=batch_dict['batch_size'], rois=batch_dict['roi_boxes'], cls_preds=rcnn_cls, box_preds=rcnn_reg
             )
