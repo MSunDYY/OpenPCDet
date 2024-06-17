@@ -42,7 +42,7 @@ def parse_config():
     parser.add_argument('--local_rank', type=int, default=0, help='local rank for distributed training')
     parser.add_argument('--max_ckpt_save_num', type=int, default=30, help='max number of saved checkpoint')
     parser.add_argument('--merge_all_iters_to_one_epoch', action='store_true', default=False, help='')
-    parser.add_argument('--set', dest='set_cfgs', default=None, nargs=argparse.REMAINDER,
+    parser.add_argument('--set', dest='set_cfgs', default=['DATA_CONFIG.SAMPLED_INTERVAL.train','1'], nargs=argparse.REMAINDER,
                         help='set extra config keys if needed')
     parser.add_argument('--max_waiting_mins', type=int, default=0, help='max waiting minutes')
     parser.add_argument('--start_epoch', type=int, default=0, help='')
