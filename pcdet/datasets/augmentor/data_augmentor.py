@@ -76,6 +76,19 @@ class DataAugmentor(object):
                     data_dict['anchors'].reshape(-1,dim),np.zeros([1,3]),return_flip= True,enable=enable
                 )
                 data_dict['anchors'] = anchors.reshape(num_rois,num_anchors,dim)
+            if enable:
+                if cur_axis=='x':
+                    T=np.array([[1,0,0,0],
+                                [0,-1,0,0],
+                                [0,0,1,0],
+                                [0,0,0,1]])
+                else:
+                    T=np.array([[-1,0,0,0],
+                                [0,1,0,0],
+                                [0,0,1,0],
+                                [0,0,0,1]])
+                for i in range(1,data_dict['num_points_all'].shape[0]):
+                    data_dict['poses'][4*i:4*(i+1)] = T@data_dict['poses'][4*i:4*(i+1)]@T
 
         data_dict['gt_boxes'] = gt_boxes
         data_dict['points'] = points
@@ -92,6 +105,15 @@ class DataAugmentor(object):
         gt_boxes, points, noise_rot = augmentor_utils.global_rotation(
             data_dict['gt_boxes'], data_dict['points'], rot_range=rot_range, return_rot=True
         )
+        rot_matrix = np.array([
+            [np.cos(noise_rot), np.sin(noise_rot), 0.,0.],
+            [-np.sin(noise_rot), np.cos(noise_rot), 0.,0.],
+            [0., 0., 1.,0.],
+            [0.,0.,0.,1.]
+        ])
+        for i in range(1,data_dict['num_points_all'].shape[0]):
+            data_dict['poses'][4*i:4*(i+1)] = np.linalg.inv(rot_matrix)@data_dict['poses'][4*i:4*(i+1)]@rot_matrix
+
         if 'roi_boxes' in data_dict.keys():
             num_frame, num_rois,dim = data_dict['roi_boxes'].shape
             roi_boxes, _, _ = augmentor_utils.global_rotation(

@@ -460,7 +460,12 @@ class DataProcessor(object):
                 # batch_trajectory_rois[index] = cur_trajectory_rois[:,sampled_inds]
             return batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_labels, batch_backward_rois[...,:-1], batch_valid_length
         with torch.no_grad():
-
+            if data_dict['roi_boxes'].shape[0]>1:
+                data_dict['proposal_list'] = np.copy(data_dict['roi_boxes'])
+                mask = data_dict['roi_boxes'][0,:,0]!=0
+                data_dict['roi_boxes'] = data_dict['roi_boxes'][0:1,mask]
+                data_dict['roi_scores'] = data_dict['roi_scores'][0:1,mask]
+                data_dict['roi_labels'] = data_dict['roi_labels'][0:1,mask]
             if not 'anchors' in data_dict.keys():
                 data_dict['anchors'] = np.transpose(data_dict['roi_boxes'],(1,0,2))
             data_dict['num_frames'] = config.NUM_FRAMES
