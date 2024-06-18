@@ -19,7 +19,7 @@ DATA_CONFIG:
     SEQUENCE_CONFIG:
         ENABLED: True
         SAMPLE_OFFSET: [-3,0]
-        USE_PRE_PREDBOX: False
+        USE_PRE_PREDBOX: True
 
     USE_PREDBOX: True
     ROI_BOXES_PATH: {
