@@ -826,6 +826,10 @@ class DENet3Head(RoIHeadTemplate):
         num_sample = self.num_lidar_points 
 
             # self.voxel_sampler_traj = build_voxel_sampler_traj(rois.device)
+        if self.training:
+            with torch.no_grad():
+                src_pre,query_points_features_re,query_points_bs_idx_pre = self.voxel_sampler(batch_size,batch_dict['roi_list'],batch_dict)
+
         src,query_points_features,query_points_bs_idx = self.voxel_sampler(batch_size, trajectory_rois, num_sample, batch_dict)
         # src1, src1_features, query_points_features = torch.zeros_like(src1),torch.zeros_like(src1_features),torch.zeros_like(query_points_features)
         src1, src_idx1 = src[..., :-1], src[..., -1].long()
