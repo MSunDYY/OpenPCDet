@@ -19,7 +19,7 @@ DATA_CONFIG:
     SEQUENCE_CONFIG:
         ENABLED: True
         SAMPLE_OFFSET: [-3,0]
-        USE_PRE_PREDBOX: True
+        USE_PRE_PREDBOX: False
 
     USE_PREDBOX: True
     ROI_BOXES_PATH: {
@@ -50,7 +50,7 @@ DATA_CONFIG:
                 'test': True
             }
         - NAME: anchor_aug
-          NUM_FRAMES: 1
+          NUM_FRAMES: 4
           ROI_PER_IMAGE: 96
           FG_RATIO: 0.5
           REG_AUG_METHOD: single

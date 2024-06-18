@@ -252,7 +252,6 @@ class WaymoDataset(DatasetTemplate):
         lidar_file = self.data_path / sequence_name / ('%04d.npy' % sample_idx)
         try:
             point_features = np.load(lidar_file)
-
         except:
             print(lidar_file)
             exit(0)
@@ -376,7 +375,7 @@ class WaymoDataset(DatasetTemplate):
 
 
         gt_boxes = [gt_boxes_cur]
-        if not transformed_points:
+        if not transformed_points and not self.dataset_cfg.get('GET_KEY_POINTS',False):
             for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
 
                 if self.use_shared_memory and os.path.exists('/dev/shm/' + sequence_name + '___' + str(sample_idx)):
@@ -442,7 +441,7 @@ class WaymoDataset(DatasetTemplate):
             num_points_all = np.array([num_pts_cur] + num_points_pre).astype(np.int32)
             poses = np.concatenate(pose_all, axis=0).astype(np.float32)
 
-        else:
+        elif not self.dataset_cfg.get('GET_KEY_POINTS',False):
             for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
                 pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
                 num_points_pre
@@ -450,7 +449,11 @@ class WaymoDataset(DatasetTemplate):
             num_points_all = [(points[:,-1]==0.1*i).sum() for i in range(len(sample_idx_pre_list)+1)]
             poses = np.concatenate(pose_all, axis=0).astype(np.float32)
             num_points_all = np.array(num_points_all)
-        
+        else:
+            key_points_root = Path('../../data/waymo/key_points')/self.mode/sequence_name
+            for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
+                key_points_file = key_points_root/('%03d.npy'%sample_idx_pre)
+                points_pre = np.load(key_points_file)
         if sequence_cfg.get('USE_PRE_PREDBOX',True):
             for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
                 if load_pred_boxes:
