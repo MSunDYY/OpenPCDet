@@ -590,7 +590,7 @@ class VoxelPointsSampler(nn.Module):
                 key_points = key_points[torch.randperm(len(key_points)), :]
 
 
-                if True:
+                if False:
                     root_data = '../../data/waymo/key_points/train/'
                     os.makedirs(root_data+batch_dict['metadata'][0][:-4],exist_ok=True)
                     np.save('../../data/waymo/key_points/train/'+batch_dict['metadata'][0][:-4]+'/0.4f.npy' % batch_dict['metadata'][0][-3:],key_points.cpu().numpy())

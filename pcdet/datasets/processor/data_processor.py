@@ -8,6 +8,7 @@ from ...utils import box_utils, common_utils
 from pcdet import device
 from pcdet.ops.roiaware_pool3d import roiaware_pool3d_utils
 from pcdet.ops.iou3d_nms import iou3d_nms_utils
+import torch.nn.functional as F
 tv = None
 try:
     import cumm.tensorview as tv
@@ -429,13 +430,14 @@ class DataProcessor(object):
                 batch_valid_length = cur_valid_length[:, sampled_inds]
 
             if config.USE_TRAJ_AUG.ENABLED:
+                roi_list = [] if data_dict.get('roi_list',None) is not None else None
                 batch_backward_rois_list = []
                 batch_trajectory_rois_list = []
                 for idx in range(0, batch_dict['num_frames']):
                     if idx == cur_frame_idx:
                         batch_backward_rois_list.append(
                             cur_backward_rois[cur_frame_idx:cur_frame_idx + 1, sampled_inds])
-
+                        roi_list.append(batch_backward_rois_list[-1][0])
                         continue
                     fg_backs, _ = self.aug_roi_by_noise_torch(cur_backward_rois[idx, fg_inds],
                                                               cur_backward_rois[idx, fg_inds][:, :8],
@@ -453,15 +455,24 @@ class DataProcessor(object):
 
                     batch_backward_rois_list.append(torch.cat([fg_backs, bg_backs], 0)[None, :, :])
                     # batch_trajectory_rois_list.append(torch.cat([fg_trajs,bg_trajs],0)[None,:,:])
+                    if roi_list is not None:
+                        roi_pre = data_dict['roi_list'][idx].clone()
+                        roi_pre[:,:3] = torch.matmul(torch.concat([roi_pre[:,:3],torch.ones(roi_pre.shape[0],1)],dim=-1),torch.from_numpy(data_dict['poses'][4*idx:4*(idx+1)]))[:,:3]
+                        iou3d_pre = iou3d_nms_utils.boxes_iou3d_cpu(batch_backward_rois_list[-1].squeeze()[:,:7],roi_pre[:,:7])
+                        roi_list.append(roi_pre[iou3d_pre.max(dim=0)[0]>0])
+                    
                 batch_backward_rois = torch.cat(batch_backward_rois_list, 0)
                 # batch_trajectory_rois[index] = torch.cat(batch_trajectory_rois_list,0)
             else:
                 batch_backward_rois = cur_backward_rois[:, sampled_inds]
                 # batch_trajectory_rois[index] = cur_trajectory_rois[:,sampled_inds]
+            if roi_list is not None:
+                max_num_rois = max([roi.shape[0] for roi in roi_list])
+                data_dict['roi_list'] = torch.stack([F.pad(roi,[0,0,0,max_num_rois-roi.shape[0]],value=0) for roi in roi_list])
             return batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_labels, batch_backward_rois[...,:-1], batch_valid_length
         with torch.no_grad():
             if data_dict['roi_boxes'].shape[0]>1:
-                data_dict['proposal_list'] = np.copy(data_dict['roi_boxes'])
+                data_dict['roi_list'] = torch.from_numpy(data_dict['roi_boxes'])
                 mask = data_dict['roi_boxes'][0,:,0]!=0
                 data_dict['roi_boxes'] = data_dict['roi_boxes'][0:1,mask]
                 data_dict['roi_scores'] = data_dict['roi_scores'][0:1,mask]

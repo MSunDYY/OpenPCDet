@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.utils.data as torch_data
-
+import torch.nn.functional as F
 from pcdet.utils import common_utils
 from pcdet.datasets.augmentor.data_augmentor import DataAugmentor
 from pcdet.datasets.processor.data_processor import DataProcessor
@@ -279,7 +279,9 @@ class DatasetTemplate(torch_data.Dataset):
                     for k in range(batch_size):
                         batch_gt_boxes3d[k, :, :val[k].shape[1], :] = val[k]
                     ret[key] = batch_gt_boxes3d
-
+                elif key in ['roi_list']:
+                    max_num_roi = max([x.shape[1] for x in val])
+                    ret[key] = torch.stack([F.pad(x,(0,0,0,max_num_roi-x.shape[1],0,0)) for x in val])
                 elif key in ['roi_scores', 'roi_labels']:
                     max_gt = max([x.shape[1] for x in val])
                     batch_gt_boxes3d = np.zeros((batch_size, val[0].shape[0], max_gt), dtype=np.float32)
