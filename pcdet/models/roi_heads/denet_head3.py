@@ -336,7 +336,7 @@ class DENet3Head(RoIHeadTemplate):
         self.num_groups = model_cfg.Transformer.num_groups
         self.voxel_sampler = build_voxel_sampler(device, return_point_feature=model_cfg.USE_POINTNET)
         self.grid_size = model_cfg.ROI_GRID_POOL.GRID_SIZE
-
+        self.pos_embding = nn.Linear(4,256)
         # self.cross = nn.ModuleList([CrossAttention(3,4,256,None) for i in range(4)])
         self.seqboxembed = PointNet(8,model_cfg=self.model_cfg)
 
@@ -441,7 +441,38 @@ class DENet3Head(RoIHeadTemplate):
         dis = dis / (diag_dist + 1e-5)
         src = torch.cat([dis, phi, the], dim = -1)
         return src
+    def points_features_pool(self, roi_boxes, query_points,query_boxes_idx, num_sample,):
 
+        sampled_points_list = []
+        sampled_points_features_list = []
+        for idx in range(query_boxes_idx.shape[0]-1):
+            cur_points = query_points[query_boxes_idx[idx]:query_boxes_idx[idx+1]]
+
+            cur_boxes = roi_boxes[idx]
+            if len(cur_points) < num_sample:
+                cur_points = F.pad(cur_points, [0, 0, 0, num_sample - len(cur_points)])
+            cur_radiis = torch.norm(cur_boxes[:, 3:5] / 2, dim=-1)
+            dis = torch.norm(
+                (cur_points[:, :2].unsqueeze(0) - cur_boxes[:, :2].unsqueeze(1).repeat(1, cur_points.shape[0], 1)), dim=2)
+            point_mask = (dis <= cur_radiis.unsqueeze(-1))
+            # valid_points_mask = (point_mask.sum(0))!=0
+            # cur_points,point_mask = cur_points[valid_points_mask],point_mask[:,valid_points_mask]
+
+            sampled_mask, sampled_idx = torch.topk(point_mask.float(), num_sample, 1)
+
+
+
+            sampled_mask = sampled_mask.bool()
+            sampled_idx_ = (sampled_idx*sampled_mask).view(-1, 1).repeat(1, cur_points.shape[-1])
+            sampled_points = torch.gather(cur_points, 0, sampled_idx_).view(len(sampled_mask), num_sample, -1)
+            # idx = idx * sampled_mask + idx_checkpoint
+            sampled_points_features_list.append(sampled_points[:,:,3:])
+            sampled_points = (sampled_points[:,:,:3]-cur_boxes[:,None,:3])/cur_radiis[:,None,None]
+            sampled_points_list.append(sampled_points)
+
+        sampled_points = torch.concat(sampled_points_list, 0)
+        sampled_points_features = torch.concat(sampled_points_features_list,0)
+        return sampled_points.transpose(0,1),sampled_points_features.transpose(0,1)
     def get_proposal_aware_trajectory_feature(self, src, batch_size, trajectory_rois, num_rois,valid_length):
         proposal_aware_feat_list = []
         
@@ -530,20 +561,20 @@ class DENet3Head(RoIHeadTemplate):
     
     def get_proposal_aware_geometry_single_feature(self, src, batch_size, rois, num_rois):
 
-        proposal_aware_feat_list = []
+
 
         
         corner_points, _ = self.get_corner_points_of_roi(rois.contiguous())
-
-        corner_points = corner_points.view(batch_size, num_rois, -1, corner_points.shape[-1])
-        corner_points = corner_points.view(batch_size * num_rois, -1)
-        roi_center = rois.contiguous().reshape(batch_size * num_rois, -1)[:, :3]
-        trajectory_roi_center = rois.contiguous().reshape(batch_size * num_rois, -1)[:, :3]
+        corner_points = corner_points.reshape(corner_points.shape[0],-1)
+        # corner_points = corner_points.view(batch_size, num_rois, -1, corner_points.shape[-1])
+        # corner_points = corner_points.view(batch_size * num_rois, -1)
+        # roi_center = rois.contiguous().reshape(batch_size * num_rois, -1)[:, :3]
+        trajectory_roi_center = rois[:, :3]
 
         corner_add_center_points = torch.cat([corner_points, trajectory_roi_center], dim=-1)
         proposal_aware_feat = src[:, :, :3].repeat(1, 1,9) - corner_add_center_points.unsqueeze(1).repeat(1, self.num_lidar_points, 1)
 
-        lwh = rois.reshape(batch_size * num_rois, -1)[:, 3:6].unsqueeze(1).repeat(1,proposal_aware_feat.shape[1], 1)
+        lwh = rois[:, 3:6].unsqueeze(1).repeat(1,proposal_aware_feat.shape[1], 1)
         diag_dist = (lwh[:, :, 0] ** 2 + lwh[:, :, 1] ** 2 + lwh[:, :, 2] ** 2) ** 0.5
         proposal_aware_feat = self.spherical_coordinate(proposal_aware_feat, diag_dist=diag_dist.unsqueeze(-1))
         # proposal_aware_feat_list.append(proposal_aware_feat)
@@ -803,7 +834,9 @@ class DENet3Head(RoIHeadTemplate):
 
         return backward_rois,trajectory_rois
        
-
+    def pos_offset_encoding(self,src,boxes):
+        radiis = torch.norm(boxes[:,3:5]/2,dim=-1)
+        return src-boxes[None,:,:3]/radiis[None,:,None]
 
     def forward(self, batch_dict):
         """
@@ -842,7 +875,7 @@ class DENet3Head(RoIHeadTemplate):
             batch_dict['roi_labels'] = targets_dict['roi_labels']
             targets_dict['trajectory_rois'][:, batch_dict['cur_frame_idx'], :, :] = batch_dict['roi_boxes']
             trajectory_rois = targets_dict['trajectory_rois']
-
+            roi_boxes = targets_dict['rois']
             empty_mask = batch_dict['roi_boxes'][:,:,:6].sum(-1)==0
             valid_length = targets_dict['valid_length']
         else:
@@ -857,67 +890,75 @@ class DENet3Head(RoIHeadTemplate):
         if self.training:
             with torch.no_grad():
                 num_rois_pre = batch_dict['roi_list'].shape[-2]
-                roi_list_pre = batch_dict['roi_list'][:,1:].transpose(0,1).flatten(0,1)
-                num_rois = [(roi_list_pre[i,:,0]!=0).sum() for i in range(roi_list_pre.shape[0])]
-                roi_list_pre = torch.concat([roi_list_pre[i,:num_rois[i]] for i in range(roi_list_pre.shape[0])])
-                src_pre,query_points_features_pre,query_points_bs_idx_pre = self.voxel_sampler(batch_size,roi_list_pre,num_sample,batch_dict)
+                roi_list = batch_dict['roi_list'][:,1:].transpose(0,1).flatten(0,1)
+                # roi_list_pre = batch_dict['roi_list'][:,1:].transpose(0,1).flatten(0,1)
+                num_rois = torch.tensor([0]+[(roi_list[i,:,0]!=0).sum() for i in range(roi_list.shape[0])],device=device)
+
+                roi_list = torch.concat([roi_list[i,:num_rois[i+1]] for i in range(roi_list.shape[0])])
+                num_rois = torch.cumsum(num_rois, dim=0)
+                src_pre,query_points_features_pre,query_points_bs_idx_pre = self.voxel_sampler(batch_size,roi_list,num_sample,batch_dict,start_idx=1,num_rois=num_rois)
                 
                 # src_pre,query_points_features_re,query_points_bs_idx_pre = self.voxel_sampler(batch_size,batch_dict['roi_list'],num_sample,batch_dict,start_idx=1)
                 src_pre,src_idx_pre = src_pre[...,:-1],src_pre[...,-1].long()
-                batch_dict['src_idx1'] = src_idx_pre.view(batch_size*num_rois_pre,num_frames-1,-1).permute(2,1,0).reshape(
-                    -1,batch_size*num_rois_pre*(num_frames-1))
-                batch_dict['query_points_features1'] = query_points_features_re
+                batch_dict['num_rois'] = num_rois
+                batch_dict['src_idx1'] = src_idx_pre.transpose(0,1)
+                batch_dict['query_points_features1'] = query_points_features_pre
                 batch_dict['query_points_idx_bs1'] = query_points_bs_idx_pre
-                src_pre = src_pre.view(batch_size*num_rois_pre,num_frames-1,-1,src_pre.shape[-1]).transpose(0,1).flatten(0,1)
-                rois_pre = batch_dict['roi_list'][:,1:].flatten(0,1)
-                src_pre = self.get_proposal_aware_geometry_single_feature(src_pre, batch_size*(num_frames-1), rois_pre,
-                                                                   num_rois_pre)
-                corner_points_pre,_ = self.get_corner_proxy_points_of_roi(rois_pre.reshape(-1,rois_pre.shape[-1]),grid_size = self.grid_size)
-                corner_points_pre = unflatten(corner_points_pre, dim=0, sizes=(batch_size*(num_frames-1), -1))[0].contiguous()
+                # src_pre = src_pre.view(batch_size*num_rois_pre,num_frames-1,-1,src_pre.shape[-1]).transpose(0,1).flatten(0,1)
+                # rois_pre = batch_dict['roi_list'][:,1:].flatten(0,1)
+                src_pre = self.get_proposal_aware_geometry_single_feature(src_pre, batch_size*(num_frames-1), roi_list,
+                                                                   num_rois)
+                corner_points_pre,_ = self.get_corner_proxy_points_of_roi(roi_list,grid_size = self.grid_size)
+                # corner_points_pre = unflatten(corner_points_pre, dim=0, sizes=(batch_size*(num_frames-1), -1))[0].contiguous()
                 hs, tokens = self.transformer(src_pre, batch_dict, pos=None)
                 query_points_features_pre = batch_dict['query_points_features3'].detach()
-                query_points_idx_bs_pre = batch_dict['query_points_idx_bs3'].detach()
-                query_points_idx_bs_pre =F.pad(torch.cumsum(query_points_idx_bs_pre,dim=0),(1,0),value=0)
+                query_points_bs_idx_pre = batch_dict['query_points_idx_bs3'].detach()
+                query_points_bs_idx_pre =F.pad(torch.cumsum(query_points_bs_idx_pre,dim=0),(1,0),value=0)
                 
                 for idx in range(num_frames-1):
                     for bs in range(batch_size):
-                        query_points_single = query_points_features_pre[query_points_idx_bs_pre[idx*batch_size+bs]:query_points_idx_bs_pre[idx*batch_size+bs+1]]
-                        query_points_single[:,:3] = torch.matmul(F.pad(query_points_single[:,:3],(0,1,0,0),0),batch_dict['poses'][bs,(idx+1)*4:(idx+2)*4])[:,:3]
-        
-        
-        src,query_points_features,query_points_bs_idx = self.voxel_sampler(batch_size, trajectory_rois, num_sample, batch_dict)
+                        query_points_single = query_points_features_pre[query_points_bs_idx_pre[idx*batch_size+bs]:query_points_bs_idx_pre[idx*batch_size+bs+1]]
+                        query_points_single[:,:3] = torch.matmul(F.pad(query_points_single[:,:3],(0,1,0,0),value=0),batch_dict['poses'][bs,(idx+1)*4:(idx+2)*4])[:,:3]
+        roi_boxes = roi_boxes.reshape(-1,roi_boxes.shape[-1])
+        num_rois = torch.cumsum(torch.tensor([0]+[batch_dict['roi_boxes'][i].shape[0] for i in range(batch_size)],device=device),dim=0)
+        src,query_points_features,query_points_bs_idx = self.voxel_sampler(batch_size, roi_boxes, num_sample, batch_dict,start_idx=0,num_rois=num_rois)
         # src1, src1_features, query_points_features = torch.zeros_like(src1),torch.zeros_like(src1_features),torch.zeros_like(query_points_features)
         src1, src_idx1 = src[..., :-1], src[..., -1].long()
-        batch_dict['src_idx1'] = src_idx1.view(batch_size * num_rois , num_frames, -1).permute(2, 1,0).reshape(
-            -1, batch_size * num_rois * num_frames)
+        batch_dict['src_idx1'] = src_idx1.transpose(0,1)
         batch_dict['query_points_features1'] = query_points_features
         batch_dict['query_points_idx_bs1'] = query_points_bs_idx
 
-        src1 = src1.view(batch_size * num_rois, -1,src1.shape[-1])
+        # src1 = src1.view(batch_size * num_rois, -1,src1.shape[-1])
 
-        # src2 = src2.view(batch_size * num_rois,-1,src2.shape[-1])
-        # xyz1 = src1[:, :, :3]
         trajectory_rois = trajectory_rois.view(batch_size, num_frames, -1, trajectory_rois.shape[-1])
         # xyz2 = src2[:, :, :3]
-        src_trajectory_feature = self.get_proposal_aware_geometry_feature(src1, batch_size, trajectory_rois,
+        src_trajectory_feature = self.get_proposal_aware_geometry_single_feature(src1, batch_size, roi_boxes,
                                                                           num_rois)
-        # src_trajectory_feature = self.get_proposal_aware_geometry_feature(src2, batch_size, trajectory_rois, num_rois)
 
         # src_motion_feature = self.get_proposal_aware_motion_feature(src1, batch_size, trajectory_rois, num_rois)
 
-
-        src1 = src_trajectory_feature + src_motion_feature
+        src1 = src_trajectory_feature
 
         # box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
 
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK', None):
             src1[empty_mask.view(-1)] = 0
             # src2[empty_mask.view(-1)] = 0
-        corner_points,_ = self.get_corner_proxy_points_of_roi(trajectory_rois.transpose(0,1).reshape(-1,trajectory_rois.shape[-1]),grid_size=3)
-        corner_points = unflatten(corner_points,dim=0,sizes = (num_frames,-1))[0].contiguous()
+        corner_points,_ = self.get_corner_proxy_points_of_roi(roi_boxes,grid_size=3)
+        # corner_points = unflatten(corner_points,dim=0,sizes = (num_frames,-1))[0].contiguous()
         hs, tokens = self.transformer(src1, batch_dict, pos=None)
+        final_src = batch_dict['final_src_xyz']
+        final_src_features = batch_dict['final_src_points_features']
+        final_src = self.pos_offset_encoding(final_src,roi_boxes)
+        pre_src,pre_src_features = self.points_features_pool(trajectory_rois[:,1:].transpose(0,1).flatten(0,1),query_points_features_pre,query_points_bs_idx_pre,num_sample=final_src.shape[0])
+        pre_src = pre_src.unflatten(1,(num_frames-1,-1))
+        src_all = torch.concat([final_src.unsqueeze(1),pre_src],dim=1)
+        time_offset = torch.arange(num_frames,device=device)[None,:,None,None].repeat(src_all.shape[0],1,src_all.shape[2],1)
+        src_all = torch.concat([src_all,time_offset],dim=-1)
+        src_all = self.pos_embding(src_all)
+        final_src_features = self.points_attention(final_src_features,pre_src_features,src_all[:,0],src_all[:,1:].flatten(0,1))
 
-        corner_points_features = self.corner_features_emb(batch_dict['final_src_xyz'],batch_dict['final_src_points_features'].transpose(1,2).contiguous(),corner_points)[1]
+        corner_points_features = self.corner_features_emb(batch_dict['final_src_xyz'].transpose(0,1).contiguous(),batch_dict['final_src_points_features'].transpose(1,2).contiguous(),corner_points)[1]
         # points_features = corner_points_features.view(corner_points_features.shape[0],-1)
         points_features = self.compress_points(corner_points_features.view(corner_points_features.shape[0],-1,1)).squeeze()
         # points_cls = self.points_feature_cls(points_features)

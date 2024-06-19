@@ -555,19 +555,20 @@ class VoxelPointsSampler(nn.Module):
     def get_output_feature_dim(self):
         return self.num_point_features
 
-    def forward(self, batch_size, trajectory_rois, num_sample, batch_dict,start_idx=0):
+    def forward(self, batch_size, trajectory_rois, num_sample, batch_dict,start_idx=0,num_rois=None):
         src = list()
         query_points_features_list = list()
         idx_checkpoint = 0
         gamma = self.GAMMA
-        for idx in range(start_idx,trajectory_rois.shape[1]):
-            cur_time_points = batch_dict['points'][batch_dict['points'][:, -1] == 0.1 * idx][:, :-1]
-            cur_time_boxes = trajectory_rois[:, idx]
-            src_points = list()
+        num_frames = int((batch_dict['points'][:,-1].max()*10).item())+1 if start_idx>0 else 1
+        for idx in range(num_frames-start_idx):
+            cur_time_points = batch_dict['points'][batch_dict['points'][:, -1] == 0.1 * (idx+start_idx)][:, :-1]
+
+
             for bs_idx in range(batch_size):
                 cur_batch_points = cur_time_points[cur_time_points[:, 0] == bs_idx, 1:].contiguous()
-                cur_batch_boxes = cur_time_boxes[bs_idx]
-                if idx==0:
+                cur_batch_boxes = trajectory_rois[num_rois[idx*batch_size+bs_idx]:num_rois[idx*batch_size+bs_idx+1]]
+                if start_idx==0 and idx==0:
                     
                     voxel, coords, num_points = self.gen(cur_batch_points)
                     coords = coords[:, [2, 1]].contiguous()
@@ -597,13 +598,13 @@ class VoxelPointsSampler(nn.Module):
                                                                                            idx_checkpoint)
 
                 idx_checkpoint += query_points_features.shape[0]
-                src_points.append(key_points)
+                src.append(key_points)
                 query_points_features_list.append(query_points_features)
-            src.append(torch.stack(src_points))
+            # src.append(torch.stack(src_points))
         query_points_bs_idx = torch.tensor([points.shape[0] for points in query_points_features_list],
                                            dtype=torch.int32, device=device)
         query_points_features = torch.concat(query_points_features_list, dim=0)
-        return torch.stack(src).permute(1, 2, 0, 3, 4).flatten(2, 3), query_points_features, query_points_bs_idx
+        return torch.concat(src,dim=0), query_points_features, query_points_bs_idx
 
     def forward1(self, batch_size, trajectory_rois, num_sample, batch_dict):
 

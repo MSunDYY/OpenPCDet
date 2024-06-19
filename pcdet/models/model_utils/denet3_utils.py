@@ -360,7 +360,7 @@ class TransformerEncoderLayer(nn.Module):
         src_idx = batch_dict['src_idx'+str(self.layer_count)]
         query_points_idx_bs = batch_dict['query_points_idx_bs'+str(self.layer_count)]
         src_intra_group_fusion,weight = self.mlp_mixer_3d(src[1:],return_weight=True)
-
+        num_rois = batch_dict['num_rois']
         # src_intra_group_fusion = torch.concat([src_intra_group_fusion, src[1:,:,self.config.hidden_dim:]], dim=-1)
 
         token = src[:1]
@@ -385,9 +385,11 @@ class TransformerEncoderLayer(nn.Module):
             # src = torch.cat([src[:1],src_intra_group_fusion],0)
             sampled_inds = torch.topk(weight, dim=0, k=weight.shape[0] // 2)[1]
             new_src_idx = torch.gather(src_idx, 0, sampled_inds)
-            new_src_idx = new_src_idx.transpose(0, 1).reshape(batch_dict['num_frames'] * batch_dict['batch_size'], -1)
+            new_query_idx = [torch.unique(new_src_idx[:,num_rois[i]:num_rois[i+1]]) for i in range(num_rois.shape[0]-1)]
 
-            new_query_idx = [torch.unique(new_src_idx[i]) for i in range(new_src_idx.shape[0])]
+            # new_src_idx = new_src_idx.transpose(0, 1).reshape(batch_dict['num_frames'] * batch_dict['batch_size'], -1)
+
+            # new_query_idx = [torch.unique(new_src_idx[i]) for i in range(new_src_idx.shape[0])]
             new_query_idx_bs = torch.tensor([i.shape[0] for i in new_query_idx],device=device,dtype=torch.int32)
             new_query_idx = torch.concat(new_query_idx,dim=0)
             # num_new_query = max([n.shape[0] for n in new_query_idx])
@@ -437,18 +439,18 @@ class TransformerEncoderLayer(nn.Module):
             src = torch.cat([src[:1],src_inter_group_fusion],0)
 
         else:
-            new_src_idx = src_idx
-            new_src_idx = new_src_idx.transpose(0, 1).flatten()
+            new_src_idx = src_idx.flatten(0,1)
+
             # new_query_idx = [torch.unique(new_query_idx[i]) for i in range(new_query_idx.shape[0])]
             # num_new_query = max([n.shape[0] for n in new_query_idx])
             # new_query_idx = torch.stack([F.pad(n, (0, num_new_query - n.shape[0])) for n in new_query_idx])
             new_src_xyz, new_src_features = torch.split(torch.gather(query_points_features, 0,
                                                                          new_src_idx[:, None].repeat(1, query_points_features.shape[-1])),
                                                             [3, query_points_features.shape[-1] - 3], dim=-1)
-            new_src_points_features = new_src_features.reshape(-1,src.shape[0]-1,new_src_features.shape[-1])
-            new_src_xyz = new_src_xyz.reshape(-1,src.shape[0]-1,new_src_xyz.shape[-1])
-            new_src_points_features = unflatten(new_src_points_features,dim=0,sizes=(batch_dict['num_frames'],-1))[0]
-            new_src_xyz = unflatten(new_src_xyz,dim=0,sizes = (batch_dict['num_frames'],-1))[0]
+            new_src_points_features = new_src_features.reshape(src.shape[0]-1,-1,new_src_features.shape[-1])
+            new_src_xyz = new_src_xyz.reshape(src.shape[0]-1,-1,new_src_xyz.shape[-1])
+            # new_src_points_features = unflatten(new_src_points_features,dim=0,sizes=(batch_dict['num_frames'],-1))[0]
+            # new_src_xyz = unflatten(new_src_xyz,dim=0,sizes = (batch_dict['num_frames'],-1))[0]
             batch_dict['final_src_points_features'] = new_src_points_features
             batch_dict['final_src_xyz'] = new_src_xyz.contiguous()
         return src, torch.cat(src[:1].chunk(self.num_groups,1),0)

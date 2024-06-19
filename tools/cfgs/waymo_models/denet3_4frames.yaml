@@ -59,8 +59,11 @@ DATA_CONFIG:
           USE_ROI_AUG: True
           USE_BG_ROI_AUG: False
           USE_TRAJ_AUG:
-              ENABLED: True
+              ENABLED: False
               THRESHOD: 0.8
+          USE_ROI_LIST:
+              ENABLED: True
+              MAX_ROI: 150
           SAMPLE_ROI_BY_EACH_CLASS: True
           CLS_SCORE_TYPE: roi_iou
 
