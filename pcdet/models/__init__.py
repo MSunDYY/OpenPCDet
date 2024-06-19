@@ -21,7 +21,7 @@ def build_network(model_cfg, num_class, dataset):
 def load_data_to_gpu(batch_dict):
 
     for key, val in batch_dict.items():
-        if key == 'camera_imgs':
+        if key in ['camera_imgs','roi_list']:
             batch_dict[key] = val.to(device)
         elif not isinstance(val, np.ndarray):
             if key=='targets_dict':

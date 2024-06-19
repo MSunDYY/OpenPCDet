@@ -555,41 +555,38 @@ class VoxelPointsSampler(nn.Module):
     def get_output_feature_dim(self):
         return self.num_point_features
 
-    def forward(self, batch_size, trajectory_rois, num_sample, batch_dict):
+    def forward(self, batch_size, trajectory_rois, num_sample, batch_dict,start_idx=0):
         src = list()
         query_points_features_list = list()
         idx_checkpoint = 0
         gamma = self.GAMMA
-        for idx in range(trajectory_rois.shape[1]):
+        for idx in range(start_idx,trajectory_rois.shape[1]):
             cur_time_points = batch_dict['points'][batch_dict['points'][:, -1] == 0.1 * idx][:, :-1]
             cur_time_boxes = trajectory_rois[:, idx]
             src_points = list()
             for bs_idx in range(batch_size):
                 cur_batch_points = cur_time_points[cur_time_points[:, 0] == bs_idx, 1:].contiguous()
-
                 cur_batch_boxes = cur_time_boxes[bs_idx]
-                voxel, coords, num_points = self.gen(cur_batch_points)
-                coords = coords[:, [2, 1]].contiguous()
+                if idx==0:
+                    
+                    voxel, coords, num_points = self.gen(cur_batch_points)
+                    coords = coords[:, [2, 1]].contiguous()
+                    query_coords = (cur_batch_boxes[:, :2] - self.pc_start) // self.voxel_size
+                    radiis = torch.ceil(
+                        torch.norm(cur_batch_boxes[:, 3:5] / 2, dim=-1) * gamma * 1.2 / self.voxel_size)
 
-                query_coords = (cur_batch_boxes[:, :2] - self.pc_start) // self.voxel_size
+                    dist = torch.abs(query_coords[:, None, :2] - coords[None, :, :])
+                    voxel_mask = torch.all(dist < radiis[:, None, None], dim=-1).any(0)
+                    num_points = num_points[voxel_mask]
+                    key_points = voxel[voxel_mask, :]
 
-                radiis = torch.ceil(
-                    torch.norm(cur_batch_boxes[:, 3:5] / 2, dim=-1) * gamma * 1.2 / self.voxel_size)
+                    point_mask = torch.arange(self.k)[None, :].repeat(len(key_points), 1).type_as(num_points)
 
-                dist = torch.abs(query_coords[:, None, :2] - coords[None, :, :])
-
-                voxel_mask = torch.all(dist < radiis[:, None, None], dim=-1).any(0)
-
-                num_points = num_points[voxel_mask]
-                key_points = voxel[voxel_mask, :]
-
-                point_mask = torch.arange(self.k)[None, :].repeat(len(key_points), 1).type_as(num_points)
-
-                point_mask = num_points[:, None] > point_mask
-                key_points = key_points[point_mask]
-                key_points = key_points[torch.randperm(len(key_points)), :]
-
-
+                    point_mask = num_points[:, None] > point_mask
+                    key_points = key_points[point_mask]
+                    key_points = key_points[torch.randperm(len(key_points)), :]
+                else:
+                    key_points = cur_batch_points
                 if False:
                     root_data = '../../data/waymo/key_points/train/'
                     os.makedirs(root_data+batch_dict['metadata'][0][:-4],exist_ok=True)

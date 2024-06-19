@@ -527,6 +527,34 @@ class DENet3Head(RoIHeadTemplate):
         proxy_point_motion_feat = self.up_dimension_motion(proposal_aware_feat)
 
         return proxy_point_motion_feat
+    
+    def get_proposal_aware_geometry_single_feature(self, src, batch_size, rois, num_rois):
+
+        proposal_aware_feat_list = []
+
+        
+        corner_points, _ = self.get_corner_points_of_roi(rois.contiguous())
+
+        corner_points = corner_points.view(batch_size, num_rois, -1, corner_points.shape[-1])
+        corner_points = corner_points.view(batch_size * num_rois, -1)
+        roi_center = rois.contiguous().reshape(batch_size * num_rois, -1)[:, :3]
+        trajectory_roi_center = rois.contiguous().reshape(batch_size * num_rois, -1)[:, :3]
+
+        corner_add_center_points = torch.cat([corner_points, trajectory_roi_center], dim=-1)
+        proposal_aware_feat = src[:, :, :3].repeat(1, 1,9) - corner_add_center_points.unsqueeze(1).repeat(1, self.num_lidar_points, 1)
+
+        lwh = rois.reshape(batch_size * num_rois, -1)[:, 3:6].unsqueeze(1).repeat(1,proposal_aware_feat.shape[1], 1)
+        diag_dist = (lwh[:, :, 0] ** 2 + lwh[:, :, 1] ** 2 + lwh[:, :, 2] ** 2) ** 0.5
+        proposal_aware_feat = self.spherical_coordinate(proposal_aware_feat, diag_dist=diag_dist.unsqueeze(-1))
+        # proposal_aware_feat_list.append(proposal_aware_feat)
+        # time_stamp = [proposal_aware_feat.new_ones(proposal_aware_feat.shape[0],self.num_lidar_points,1)*i*0.1 for i in range(self.num_groups)]
+        # time_stamp = torch.concat(time_stamp,1)
+        # proposal_aware_feat = torch.cat(proposal_aware_feat_list, dim=1)
+        proposal_aware_feat = torch.cat([proposal_aware_feat, src[:, :, 3:]], dim=-1)
+
+        src_gemoetry = self.up_dimension_geometry(proposal_aware_feat)
+
+        return src_gemoetry
 
     def get_proposal_aware_geometry_feature(self, src, batch_size, trajectory_rois, num_rois):
 
@@ -782,7 +810,7 @@ class DENet3Head(RoIHeadTemplate):
         :param input_data: input dict
         :return:
         """
-        num_frames = self.model_cfg.Transformer.num_groups
+        num_frames = self.model_cfg.Transformer.num_frames_all
         roi_scores = batch_dict['roi_scores'][:, 0, :]
         batch_dict['roi_scores'] = roi_scores[:,roi_scores.sum(0)>0]
         batch_dict['proposals_list'] = batch_dict['roi_boxes']
@@ -828,8 +856,35 @@ class DENet3Head(RoIHeadTemplate):
             # self.voxel_sampler_traj = build_voxel_sampler_traj(rois.device)
         if self.training:
             with torch.no_grad():
-                src_pre,query_points_features_re,query_points_bs_idx_pre = self.voxel_sampler(batch_size,batch_dict['roi_list'],batch_dict)
-
+                num_rois_pre = batch_dict['roi_list'].shape[-2]
+                roi_list_pre = batch_dict['roi_list'][:,1:].transpose(0,1).flatten(0,1)
+                num_rois = [(roi_list_pre[i,:,0]!=0).sum() for i in range(roi_list_pre.shape[0])]
+                roi_list_pre = torch.concat([roi_list_pre[i,:num_rois[i]] for i in range(roi_list_pre.shape[0])])
+                src_pre,query_points_features_pre,query_points_bs_idx_pre = self.voxel_sampler(batch_size,roi_list_pre,num_sample,batch_dict)
+                
+                # src_pre,query_points_features_re,query_points_bs_idx_pre = self.voxel_sampler(batch_size,batch_dict['roi_list'],num_sample,batch_dict,start_idx=1)
+                src_pre,src_idx_pre = src_pre[...,:-1],src_pre[...,-1].long()
+                batch_dict['src_idx1'] = src_idx_pre.view(batch_size*num_rois_pre,num_frames-1,-1).permute(2,1,0).reshape(
+                    -1,batch_size*num_rois_pre*(num_frames-1))
+                batch_dict['query_points_features1'] = query_points_features_re
+                batch_dict['query_points_idx_bs1'] = query_points_bs_idx_pre
+                src_pre = src_pre.view(batch_size*num_rois_pre,num_frames-1,-1,src_pre.shape[-1]).transpose(0,1).flatten(0,1)
+                rois_pre = batch_dict['roi_list'][:,1:].flatten(0,1)
+                src_pre = self.get_proposal_aware_geometry_single_feature(src_pre, batch_size*(num_frames-1), rois_pre,
+                                                                   num_rois_pre)
+                corner_points_pre,_ = self.get_corner_proxy_points_of_roi(rois_pre.reshape(-1,rois_pre.shape[-1]),grid_size = self.grid_size)
+                corner_points_pre = unflatten(corner_points_pre, dim=0, sizes=(batch_size*(num_frames-1), -1))[0].contiguous()
+                hs, tokens = self.transformer(src_pre, batch_dict, pos=None)
+                query_points_features_pre = batch_dict['query_points_features3'].detach()
+                query_points_idx_bs_pre = batch_dict['query_points_idx_bs3'].detach()
+                query_points_idx_bs_pre =F.pad(torch.cumsum(query_points_idx_bs_pre,dim=0),(1,0),value=0)
+                
+                for idx in range(num_frames-1):
+                    for bs in range(batch_size):
+                        query_points_single = query_points_features_pre[query_points_idx_bs_pre[idx*batch_size+bs]:query_points_idx_bs_pre[idx*batch_size+bs+1]]
+                        query_points_single[:,:3] = torch.matmul(F.pad(query_points_single[:,:3],(0,1,0,0),0),batch_dict['poses'][bs,(idx+1)*4:(idx+2)*4])[:,:3]
+        
+        
         src,query_points_features,query_points_bs_idx = self.voxel_sampler(batch_size, trajectory_rois, num_sample, batch_dict)
         # src1, src1_features, query_points_features = torch.zeros_like(src1),torch.zeros_like(src1_features),torch.zeros_like(query_points_features)
         src1, src_idx1 = src[..., :-1], src[..., -1].long()
@@ -848,25 +903,11 @@ class DENet3Head(RoIHeadTemplate):
                                                                           num_rois)
         # src_trajectory_feature = self.get_proposal_aware_geometry_feature(src2, batch_size, trajectory_rois, num_rois)
 
-        src_motion_feature = self.get_proposal_aware_motion_feature(src1, batch_size, trajectory_rois, num_rois)
-        # src_motion_feature2 = self.get_proposal_aware_motion_feature(src2,batch_size,trajectory_rois,num_rois)
+        # src_motion_feature = self.get_proposal_aware_motion_feature(src1, batch_size, trajectory_rois, num_rois)
+
 
         src1 = src_trajectory_feature + src_motion_feature
-        # src2 = src_trajectory_feature+src_motion_feature2
-        # src1 = src1.reshape(-1, batch_dict['num_anchors'], src1.shape[-2], src1.shape[-1])
-        # src1_features = src1_features.view(batch_size * num_rois , -1, src1_features.shape[-1])
-        # if self.model_cfg.get('USE_POINTNET', False):
-        #     src1 = self.fuse(torch.concat(
-        #         [src1.transpose(1, 2).reshape(-1, src1.shape[-2], self.num_anchors * self.hidden_dim),
-        #          src1_features], dim=-1))
-        # else:
-        #     src1 = self.fuse(src1.transpose(1, 2).reshape(-1, src1.shape[-2], self.num_anchors * self.hidden_dim))
-        # src1 = src1.reshape(-1,src1.shape[-2],self.num_anchors*self.hidden_dim)
-        # src1 = self.fuse(src1.transpose(1, 2).reshape(-1, src1.shape[-2], self.hidden_dim))
 
-        # num_rois_all = src1.shape[0]
-        # src = src_geometry_feature + src_motion_feature
-        # src = self.conv(torch.concat([src_trajectory_feature,src_backward_feature],dim=-1).permute(0,2,1)).permute(0,2,1)
         # box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
 
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK', None):
