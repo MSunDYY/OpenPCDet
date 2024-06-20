@@ -8,7 +8,7 @@ from pcdet.ops.iou3d_nms import iou3d_nms_utils
 from ...utils import common_utils, loss_utils
 from .roi_head_template import RoIHeadTemplate
 from ..model_utils.denet_utils import PointNet, MLP,SpatialMixerBlock, build_voxel_sampler_denet
-from ..model_utils.denet3_utils import build_transformer,unflatten,SpatialMixerBlockCompress
+from ..model_utils.denet3_utils import build_transformer,unflatten,SpatialMixerBlockCompress,CrossMixerBlock
 from ..model_utils.msf_utils import build_voxel_sampler,build_voxel_sampler_traj
 from .msf_head import ProposalTargetLayerMPPNet
 from .target_assigner.proposal_target_layer import ProposalTargetLayer
@@ -336,16 +336,15 @@ class DENet3Head(RoIHeadTemplate):
         self.num_groups = model_cfg.Transformer.num_groups
         self.voxel_sampler = build_voxel_sampler(device, return_point_feature=model_cfg.USE_POINTNET)
         self.grid_size = model_cfg.ROI_GRID_POOL.GRID_SIZE
-        self.pos_embding = nn.Linear(4,256)
+        self.pos_embding = nn.Linear(4,128)
         # self.cross = nn.ModuleList([CrossAttention(3,4,256,None) for i in range(4)])
         self.seqboxembed = PointNet(8,model_cfg=self.model_cfg)
 
         self.jointembed = MLP(self.hidden_dim*(self.num_groups+1), model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
         self.jointclsembed = MLP(self.hidden_dim+256,256,1,num_layers=2)
         self.up_dimension_geometry = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
-        # self.up_dimension_back = MLP(input_dim = 29, hidden_dim = 64, output_dim = hidden_dim, num_layers = 3)
         self.up_dimension_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
-        # self.up_dimension_back_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
+        self.points_box_reg = MLP(256,256,7,3)
 
         self.transformer = build_transformer(model_cfg.Transformer)
         # self.transformer2 = build_transformer3(model_cfg.Transformer)
@@ -368,15 +367,31 @@ class DENet3Head(RoIHeadTemplate):
             )
         self.class_embed = nn.ModuleList()
         self.class_embed.append(nn.Linear(model_cfg.Transformer.hidden_dim, 1))
-        self.points_feature_cls = MLP(256,256,1,2)
-        self.points_feature_reg = MLP(256,256,7,3)
+        self.points_feature_cls = nn.Sequential(
+            nn.Linear(131,256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Linear(256,1)
+        )
+        self.points_attention = CrossMixerBlock(channels=128)
+        self.points_feature_reg = nn.Sequential(
+            nn.Linear(131,256),
+            nn.BatchNorm1d(256,256),
+            nn.ReLU(),
+            nn.Linear(256,256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Linear(256,5)
+        )
         self.bbox_embed = nn.ModuleList()
         self.bbox_embed2 = nn.ModuleList()
         self.token_conv = nn.ModuleList()
         for _ in range(self.num_groups):
             self.bbox_embed.append(MLP(model_cfg.Transformer.hidden_dim, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4))
             self.token_conv.append(nn.Linear(model_cfg.Transformer.hidden_dim*2,model_cfg.Transformer.hidden_dim))
-
+        self.add_module('point_cls_loss_func',loss_utils.SigmoidFocalClassificationLoss(alpha=0.25,gamma=2.0))
+        self.add_module('point_reg_loss_func',loss_utils.WeightedSmoothL1Loss(code_weights=[1,1,1,1,1]))
+        
     def init_weights(self, weight_init='xavier'):
         if weight_init == 'kaiming':
             init_func = nn.init.kaiming_normal_
@@ -744,6 +759,107 @@ class DENet3Head(RoIHeadTemplate):
             trajectory_rois[:, i, :, :] = frame
 
         return trajectory_rois
+    
+    def encode_torch(self,gt_boxes,points):
+        gt_boxes[:, 3:6] = torch.clamp_min(gt_boxes[:, 3:6], min=1e-5)
+        from pcdet.utils.common_utils import rotate_points_along_z
+        xg, yg, zg, dxg, dyg, dzg, rg, *cgs = torch.split(gt_boxes, 1, dim=-1)
+        
+        points = rotate_points_along_z((points-gt_boxes[:,:3])[:,None,:],angle=-1 * gt_boxes[:,6]).squeeze()
+        xa, ya, za = torch.split(points, 1, dim=-1)
+        xt = xa/dxg
+        yt = ya/dyg
+        zt = za/dzg
+        
+
+        cts = [g for g in cgs]
+        return torch.cat([xt, yt, zt, torch.cos(rg), torch.sin(rg), *cts], dim=-1)
+    def assign_stack_targets(self, points, gt_boxes,points_bs_idx, extend_gt_boxes=None,
+                             ret_box_labels=False, ret_part_labels=False,
+                             set_ignore_flag=True, use_ball_constraint=False, central_radius=2.0):
+        """
+        Args:
+            points: (N1 + N2 + N3 + ..., 4) [bs_idx, x, y, z]
+            gt_boxes: (B, M, 8)
+            extend_gt_boxes: [B, M, 8]
+            ret_box_labels:
+            ret_part_labels:
+            set_ignore_flag:
+            use_ball_constraint:
+            central_radius:
+
+        Returns:
+            point_cls_labels: (N1 + N2 + N3 + ...), long type, 0:background, -1:ignored
+            point_box_labels: (N1 + N2 + N3 + ..., code_size)
+
+        """
+        from pcdet.utils import box_utils
+        from pcdet.ops.roiaware_pool3d import roiaware_pool3d_utils
+        extend_gt_boxes = box_utils.enlarge_box3d(gt_boxes.view(-1,gt_boxes.shape[-1]),extra_width=[0.2,0.2,0.2]).unflatten(0,(gt_boxes.shape[0],-1))
+        points_bs_idx = F.pad(torch.cumsum(points_bs_idx,0),(1,0),value=0)
+        # assert len(points.shape) == 2 and points.shape[1] == 4, 'points.shape=%s' % str(points.shape)
+        # assert len(gt_boxes.shape) == 3 and gt_boxes.shape[2] == 8, 'gt_boxes.shape=%s' % str(gt_boxes.shape)
+        # assert extend_gt_boxes is None or len(extend_gt_boxes.shape) == 3 and extend_gt_boxes.shape[2] == 8, \
+        #     'extend_gt_boxes.shape=%s' % str(extend_gt_boxes.shape)
+        assert set_ignore_flag != use_ball_constraint, 'Choose one only!'
+        batch_size = gt_boxes.shape[0]
+        # bs_idx = points[:, 0]
+        point_cls_labels = points.new_zeros(points.shape[0]).long()
+        point_box_labels = gt_boxes.new_zeros((points.shape[0], 5)) if ret_box_labels else None
+        point_part_labels = gt_boxes.new_zeros((points.shape[0], 3)) if ret_part_labels else None
+        
+        for k in range(batch_size):
+           
+            points_single = points[points_bs_idx[k]:points_bs_idx[k+1]]
+            point_cls_labels_single = point_cls_labels.new_zeros(points_bs_idx[k+1]-points_bs_idx[k])
+            box_idxs_of_pts = roiaware_pool3d_utils.points_in_boxes_gpu(
+                points_single.unsqueeze(dim=0), gt_boxes[k:k + 1, :, 0:7].contiguous()
+            ).long().squeeze(dim=0)
+            box_fg_flag = (box_idxs_of_pts >= 0)
+            if set_ignore_flag:
+                extend_box_idxs_of_pts = roiaware_pool3d_utils.points_in_boxes_gpu(
+                    points_single.unsqueeze(dim=0), extend_gt_boxes[k:k+1, :, 0:7].contiguous()
+                ).long().squeeze(dim=0)
+                fg_flag = box_fg_flag
+                ignore_flag = fg_flag ^ (extend_box_idxs_of_pts >= 0)
+                point_cls_labels_single[ignore_flag] = -1
+            elif use_ball_constraint:
+                box_centers = gt_boxes[k][box_idxs_of_pts][:, 0:3].clone()
+                box_centers[:, 2] += gt_boxes[k][box_idxs_of_pts][:, 5] / 2
+                ball_flag = ((box_centers - points_single).norm(dim=1) < central_radius)
+                fg_flag = box_fg_flag & ball_flag
+            else:
+                raise NotImplementedError
+
+            gt_box_of_fg_points = gt_boxes[k][box_idxs_of_pts[fg_flag]]
+            point_cls_labels_single[fg_flag] = 1 if self.num_class == 1 else gt_box_of_fg_points[:, -1].long()
+            point_cls_labels[points_bs_idx[k]:points_bs_idx[k+1]] = point_cls_labels_single
+
+            if ret_box_labels and gt_box_of_fg_points.shape[0] > 0:
+                point_box_labels_single = point_box_labels.new_zeros(points_bs_idx[k+1]-points_bs_idx[k], 5)
+                fg_point_box_labels = self.encode_torch(
+                    gt_boxes=gt_box_of_fg_points[:, :7], points=points_single[fg_flag],
+                    # gt_classes=gt_box_of_fg_points[:, -1].long()
+                )
+                point_box_labels_single[fg_flag] = fg_point_box_labels
+                point_box_labels[points_bs_idx[k]:points_bs_idx[k+1]] = point_box_labels_single
+
+            if ret_part_labels:
+                point_part_labels_single = point_part_labels.new_zeros((bs_mask.sum(), 3))
+                transformed_points = points_single[fg_flag] - gt_box_of_fg_points[:, 0:3]
+                transformed_points = common_utils.rotate_points_along_z(
+                    transformed_points.view(-1, 1, 3), -gt_box_of_fg_points[:, 6]
+                ).view(-1, 3)
+                offset = torch.tensor([0.5, 0.5, 0.5]).view(1, 3).type_as(transformed_points)
+                point_part_labels_single[fg_flag] = (transformed_points / gt_box_of_fg_points[:, 3:6]) + offset
+                point_part_labels[bs_mask] = point_part_labels_single
+
+        targets_dict = {
+            'point_cls_labels': point_cls_labels,
+            'point_box_labels': point_box_labels,
+            'point_part_labels': point_part_labels
+        }
+        return targets_dict
 
     def generate_trajectory_mppnet(self, cur_batch_boxes, proposals_list, batch_dict):
         num_frames = batch_dict['num_points_all'].shape[1]
@@ -903,7 +1019,7 @@ class DENet3Head(RoIHeadTemplate):
                 batch_dict['num_rois'] = num_rois
                 batch_dict['src_idx1'] = src_idx_pre.transpose(0,1)
                 batch_dict['query_points_features1'] = query_points_features_pre
-                batch_dict['query_points_idx_bs1'] = query_points_bs_idx_pre
+                batch_dict['query_points_bs_idx1'] = query_points_bs_idx_pre
                 # src_pre = src_pre.view(batch_size*num_rois_pre,num_frames-1,-1,src_pre.shape[-1]).transpose(0,1).flatten(0,1)
                 # rois_pre = batch_dict['roi_list'][:,1:].flatten(0,1)
                 src_pre = self.get_proposal_aware_geometry_single_feature(src_pre, batch_size*(num_frames-1), roi_list,
@@ -911,14 +1027,14 @@ class DENet3Head(RoIHeadTemplate):
                 corner_points_pre,_ = self.get_corner_proxy_points_of_roi(roi_list,grid_size = self.grid_size)
                 # corner_points_pre = unflatten(corner_points_pre, dim=0, sizes=(batch_size*(num_frames-1), -1))[0].contiguous()
                 hs, tokens = self.transformer(src_pre, batch_dict, pos=None)
-                query_points_features_pre = batch_dict['query_points_features3'].detach()
-                query_points_bs_idx_pre = batch_dict['query_points_idx_bs3'].detach()
-                query_points_bs_idx_pre =F.pad(torch.cumsum(query_points_bs_idx_pre,dim=0),(1,0),value=0)
-                
-                for idx in range(num_frames-1):
-                    for bs in range(batch_size):
-                        query_points_single = query_points_features_pre[query_points_bs_idx_pre[idx*batch_size+bs]:query_points_bs_idx_pre[idx*batch_size+bs+1]]
-                        query_points_single[:,:3] = torch.matmul(F.pad(query_points_single[:,:3],(0,1,0,0),value=0),batch_dict['poses'][bs,(idx+1)*4:(idx+2)*4])[:,:3]
+            query_points_features_pre = batch_dict['query_points_features3'].detach()
+            query_points_bs_idx_pre = batch_dict['query_points_bs_idx3'].detach()
+            query_points_bs_idx_pre =F.pad(torch.cumsum(query_points_bs_idx_pre,dim=0),(1,0),value=0)
+
+            for idx in range(num_frames-1):
+                for bs in range(batch_size):
+                    query_points_single = query_points_features_pre[query_points_bs_idx_pre[idx*batch_size+bs]:query_points_bs_idx_pre[idx*batch_size+bs+1]]
+                    query_points_single[:,:3] = torch.matmul(F.pad(query_points_single[:,:3],(0,1,0,0),value=0),batch_dict['poses'][bs,(idx+1)*4:(idx+2)*4])[:,:3]
         roi_boxes = roi_boxes.reshape(-1,roi_boxes.shape[-1])
         num_rois = torch.cumsum(torch.tensor([0]+[batch_dict['roi_boxes'][i].shape[0] for i in range(batch_size)],device=device),dim=0)
         src,query_points_features,query_points_bs_idx = self.voxel_sampler(batch_size, roi_boxes, num_sample, batch_dict,start_idx=0,num_rois=num_rois)
@@ -926,8 +1042,8 @@ class DENet3Head(RoIHeadTemplate):
         src1, src_idx1 = src[..., :-1], src[..., -1].long()
         batch_dict['src_idx1'] = src_idx1.transpose(0,1)
         batch_dict['query_points_features1'] = query_points_features
-        batch_dict['query_points_idx_bs1'] = query_points_bs_idx
-
+        batch_dict['query_points_bs_idx1'] = query_points_bs_idx
+        batch_dict['num_rois'] = num_rois
         # src1 = src1.view(batch_size * num_rois, -1,src1.shape[-1])
 
         trajectory_rois = trajectory_rois.view(batch_size, num_frames, -1, trajectory_rois.shape[-1])
@@ -949,20 +1065,26 @@ class DENet3Head(RoIHeadTemplate):
         hs, tokens = self.transformer(src1, batch_dict, pos=None)
         final_src = batch_dict['final_src_xyz']
         final_src_features = batch_dict['final_src_points_features']
+        final_query_features = batch_dict['query_points_features3']
         final_src = self.pos_offset_encoding(final_src,roi_boxes)
         pre_src,pre_src_features = self.points_features_pool(trajectory_rois[:,1:].transpose(0,1).flatten(0,1),query_points_features_pre,query_points_bs_idx_pre,num_sample=final_src.shape[0])
         pre_src = pre_src.unflatten(1,(num_frames-1,-1))
+        pre_src_features = pre_src_features.unflatten(1,(num_frames-1,-1)).flatten(0,1)
         src_all = torch.concat([final_src.unsqueeze(1),pre_src],dim=1)
         time_offset = torch.arange(num_frames,device=device)[None,:,None,None].repeat(src_all.shape[0],1,src_all.shape[2],1)
         src_all = torch.concat([src_all,time_offset],dim=-1)
         src_all = self.pos_embding(src_all)
+        points_targets = self.assign_stack_targets(final_query_features[:,:3],batch_dict['gt_boxes'],batch_dict['query_points_bs_idx3'],ret_box_labels=True)
+        targets_dict.update(points_targets)
+        query_points_cls_preds = self.points_feature_cls(final_query_features)
+        query_points_reg_preds = self.points_feature_reg(final_query_features)
         final_src_features = self.points_attention(final_src_features,pre_src_features,src_all[:,0],src_all[:,1:].flatten(0,1))
 
         corner_points_features = self.corner_features_emb(batch_dict['final_src_xyz'].transpose(0,1).contiguous(),batch_dict['final_src_points_features'].transpose(1,2).contiguous(),corner_points)[1]
         # points_features = corner_points_features.view(corner_points_features.shape[0],-1)
         points_features = self.compress_points(corner_points_features.view(corner_points_features.shape[0],-1,1)).squeeze()
-        # points_cls = self.points_feature_cls(points_features)
-        points_reg = self.points_feature_reg(points_features)
+        points_reg = self.points_box_reg(points_features)
+        
         box_reg = points_reg
         point_cls_list = []
         point_reg_list = []
@@ -1036,6 +1158,8 @@ class DENet3Head(RoIHeadTemplate):
             targets_dict['point_reg'] = point_reg
             targets_dict['point_cls'] = point_cls
             targets_dict['joint_cls'] = joint_cls
+            targets_dict['query_point_cls'] = query_points_cls_preds
+            targets_dict['query_point_reg'] = query_points_reg_preds
             self.forward_ret_dict = targets_dict
 
         return batch_dict
@@ -1071,7 +1195,8 @@ class DENet3Head(RoIHeadTemplate):
         fg_sum = fg_mask.long().sum().item()
 
         tb_dict = {}
-
+        
+        
         if loss_cfgs.REG_LOSS == 'smooth-l1':
 
             rois_anchor = roi_boxes3d.clone().detach()[:,:,:7].contiguous().view(-1, code_size)
@@ -1154,14 +1279,35 @@ class DENet3Head(RoIHeadTemplate):
 
         else:
             raise NotImplementedError
-
+        pos_mask = forward_ret_dict['point_cls_labels'] > 0
+        point_box_labels = self.forward_ret_dict['point_box_labels']
+        point_box_preds = self.forward_ret_dict['query_point_reg']
+        reg_weights = pos_mask.float()
+        pos_normalizer = pos_mask.sum().float()
+        reg_weights /= torch.clamp(pos_normalizer, min=1.0)
+        point_loss_box_src = self.point_reg_loss_func(point_box_preds[None, ...], point_box_labels[None, ...],
+                                                      reg_weights[None, ...])
+        query_point_reg = point_loss_box_src.sum() * loss_cfgs.LOSS_WEIGHTS.point_reg_weight
+        tb_dict['query_point_reg'] = query_point_reg.item()
+        rcnn_loss_reg+=query_point_reg
         return rcnn_loss_reg, tb_dict
 
     def get_box_cls_layer_loss(self, forward_ret_dict):
         loss_cfgs = self.model_cfg.LOSS_CONFIG
         rcnn_cls = forward_ret_dict['rcnn_cls']
         rcnn_cls_labels = forward_ret_dict['rcnn_cls_labels'].view(-1)
-
+        
+        query_point_cls_labels = forward_ret_dict['point_cls_labels']
+        point_cls_preds = forward_ret_dict['query_point_cls']
+        positives = point_cls_preds>0
+        negative_cls_weights = (point_cls_preds==0)*1.0
+        cls_weights = (negative_cls_weights +1.0*positives).float()
+        pos_nromalizer = positives.sum(dim=0).float()
+        cls_weights/=torch.clamp(pos_nromalizer,min=1.0)
+        cls_loss_src = self.point_cls_loss_func(point_cls_preds,query_point_cls_labels[:,None],weights =cls_weights.squeeze())
+        point_loss_cls = cls_loss_src.sum()
+        point_loss_cls = point_loss_cls*loss_cfgs.LOSS_WEIGHTS['point_cls_weight']
+        
         if loss_cfgs.CLS_LOSS == 'BinaryCrossEntropy':
 
             rcnn_cls_flat = rcnn_cls.view(-1)
@@ -1200,9 +1346,9 @@ class DENet3Head(RoIHeadTemplate):
         joint_loss_cls = F.binary_cross_entropy(torch.sigmoid(joint_cls), rcnn_cls_labels.float(), reduction='none')
         joint_loss_cls = joint_loss_cls * loss_cfgs.LOSS_WEIGHTS['joint_cls_weight']
         joint_loss_cls = (joint_loss_cls*cls_valid_mask).sum()/torch.clamp(cls_valid_mask.sum(),min=1.0)
-        tb_dict = {'rcnn_loss_cls': rcnn_loss_cls.item(),'joint_loss_cls':joint_loss_cls.item()}
+        tb_dict = {'rcnn_loss_cls': rcnn_loss_cls.item(),'joint_loss_cls':joint_loss_cls.item(),'point_loss_cls':point_loss_cls}
 
-        return rcnn_loss_cls+joint_loss_cls, tb_dict
+        return rcnn_loss_cls+joint_loss_cls+point_loss_cls, tb_dict
 
 
     def generate_predicted_boxes(self, batch_size, rois, cls_preds=None, box_preds=None):

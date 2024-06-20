@@ -177,10 +177,13 @@ class CrossMixerBlock(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(2 * channels, channels),
         )
-
-    def forward(self, query,key, return_weight=False):
-
-        src2, weight = self.mixer(query, key, key)
+    def emb_pos(self,tensor,pos):
+        return tensor if pos is None else tensor+pos
+    def forward(self, query,key,pos_q=None,pos_k=None,return_weight=False):
+        
+        query = query if pos_q is None else query+pos_q
+       
+        src2, weight = self.mixer(self.emb_pos(query,pos_q), self.emb_pos(key,pos_k), key)
 
         query = query + self.dropout(src2)
         src_mixer = self.norm(query)
@@ -358,7 +361,7 @@ class TransformerEncoderLayer(nn.Module):
                      pos: Optional[Tensor] = None):
         query_points_features = batch_dict['query_points_features'+str(self.layer_count)]
         src_idx = batch_dict['src_idx'+str(self.layer_count)]
-        query_points_idx_bs = batch_dict['query_points_idx_bs'+str(self.layer_count)]
+        query_points_idx_bs = batch_dict['query_points_bs_idx'+str(self.layer_count)]
         src_intra_group_fusion,weight = self.mlp_mixer_3d(src[1:],return_weight=True)
         num_rois = batch_dict['num_rois']
         # src_intra_group_fusion = torch.concat([src_intra_group_fusion, src[1:,:,self.config.hidden_dim:]], dim=-1)
@@ -411,7 +414,7 @@ class TransformerEncoderLayer(nn.Module):
             # new_query_points_features = torch.concat([new_query_xyz,new_query_features],dim=-1)
             batch_dict['query_points_features' + str(self.layer_count + 1)] = new_query_points_features
             batch_dict['src_idx'+str(self.layer_count+1)] = new_src_idx
-            batch_dict['query_points_idx_bs'+str(self.layer_count+1)] = new_query_idx_bs
+            batch_dict['query_points_bs_idx'+str(self.layer_count+1)] = new_query_idx_bs
             src_point_feature = torch.gather(new_query_points_features,0,new_src_idx.reshape(-1,1).repeat(1,new_query_points_features.shape[-1]))
             src_point_feature = src_point_feature.reshape(-1,sampled_inds.shape[0],src_point_feature.shape[-1]).transpose(0,1)
 
