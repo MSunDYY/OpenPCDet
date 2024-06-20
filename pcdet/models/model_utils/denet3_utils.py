@@ -181,9 +181,9 @@ class CrossMixerBlock(nn.Module):
         return tensor if pos is None else tensor+pos
     def forward(self, query,key,pos_q=None,pos_k=None,return_weight=False):
         
-        query = query if pos_q is None else query+pos_q
+        query = query
        
-        src2, weight = self.mixer(self.emb_pos(query,pos_q), self.emb_pos(key,pos_k), key)
+        src2, weight = self.mixer(query, key, key)
 
         query = query + self.dropout(src2)
         src_mixer = self.norm(query)
@@ -454,8 +454,8 @@ class TransformerEncoderLayer(nn.Module):
             new_src_xyz = new_src_xyz.reshape(src.shape[0]-1,-1,new_src_xyz.shape[-1])
             # new_src_points_features = unflatten(new_src_points_features,dim=0,sizes=(batch_dict['num_frames'],-1))[0]
             # new_src_xyz = unflatten(new_src_xyz,dim=0,sizes = (batch_dict['num_frames'],-1))[0]
-            batch_dict['final_src_points_features'] = new_src_points_features
-            batch_dict['final_src_xyz'] = new_src_xyz.contiguous()
+            batch_dict['final_src_points_features'] = new_src_points_features.detach()
+            batch_dict['final_src_xyz'] = new_src_xyz.detach()
         return src, torch.cat(src[:1].chunk(self.num_groups,1),0)
 
     def forward_pre(self, src,

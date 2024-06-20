@@ -340,7 +340,7 @@ class DENet3Head(RoIHeadTemplate):
         # self.cross = nn.ModuleList([CrossAttention(3,4,256,None) for i in range(4)])
         self.seqboxembed = PointNet(8,model_cfg=self.model_cfg)
 
-        self.jointembed = MLP(self.hidden_dim*(self.num_groups+1), model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
+        self.jointembed = MLP(self.hidden_dim*(self.num_groups)+256, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
         self.jointclsembed = MLP(self.hidden_dim+256,256,1,num_layers=2)
         self.up_dimension_geometry = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
         self.up_dimension_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
@@ -373,7 +373,8 @@ class DENet3Head(RoIHeadTemplate):
             nn.ReLU(),
             nn.Linear(256,1)
         )
-        self.points_attention = CrossMixerBlock(channels=128)
+        self.points_attention = SpatialMixerBlock(channels=128)
+        self.points_attention = nn.MultiheadAttention(128,8)
         self.points_feature_reg = nn.Sequential(
             nn.Linear(131,256),
             nn.BatchNorm1d(256,256),
@@ -1063,9 +1064,9 @@ class DENet3Head(RoIHeadTemplate):
         corner_points,_ = self.get_corner_proxy_points_of_roi(roi_boxes,grid_size=3)
         # corner_points = unflatten(corner_points,dim=0,sizes = (num_frames,-1))[0].contiguous()
         hs, tokens = self.transformer(src1, batch_dict, pos=None)
-        final_src = torch.rand_like(batch_dict['final_src_xyz'])
-        final_src_features = torch.rand_like(batch_dict['final_src_points_features'])
-        final_query_features = torch.rand_like(batch_dict['query_points_features3'])
+        final_src = batch_dict['final_src_xyz']
+        final_src_features = batch_dict['final_src_points_features']
+        final_query_features = batch_dict['query_points_features3']
         final_src = self.pos_offset_encoding(final_src,roi_boxes)
         pre_src,pre_src_features = self.points_features_pool(trajectory_rois[:,1:].transpose(0,1).flatten(0,1),query_points_features_pre,query_points_bs_idx_pre,num_sample=final_src.shape[0])
         pre_src = pre_src.unflatten(1,(num_frames-1,-1))
@@ -1073,17 +1074,24 @@ class DENet3Head(RoIHeadTemplate):
         src_all = torch.concat([final_src.unsqueeze(1),pre_src],dim=1)
         time_offset = torch.arange(num_frames,device=device)[None,:,None,None].repeat(src_all.shape[0],1,src_all.shape[2],1)
         src_all = torch.concat([src_all,time_offset],dim=-1)
-        # src_all = torch.rand((32,4,288,4),device=device)
+
+
+
         src_all = self.pos_embding(src_all)
         points_targets = self.assign_stack_targets(final_query_features[:,:3],batch_dict['gt_boxes'],batch_dict['query_points_bs_idx3'],ret_box_labels=True)
         targets_dict.update(points_targets)
+
         query_points_cls_preds = self.points_feature_cls(final_query_features)
         query_points_reg_preds = self.points_feature_reg(final_query_features)
-        final_src_features = self.points_attention(final_src_features,pre_src_features,src_all[:,0],src_all[:,1:].flatten(0,1))
-
-        corner_points_features = self.corner_features_emb(batch_dict['final_src_xyz'].transpose(0,1).contiguous(),batch_dict['final_src_points_features'].transpose(1,2).contiguous(),corner_points)[1]
+        pre_src_features = torch.rand_like(final_src_features).detach()
+        final_src_features = torch.rand_like(final_src_features).detach()
+        final_src_features = self.points_attention(final_src_features,final_src_features,final_src_features)[0].permute(0,2,1)
+        # final_src_features = final_src_features*2+final_src_features
+        corner_points_features = self.corner_features_emb(batch_dict['final_src_xyz'].transpose(0,1).contiguous(),final_src_features.contiguous(),corner_points)[1]
         # points_features = corner_points_features.view(corner_points_features.shape[0],-1)
+
         points_features = self.compress_points(corner_points_features.view(corner_points_features.shape[0],-1,1)).squeeze()
+
         points_reg = self.points_box_reg(points_features)
         
         box_reg = points_reg
