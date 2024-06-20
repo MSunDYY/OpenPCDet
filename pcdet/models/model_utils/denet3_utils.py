@@ -384,9 +384,9 @@ class TransformerEncoderLayer(nn.Module):
 
 
         if self.layer_count <= self.config.enc_layers-1:
-            weight = weight.sum(1).transpose(0, 1)
+            weight = weight.sum(1)
             # src = torch.cat([src[:1],src_intra_group_fusion],0)
-            sampled_inds = torch.topk(weight, dim=0, k=weight.shape[0] // 2)[1]
+            sampled_inds = torch.topk(weight, dim=1, k=weight.shape[1] // 2)[1].transpose(0,1)
             new_src_idx = torch.gather(src_idx, 0, sampled_inds)
             new_query_idx = [torch.unique(new_src_idx[:,num_rois[i]:num_rois[i+1]]) for i in range(num_rois.shape[0]-1)]
 
@@ -407,7 +407,7 @@ class TransformerEncoderLayer(nn.Module):
             #     -1, new_query_xyz.shape[1], new_query_features.shape[-1])
             new_query_points_features = torch.concat(new_query_features,dim=-1)
             # new_query_points_features = torch.zeros_like(query_points_features)
-            new_src_idx = (torch.searchsorted(new_query_idx,new_src_idx,right=True)-1).reshape(-1,sampled_inds.shape[0]).transpose(0,1)
+            new_src_idx = (torch.searchsorted(new_query_idx,new_src_idx,right=True)-1)
             # new_query_points_features.scatter_(0, new_query_idx[:,  None].repeat(1,
             #                                                                      new_query_points_features.shape[-1]),
             #                                    torch.concat([new_query_xyz,new_query_features], dim=-1))
@@ -415,8 +415,8 @@ class TransformerEncoderLayer(nn.Module):
             batch_dict['query_points_features' + str(self.layer_count + 1)] = new_query_points_features
             batch_dict['src_idx'+str(self.layer_count+1)] = new_src_idx
             batch_dict['query_points_bs_idx'+str(self.layer_count+1)] = new_query_idx_bs
-            src_point_feature = torch.gather(new_query_points_features,0,new_src_idx.reshape(-1,1).repeat(1,new_query_points_features.shape[-1]))
-            src_point_feature = src_point_feature.reshape(-1,sampled_inds.shape[0],src_point_feature.shape[-1]).transpose(0,1)
+            # src_point_feature = torch.gather(new_query_points_features,0,new_src_idx.reshape(-1,1).repeat(1,new_query_points_features.shape[-1]))
+            # src_point_feature = src_point_feature.reshape(-1,sampled_inds.shape[0],src_point_feature.shape[-1]).transpose(0,1)
 
             src_intra_group_fusion = torch.gather(src_intra_group_fusion, 0, sampled_inds[:, :, None].repeat(1, 1,
                                                                                                              src_intra_group_fusion.shape[-1]))
@@ -426,7 +426,7 @@ class TransformerEncoderLayer(nn.Module):
             src_groups_list = [src_all_groups[torch.arange(sampled_inds.shape[0])*self.num_groups+i] for i in range(self.num_groups)]
 
             src_all_groups = torch.stack(src_groups_list, 0)
-            src_all_groups,src_features = src_all_groups[...,:self.config.hidden_dim],src_all_groups[...,self.config.hidden_dim:]
+            src_all_groups = src_all_groups[...,:self.config.hidden_dim]
             src_max_groups = torch.max(src_all_groups, 1, keepdim=True).values
             src_past_groups =  torch.cat([src_all_groups[1:],\
                  src_max_groups[:-1].repeat(1, src_intra_group_fusion.shape[0], 1, 1)], -1)

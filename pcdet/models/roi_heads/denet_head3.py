@@ -952,7 +952,7 @@ class DENet3Head(RoIHeadTemplate):
        
     def pos_offset_encoding(self,src,boxes):
         radiis = torch.norm(boxes[:,3:5]/2,dim=-1)
-        return src-boxes[None,:,:3]/radiis[None,:,None]
+        return src-boxes[None,:,:3]/radiis[None,:,None].repeat(1,1,3)
 
     def forward(self, batch_dict):
         """
@@ -1063,9 +1063,9 @@ class DENet3Head(RoIHeadTemplate):
         corner_points,_ = self.get_corner_proxy_points_of_roi(roi_boxes,grid_size=3)
         # corner_points = unflatten(corner_points,dim=0,sizes = (num_frames,-1))[0].contiguous()
         hs, tokens = self.transformer(src1, batch_dict, pos=None)
-        final_src = batch_dict['final_src_xyz']
-        final_src_features = batch_dict['final_src_points_features']
-        final_query_features = batch_dict['query_points_features3']
+        final_src = torch.rand_like(batch_dict['final_src_xyz'])
+        final_src_features = torch.rand_like(batch_dict['final_src_points_features'])
+        final_query_features = torch.rand_like(batch_dict['query_points_features3'])
         final_src = self.pos_offset_encoding(final_src,roi_boxes)
         pre_src,pre_src_features = self.points_features_pool(trajectory_rois[:,1:].transpose(0,1).flatten(0,1),query_points_features_pre,query_points_bs_idx_pre,num_sample=final_src.shape[0])
         pre_src = pre_src.unflatten(1,(num_frames-1,-1))
@@ -1073,6 +1073,7 @@ class DENet3Head(RoIHeadTemplate):
         src_all = torch.concat([final_src.unsqueeze(1),pre_src],dim=1)
         time_offset = torch.arange(num_frames,device=device)[None,:,None,None].repeat(src_all.shape[0],1,src_all.shape[2],1)
         src_all = torch.concat([src_all,time_offset],dim=-1)
+        # src_all = torch.rand((32,4,288,4),device=device)
         src_all = self.pos_embding(src_all)
         points_targets = self.assign_stack_targets(final_query_features[:,:3],batch_dict['gt_boxes'],batch_dict['query_points_bs_idx3'],ret_box_labels=True)
         targets_dict.update(points_targets)
