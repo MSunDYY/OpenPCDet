@@ -1083,9 +1083,8 @@ class DENet3Head(RoIHeadTemplate):
 
         query_points_cls_preds = self.points_feature_cls(final_query_features)
         query_points_reg_preds = self.points_feature_reg(final_query_features)
-        # pre_src_features = torch.rand_like(final_src_features).detach()
-        # final_src_features = torch.rand_like(final_src_features).detach()
-        final_src_features = self.points_attention(final_src_features,pre_src_features).permute(1,2,0)
+
+        final_src_features = self.points_attention(final_src_features,pre_src_features,src_all[:,0],src_all[:,1:].flatten(0,1)).permute(1,2,0)
         # test = batch_dict['final_src_xyz'].transpose(0,1)
         corner_points_features = self.corner_features_emb(batch_dict['final_src_xyz'].transpose(0,1).contiguous(),final_src_features.contiguous(),corner_points)[1]
         # points_features = corner_points_features.view(corner_points_features.shape[0],-1)
