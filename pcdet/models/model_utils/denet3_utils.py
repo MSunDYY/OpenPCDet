@@ -183,9 +183,9 @@ class CrossMixerBlock(nn.Module):
         
         query = query
        
-        src2, weight = self.mixer(query, key, key)
+        # src2, weight = self.mixer(query, key, key)
 
-        query = query + self.dropout(src2)
+        query = query + self.dropout(query)
         src_mixer = self.norm(query)
 
         src_mixer = src_mixer + self.ffn(src_mixer)
