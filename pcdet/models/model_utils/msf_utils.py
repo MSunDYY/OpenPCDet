@@ -568,7 +568,7 @@ class VoxelPointsSampler(nn.Module):
             for bs_idx in range(batch_size):
                 cur_batch_points = cur_time_points[cur_time_points[:, 0] == bs_idx, 1:].contiguous()
                 cur_batch_boxes = trajectory_rois[num_rois[idx*batch_size+bs_idx]:num_rois[idx*batch_size+bs_idx+1]]
-                if start_idx==0 and idx==0:
+                if start_idx==1 or idx==0:
                     
                     voxel, coords, num_points = self.gen(cur_batch_points)
                     coords = coords[:, [2, 1]].contiguous()
