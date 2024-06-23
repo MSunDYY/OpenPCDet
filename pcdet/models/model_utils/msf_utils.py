@@ -591,7 +591,7 @@ class VoxelPointsSampler(nn.Module):
                 if False:
                     root_data = '../../data/waymo/key_points/train/'
                     os.makedirs(root_data+batch_dict['metadata'][0][:-4],exist_ok=True)
-                    np.save('../../data/waymo/key_points/train/'+batch_dict['metadata'][0][:-4]+'/0.4f.npy' % batch_dict['metadata'][0][-3:],key_points.cpu().numpy())
+                    np.save('../../data/waymo/key_points/train/'+batch_dict['metadata'][0][:-4]+'/0.4.npy' % batch_dict['sample_idx'][0][-3:],key_points.cpu().numpy())
 
                 key_points, points_features, query_points_features = self.cylindrical_pool(key_points, cur_batch_boxes,
                                                                                            num_sample, gamma,

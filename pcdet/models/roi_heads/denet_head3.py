@@ -967,15 +967,12 @@ class DENet3Head(RoIHeadTemplate):
         batch_dict['roi_boxes'] = batch_dict['roi_boxes'][:,0,:][:,roi_scores.sum(0)>0]
         batch_dict['roi_labels'] = batch_dict['roi_labels'][:, 0, :][:, roi_scores.sum(0) > 0].long()
         batch_dict['num_frames'] = num_frames
-        num_rois = batch_dict['roi_boxes'].shape[1]
-        # batch_dict['roi_labels'] = batch_dict['roi_labels'][:,0].long()
-        # batch_dict['roi_scores'] = batch_dict['roi_scores'][:,0]
+
         batch_size = batch_dict['batch_size']
         cur_batch_boxes = copy.deepcopy(batch_dict['roi_boxes'].detach())
 
         batch_dict['cur_frame_idx'] = 0
         proposals_list = batch_dict['proposals_list']
-        # trajectory_rois,valid = self.generate_trajectory_mppnet(cur_batch_boxes,proposals_list, batch_dict)
         trajectory_rois = self.generate_trajectory_msf(cur_batch_boxes, batch_dict)
 
         # batch_dict['traj_memory'] = trajectory_rois
@@ -999,7 +996,7 @@ class DENet3Head(RoIHeadTemplate):
             empty_mask = batch_dict['roi_boxes'][:,:,:6].sum(-1)==0
             batch_dict['valid_traj_mask'] = ~empty_mask
             batch_dict['roi_boxes'] = trajectory_rois[:,0]
-        rois = batch_dict['roi_boxes']
+        roi_boxes = batch_dict['roi_boxes']
         num_rois = batch_dict['roi_boxes'].shape[1]
         num_sample = self.num_lidar_points 
 
@@ -1036,6 +1033,8 @@ class DENet3Head(RoIHeadTemplate):
                 for bs in range(batch_size):
                     query_points_single = query_points_features_pre[query_points_bs_idx_pre[idx*batch_size+bs]:query_points_bs_idx_pre[idx*batch_size+bs+1]]
                     query_points_single[:,:3] = torch.matmul(F.pad(query_points_single[:,:3],(0,1,0,0),value=0),batch_dict['poses'][bs,(idx+1)*4:(idx+2)*4])[:,:3]
+
+
         roi_boxes = roi_boxes.reshape(-1,roi_boxes.shape[-1])
         num_rois = torch.cumsum(torch.tensor([0]+[batch_dict['roi_boxes'][i].shape[0] for i in range(batch_size)],device=device),dim=0)
         src,query_points_features,query_points_bs_idx = self.voxel_sampler(batch_size, roi_boxes, num_sample, batch_dict,start_idx=0,num_rois=num_rois)
@@ -1074,8 +1073,6 @@ class DENet3Head(RoIHeadTemplate):
         src_all = torch.concat([final_src.unsqueeze(1),pre_src],dim=1)
         time_offset = torch.arange(num_frames,device=device)[None,:,None,None].repeat(src_all.shape[0],1,src_all.shape[2],1)
         src_all = torch.concat([src_all,time_offset],dim=-1)
-
-
 
         src_all = self.pos_embding(src_all)
         points_targets = self.assign_stack_targets(final_query_features[:,:3],batch_dict['gt_boxes'],batch_dict['query_points_bs_idx3'],ret_box_labels=True)

@@ -686,31 +686,6 @@ class WaymoDataset(DatasetTemplate):
 
         return data_dict
 
-        F = len(sample_idx_list)
-        num_voxels = [voxel.shape[0] for voxel in data_dicts['voxels']]
-        max_num_voxels = max(num_voxels)
-        num_points = [point.shape[0] for point in data_dicts['points']]
-        max_num_points = max([point.shape[0] for point in data_dicts['points']])
-        num_gt_boxes = [gt_box.shape[0] for gt_box in data_dicts['gt_boxes']]
-        # max_num_gt_boxes = max(num_gt_boxes)
-        #
-        # points = np.zeros((F, max_num_points, data_dict['points'].shape[-1]))
-        # voxels = np.zeros((F, max([voxel.shape[0] for voxel in data_dicts['voxels']]), data_dict['voxels'].shape[-2],
-        #                    data_dict['voxels'].shape[-1]))
-        # gt_boxes = np.zeros((F, num_gt_boxes, data_dict['gt_boxes'].shape[-1]))
-        # voxel_coords = np.zeros((F, max_num_voxels, data_dict['voxel_coords'].shape[-1]))
-        # voxel_num_points = np.zeros((F, max_num_voxels))
-
-        data_dicts['points'] = np.concatenate(data_dicts['points'], axis=0)
-        data_dicts['num_points'] = num_points
-        data_dicts['voxels'] = np.concatenate(data_dicts['voxels'], axis=0)
-        data_dicts['voxel_coords'] = np.concatenate(data_dicts['voxel_coords'], axis=0)
-        data_dicts['voxel_num_points'] = np.concatenate(data_dicts['voxel_num_points'], axis=0)
-        data_dicts['num_voxels'] = num_voxels
-        data_dicts['gt_boxes'] = np.concatenate(data_dicts['gt_boxes'], axis=0)
-        data_dicts['num_gt_boxes'] = num_gt_boxes
-
-        return data_dicts
 
     def evaluation(self, det_annos, class_names, **kwargs):
         if 'annos' not in self.infos[0].keys():
