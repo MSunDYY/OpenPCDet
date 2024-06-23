@@ -512,7 +512,7 @@ class DataProcessor(object):
                         elif iou3d_pre.sum()>config.USE_ROI_LIST.MAX_ROI:
                             sampled_inds = torch.topk(iou3d_pre, k=config.USE_ROI_LIST.MAX_ROI)[1]
                         else:
-                            sampled_inds = iou3d>0
+                            sampled_inds = iou3d_pre>0
                         roi_list.append(data_dict['roi_list'][idx][sampled_inds] )
 
                 max_num_rois = max([roi.shape[0] for roi in roi_list])
