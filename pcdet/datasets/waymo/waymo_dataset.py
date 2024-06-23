@@ -62,7 +62,7 @@ class WaymoDataset(DatasetTemplate):
         if GPUtil.getGPUs()[0].name.endswith('1650'):
             for config in self.dataset_cfg.DATA_PROCESSOR:
                 if config.NAME=='anchor_aug':
-                    config.ROI_PER_IMAGE=8
+                    config.ROI_PER_IMAGE=96
 
     def set_split(self, split):
         super().__init__(
@@ -460,7 +460,8 @@ class WaymoDataset(DatasetTemplate):
 
                 points_pre_all.append(points_pre)
                 num_points_pre.append(points_pre.shape[0])
-                pose_all.append(np.dot(pose_pre.T,np.linalg.inv(pose_cur.T)))
+                # pose_all.append(np.dot(pose_pre.T,np.linalg.inv(pose_cur.T)))
+                pose_all.append(pose_pre)
                 pred_boxes_all.append(pred_boxes)
             points = np.concatenate([points]+points_pre_all,axis=0).astype(np.float32)
             num_points_all = np.array([num_pts_cur]+num_points_pre).astype(np.int32)

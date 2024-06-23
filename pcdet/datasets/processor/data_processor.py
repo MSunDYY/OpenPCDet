@@ -1,6 +1,7 @@
 from functools import partial
 
 import numpy as np
+
 from skimage import transform
 import torch
 import torchvision
@@ -331,7 +332,34 @@ class DataProcessor(object):
             sampled_inds = torch.cat((fg_inds, bg_inds), dim=0)
             return sampled_inds.long(), fg_inds.long(), bg_inds.long()
 
-        
+        def transform_prebox_to_current(pred_boxes3d, pose_pre, pose_cur):
+            """
+
+            Args:
+                pred_boxes3d (N, 9 or 11): [x, y, z, dx, dy, dz, raw, <vx, vy,> score, label]
+                pose_pre (4, 4):
+                pose_cur (4, 4):
+            Returns:
+
+            """
+            assert pred_boxes3d.shape[-1] in [9, 11]
+            pred_boxes3d = pred_boxes3d.copy()
+            expand_bboxes = np.concatenate([pred_boxes3d[:, :3], np.ones((pred_boxes3d.shape[0], 1))], axis=-1)
+
+            bboxes_global = np.dot(expand_bboxes, pose_pre.T)[:, :3]
+            expand_bboxes_global = np.concatenate([bboxes_global[:, :3], np.ones((bboxes_global.shape[0], 1))], axis=-1)
+            bboxes_pre2cur = np.dot(expand_bboxes_global, np.linalg.inv(pose_cur.T))[:, :3]
+            pred_boxes3d[:, 0:3] = bboxes_pre2cur
+
+            if pred_boxes3d.shape[-1] == 11:
+                expand_vels = np.concatenate([pred_boxes3d[:, 7:9], np.zeros((pred_boxes3d.shape[0], 1))], axis=-1)
+                vels_global = np.dot(expand_vels, pose_pre[:3, :3].T)
+                vels_pre2cur = np.dot(vels_global, np.linalg.inv(pose_cur[:3, :3].T))[:, :2]
+                pred_boxes3d[:, 7:9] = vels_pre2cur
+
+            pred_boxes3d[:, 6] = pred_boxes3d[..., 6] + np.arctan2(pose_pre[..., 1, 0], pose_pre[..., 0, 0])
+            pred_boxes3d[:, 6] = pred_boxes3d[..., 6] - np.arctan2(pose_cur[..., 1, 0], pose_cur[..., 0, 0])
+            return pred_boxes3d
 
         def sample_rois_for_mppnet(batch_dict, config):
 
@@ -474,9 +502,14 @@ class DataProcessor(object):
                         continue
                     if roi_list is not None:
                         roi_pre = data_dict['roi_list'][idx].clone()
-                        roi_pre[:, :3] = torch.matmul(
-                            torch.concat([roi_pre[:, :3], torch.ones(roi_pre.shape[0], 1)], dim=-1),
-                            torch.from_numpy(data_dict['poses'][4 * idx:4 * (idx + 1)]))[:, :3]
+
+                        # roi_pre = torch.from_numpy(transform_prebox_to_current(roi_pre.numpy(),data_dict['poses'][4*idx:4*(idx+1)],data_dict['poses'][:4]))
+                        # roi_pre[:, :3] = torch.matmul(
+                        #     torch.concat([roi_pre[:, :3], torch.ones(roi_pre.shape[0], 1)], dim=-1),
+                        #     torch.from_numpy(data_dict['poses'][4*idx:4*(idx+1)]).T)[:, :3]
+                        # roi_pre[:,:3] = torch.matmul(
+                        #     torch.concat([roi_pre[:, :3], torch.ones(roi_pre.shape[0], 1)], dim=-1),
+                        #     torch.from_numpy(np.linalg.inv(data_dict['poses'][:4].T)))[:, :3]
                         iou3d_pre = iou3d_nms_utils.boxes_iou3d_cpu(batch_backward_rois[idx].squeeze()[:, :7],
                                                                     roi_pre[:, :7]).max(dim=0)[0]
                         sampled_inds = iou3d_pre>0 if (iou3d_pre>0).sum()<=config.USE_ROI_LIST.MAX_ROI else torch.topk(iou3d_pre,k=config.USE_ROI_LIST.MAX_ROI)[1]
