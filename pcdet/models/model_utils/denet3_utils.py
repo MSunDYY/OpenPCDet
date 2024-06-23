@@ -408,7 +408,9 @@ class TransformerEncoderLayer(nn.Module):
             new_query_points_features = torch.concat(new_query_features,dim=-1)
             # new_query_points_features = torch.zeros_like(query_points_features)
             new_src_idx = (torch.searchsorted(new_query_idx,new_src_idx,right=True)-1)
-            print('%02d  %02d  %02d'%(new_src_idx.min().item(),new_src_idx.max().item(),new_query_points_features.shape[0]))
+            # print('%02d  %02d  %02d'%(new_src_idx.min().item(),new_src_idx.max().item(),new_query_points_features.shape[0]))
+            assert new_src_idx.min().item()==0,new_src_idx.max().item()==new_query_points_features.shape[0]-1
+
             # new_query_points_features.scatter_(0, new_query_idx[:,  None].repeat(1,
             #                                                                      new_query_points_features.shape[-1]),
             #                                    torch.concat([new_query_xyz,new_query_features], dim=-1))
