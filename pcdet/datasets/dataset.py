@@ -217,11 +217,7 @@ class DatasetTemplate(torch_data.Dataset):
 
         if self.dataset_cfg.get('GET_LABEL', False):
             data_dict['points'] = np.concatenate((data_dict['points'], data_dict['label'].reshape(-1, 1)), axis=1)
-        if self.dataset_cfg.get('SHRINK_STRIDE',None) is not None:
-            data_dict['points'][:,:3] = data_dict['points'][:,:3] / np.array(self.dataset_cfg.get('SHRINK_STRIDE'))[None, :]
-            data_dict['gt_boxes'][:, :3] = data_dict['gt_boxes'][:, :3] / np.array(self.dataset_cfg.get('SHRINK_STRIDE'))[None, :]
-            data_dict['gt_boxes'][:, 3:6] = data_dict['gt_boxes'][:, 3:6] / np.array(self.dataset_cfg.get('SHRINK_STRIDE'))[None, :]
-            # self.point_cloud_range = self.point_cloud_range/np.array([self.dataset_cfg.SHRINK_STRIDE+self.dataset_cfg.SHRINK_STRIDE])
+
         data_dict = self.data_processor.forward(
             data_dict=data_dict
         )
@@ -353,12 +349,8 @@ class DatasetTemplate(torch_data.Dataset):
                     max_num_anchor = max([anchor.shape[0] for anchor in val])
                     temp = [torch.concat([anchor,torch.zeros(max_num_anchor-anchor.shape[0],anchor.shape[-2],anchor.shape[-1])],dim=0) for anchor in val]
                     ret[key] = torch.stack(temp)
-
-
                 else:
                     ret[key] = np.stack(val, axis=0)
-
-
             except:
                 print('Error in collate_batch: key=%s' % key)
                 raise TypeError

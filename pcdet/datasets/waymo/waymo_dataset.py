@@ -306,7 +306,7 @@ class WaymoDataset(DatasetTemplate):
         return ordered_bboxes
 
     def get_sequence_data(self, info, points, sequence_name, sample_idx, sequence_cfg, load_pred_boxes=False,
-                          get_gt=False, concat=True,transformed_points = False):
+                          get_gt=False, transformed_points = False):
         """
         Args:
             info:
@@ -404,20 +404,7 @@ class WaymoDataset(DatasetTemplate):
                                                           axis=-1)
                 points_pre2cur = np.dot(expand_points_pre_global, np.linalg.inv(pose_cur.T))[:, :3]
                 points_pre = np.concatenate([points_pre2cur, points_pre[:, 3:]], axis=-1)
-                # if not concat:
-                #     info_pre = sequence_info[sample_idx_pre]
-                #     annos_all.append(info_pre['annos'])
-                #     gt_boxes_pre = info_pre['annos']['gt_boxes_lidar']
-                #     box_xyz = gt_boxes_pre[:, :3]
-                #     expand_box_xyz = np.concatenate([box_xyz, np.ones((box_xyz.shape[0], 1))], axis=-1)
-                #     pose_pre2cur = np.dot(np.linalg.inv(pose_cur), pose_pre)
-                #     gt_boxes_pre[:, :3] = np.dot(expand_box_xyz, pose_pre2cur.T)[:, :3]
-                #
-                #     del_theta = np.arccos(np.clip(pose_pre2cur[0, 0],a_min=-1,a_max=1))
-                #     gt_boxes_pre[:, 6] -= del_theta
-                #     gt_boxes_pre[:, 7:9] = np.dot(gt_boxes_pre[:, 7:9], pose_pre2cur[:2, :2].T)
-                #     gt_boxes_pre = np.concatenate([gt_boxes_pre, np.full((gt_boxes_pre.shape[0], 1), idx + 2)], axis=-1)
-                #     gt_boxes.append(gt_boxes_pre)
+
                 if get_gt:
                     points_pre, points_gt_pre = np.split(points_pre, [num_points_pre_temp])
                     points_gt_all.append(points_gt_pre)
@@ -475,7 +462,8 @@ class WaymoDataset(DatasetTemplate):
                         pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
                         pred_boxes = load_pred_boxes_from_dict(sequence_name, sample_idx_pre)
                         if pred_boxes.shape[-1] == 12:
-                            pred_boxes = pred_boxes[pred_boxes[:, 9] == 1] if (pred_boxes[:, 9] == 1).sum() > 10 else pred_boxes
+                            if sequence_cfg.get('TRANSFORM_BOX',True):
+                                pred_boxes = pred_boxes[pred_boxes[:, 9] == 1] if (pred_boxes[:, 9] == 1).sum() > 10 else pred_boxes
                             pred_boxes = np.concatenate((pred_boxes[:, :9], pred_boxes[:, 10:]), axis=-1)
                         pred_boxes = self.transform_prebox_to_current(pred_boxes, pose_pre, pose_cur)
                         pred_boxes_all.append(pred_boxes)
@@ -572,16 +560,11 @@ class WaymoDataset(DatasetTemplate):
 
         if self.dataset_cfg.get('SEQUENCE_CONFIG', None) is not None and self.dataset_cfg[
             'SEQUENCE_CONFIG'].ENABLED:
-            if self.dataset_cfg.get('GET_LABEL', False):
-                points, num_points_all, sample_idx_pre_list, poses, pred_boxes, pred_scores, pred_labels, label = self.get_sequence_data(
-                    info, points, sequence_name, sample_idx, self.dataset_cfg['SEQUENCE_CONFIG'],
-                    load_pred_boxes=self.dataset_cfg.get('USE_PREDBOX', False), get_gt=True
-                )
-            else:
-                points, num_points_all, sample_idx_pre_list, gt_boxes, annos, poses, pred_boxes, pred_scores, pred_labels = self.get_sequence_data(
+
+            points, num_points_all, sample_idx_pre_list, gt_boxes, annos, poses, pred_boxes, pred_scores, pred_labels = self.get_sequence_data(
                     info, points, sequence_name, sample_idx, self.dataset_cfg['SEQUENCE_CONFIG'],
                     load_pred_boxes=self.dataset_cfg.get('USE_PREDBOX', False),
-                    concat=self.dataset_cfg.get('CONCAT', True),transformed_points=self.dataset_cfg.get('TRANSFORMED_POINTS',False),
+                    transformed_points=self.dataset_cfg.get('TRANSFORMED_POINTS',False),
                 )
             if self.dataset_cfg.get('USE_ANCHOR',False):
                 pred_anchors = self.load_pred_anchors_from_dict(sequence_name, sample_idx)
@@ -590,95 +573,47 @@ class WaymoDataset(DatasetTemplate):
             input_dict['poses'] = poses
 
             if self.dataset_cfg.get('USE_PREDBOX', False):
-                if isinstance(pred_boxes, list):
-                    num_rois = [box.shape[0] for box in pred_boxes]
-                    pred_boxes = np.concatenate(pred_boxes,axis=0)
-                    pred_labels = np.concatenate(pred_labels,axis=0)
-                    pred_scores = np.concatenate(pred_scores,axis=0)
-                    input_dict.update({'num_rois':num_rois})
                 input_dict.update({
                     'roi_boxes': pred_boxes,
                     'roi_scores': pred_scores,
                     'roi_labels': pred_labels,
                 })
                 
-        # if self.dataset_cfg.get('SHRINK_STRIDE',None) is not None:
-        #     points[:,:3] = points[:,:3]/np.array(self.dataset_cfg.get('SHRINK_STRIDE'))[None,:]
+
         input_dict.update({
             'points': points,
             'frame_id': info['frame_id'],
         })
 
         if 'annos' in info:
-            if annos == None:
-                annos = info['annos']
-                annos = common_utils.drop_info_with_name(annos, name='unknown')
-                if self.dataset_cfg.get('INFO_WITH_FAKELIDAR', False):
-                    gt_boxes_lidar = box_utils.boxes3d_kitti_fakelidar_to_lidar(annos['gt_boxes_lidar'])
-                else:
-                    gt_boxes_lidar = annos['gt_boxes_lidar']
-
-                if self.dataset_cfg.get('GT_DATA_PATH', None) is not None:
-                    gt_data = torch.from_numpy(np.load(self.gt_data_path / (info['frame_id'] + '_0.npy')))
-                    input_dict['gt_data'] = gt_data
-                    label = torch.from_numpy(np.load(self.gt_data_path / (info['frame_id'] + '_label.npy')))
-                    input_dict['label'] = label
-                    assert label.shape[0] == points.shape[0]
-                if self.dataset_cfg.get('TRAIN_WITH_SPEED', False):
-                    assert gt_boxes_lidar.shape[-1] == 9
-                else:
-                    gt_boxes_lidar = gt_boxes_lidar[:, 0:7]
-
-                if self.training and self.dataset_cfg.get('FILTER_EMPTY_BOXES_FOR_TRAIN', False):
-                    mask = (annos['num_points_in_gt'] > 0)  # filter empty boxes
-                    annos['name'] = annos['name'][mask]
-                    gt_boxes_lidar = gt_boxes_lidar[mask]
-                    annos['num_points_in_gt'] = annos['num_points_in_gt'][mask]
-                
-                # if self.dataset_cfg.get('SHRINK_STRIDE',None) is not None:
-                #     gt_boxes_lidar[:,:3] = gt_boxes_lidar[:,:3]/np.array(self.dataset_cfg.get('SHRINK_STRIDE'))[None,:]
-                #     gt_boxes_lidar[:,3:6 ] = gt_boxes_lidar[:,3:6] / np.array(self.dataset_cfg.get('SHRINK_STRIDE'))[None, :]
-                input_dict.update({
-                    'gt_names': annos['name'],
-                    'gt_boxes': gt_boxes_lidar,
-                    'num_points_in_gt': annos.get('num_points_in_gt', None)
-                })
+            annos = [common_utils.drop_info_with_name(anno, name='unknown') for anno in annos]
+            if self.dataset_cfg.get('INFO_WITH_FAKELIDAR', False):
+                gt_boxes_lidar = box_utils.boxes3d_kitti_fakelidar_to_lidar(annos['gt_boxes_lidar'])
             else:
-
-                annos = [common_utils.drop_info_with_name(anno, name='unknown') for anno in annos]
-                if self.dataset_cfg.get('INFO_WITH_FAKELIDAR', False):
-                    gt_boxes_lidar = box_utils.boxes3d_kitti_fakelidar_to_lidar(annos['gt_boxes_lidar'])
+                if isinstance(gt_boxes, list):
+                    gt_boxes_lidar = gt_boxes
                 else:
-                    if isinstance(gt_boxes, list):
-                        gt_boxes_lidar = gt_boxes
-                    else:
-                        gt_boxes_lidar = gt_boxes
+                    gt_boxes_lidar = gt_boxes
 
-                if self.dataset_cfg.get('GT_DATA_PATH', None) is not None:
-                    gt_data = torch.from_numpy(np.load(self.gt_data_path / (info['frame_id'] + '_0.npy')))
-                    input_dict['gt_data'] = gt_data
-                    label = torch.from_numpy(np.load(self.gt_data_path / (info['frame_id'] + '_label.npy')))
-                    input_dict['label'] = label
-                    assert label.shape[0] == points.shape[0]
-                if self.dataset_cfg.get('TRAIN_WITH_SPEED', False):
-                    assert gt_boxes_lidar[0].shape[-1] == 9 + (0 if self.dataset_cfg.get('CONCAT', True) else 1)
-                else:
-                    gt_boxes_lidar = [gt_boxes[:, 0:7] for gt_boxes in gt_boxes_lidar] if self.dataset_cfg.get('CONCAT',
-                                                                                                               True) else [
-                        np.concatenate([gt_box[:, :7], gt_box[:, -1:]], axis=-1) for gt_box in gt_boxes_lidar]
+            if self.dataset_cfg.get('TRAIN_WITH_SPEED', False):
+                assert gt_boxes_lidar[0].shape[-1] == 9 + (0 if self.dataset_cfg.get('CONCAT', True) else 1)
+            else:
+                gt_boxes_lidar = [gt_boxes[:, 0:7] for gt_boxes in gt_boxes_lidar] if self.dataset_cfg.get('CONCAT',
+                                                                                                           True) else [
+                    np.concatenate([gt_box[:, :7], gt_box[:, -1:]], axis=-1) for gt_box in gt_boxes_lidar]
 
-                if self.training and self.dataset_cfg.get('FILTER_EMPTY_BOXES_FOR_TRAIN', False):
-                    mask = [(anno['num_points_in_gt'] > 0) for anno in annos]  # filter empty boxes
-                    for i, anno in enumerate(annos):
-                        anno['name'] = anno['name'][mask[i]]
-                        gt_boxes_lidar[i] = gt_boxes_lidar[i][mask[i]]
-                        anno['num_points_in_gt'] = anno['num_points_in_gt'][mask[i]]
+            if self.training and self.dataset_cfg.get('FILTER_EMPTY_BOXES_FOR_TRAIN', False):
+                mask = [(anno['num_points_in_gt'] > 0) for anno in annos]  # filter empty boxes
+                for i, anno in enumerate(annos):
+                    anno['name'] = anno['name'][mask[i]]
+                    gt_boxes_lidar[i] = gt_boxes_lidar[i][mask[i]]
+                    anno['num_points_in_gt'] = anno['num_points_in_gt'][mask[i]]
 
-                input_dict.update({
-                    'gt_names': np.concatenate([anno['name'] for anno in annos], axis=0),
-                    'gt_boxes': np.concatenate(gt_boxes_lidar, axis=0),
-                    'num_points_in_gt': np.concatenate([anno.get('num_points_in_gt', None) for anno in annos], axis=-1)
-                })
+            input_dict.update({
+                'gt_names': np.concatenate([anno['name'] for anno in annos], axis=0),
+                'gt_boxes': np.concatenate(gt_boxes_lidar, axis=0),
+                'num_points_in_gt': np.concatenate([anno.get('num_points_in_gt', None) for anno in annos], axis=-1)
+            })
         assert input_dict['gt_boxes'].shape[0] == input_dict['gt_names'].shape[0]
         data_dict = self.prepare_data(data_dict=input_dict)
 

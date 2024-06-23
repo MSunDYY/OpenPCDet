@@ -20,6 +20,7 @@ DATA_CONFIG:
         ENABLED: True
         SAMPLE_OFFSET: [-3,0]
         USE_PRE_PREDBOX: True
+        TRANSFORM_BOX: False
 
     USE_PREDBOX: True
     ROI_BOXES_PATH: {
@@ -64,6 +65,7 @@ DATA_CONFIG:
           USE_ROI_LIST:
               ENABLED: True
               MAX_ROI: 150
+              MIN_ROI: 20
           SAMPLE_ROI_BY_EACH_CLASS: True
           CLS_SCORE_TYPE: roi_iou
 

@@ -503,16 +503,16 @@ class DataProcessor(object):
                     if roi_list is not None:
                         roi_pre = data_dict['roi_list'][idx].clone()
 
-                        # roi_pre = torch.from_numpy(transform_prebox_to_current(roi_pre.numpy(),data_dict['poses'][4*idx:4*(idx+1)],data_dict['poses'][:4]))
-                        # roi_pre[:, :3] = torch.matmul(
-                        #     torch.concat([roi_pre[:, :3], torch.ones(roi_pre.shape[0], 1)], dim=-1),
-                        #     torch.from_numpy(data_dict['poses'][4*idx:4*(idx+1)]).T)[:, :3]
-                        # roi_pre[:,:3] = torch.matmul(
-                        #     torch.concat([roi_pre[:, :3], torch.ones(roi_pre.shape[0], 1)], dim=-1),
-                        #     torch.from_numpy(np.linalg.inv(data_dict['poses'][:4].T)))[:, :3]
+                        roi_pre = torch.from_numpy(transform_prebox_to_current(roi_pre.numpy(),data_dict['poses'][4*idx:4*(idx+1)],data_dict['poses'][:4]))
+
                         iou3d_pre = iou3d_nms_utils.boxes_iou3d_cpu(batch_backward_rois[idx].squeeze()[:, :7],
                                                                     roi_pre[:, :7]).max(dim=0)[0]
-                        sampled_inds = iou3d_pre>0 if (iou3d_pre>0).sum()<=config.USE_ROI_LIST.MAX_ROI else torch.topk(iou3d_pre,k=config.USE_ROI_LIST.MAX_ROI)[1]
+                        if iou3d_pre.sum()<config.USE_ROI_LIST.MIN_ROI:
+                            sampled_inds = torch.ones(iou3d_pre.shape,dtype=torch.bool)
+                        elif iou3d_pre.sum()>config.USE_ROI_LIST.MAC_ROI:
+                            sampled_inds = torch.topk(iou3d_pre, k=config.USE_ROI_LIST.MAX_ROI)[1]
+                        else:
+                            sampled_inds = iou3d>0
                         roi_list.append(data_dict['roi_list'][idx][sampled_inds] )
 
                 max_num_rois = max([roi.shape[0] for roi in roi_list])
@@ -522,6 +522,7 @@ class DataProcessor(object):
 
 
             return batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_labels, batch_backward_rois[...,:-1], batch_valid_length
+
         with torch.no_grad():
             if data_dict['roi_boxes'].shape[0]>1:
                 data_dict['roi_list'] = torch.from_numpy(data_dict['roi_boxes'])
@@ -1007,8 +1008,5 @@ class DataProcessor(object):
         """
 
         for cur_processor in self.data_processor_queue:
-            if cur_processor.keywords['config'].NAME=='transform_points_to_voxels' and cur_processor.keywords['config'].get('GPU',False):
-                continue
             data_dict = cur_processor(data_dict=data_dict)
-
         return data_dict

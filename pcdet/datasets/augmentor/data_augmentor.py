@@ -88,7 +88,7 @@ class DataAugmentor(object):
                                 [0,0,1,0],
                                 [0,0,0,1]])
                 if data_dict.get('num_points_all',None) is not None:
-                    for i in range(1,data_dict['num_points_all'].shape[0]):
+                    for i in range(0,data_dict['num_points_all'].shape[0]):
                         data_dict['poses'][4*i:4*(i+1)] = T@data_dict['poses'][4*i:4*(i+1)]@T
 
         data_dict['gt_boxes'] = gt_boxes
@@ -113,7 +113,7 @@ class DataAugmentor(object):
             [0.,0.,0.,1.]
         ])
         if data_dict.get('num_points_all',None) is not None:
-            for i in range(1,data_dict['num_points_all'].shape[0]):
+            for i in range(0,data_dict['num_points_all'].shape[0]):
                 data_dict['poses'][4*i:4*(i+1)] = np.linalg.inv(rot_matrix)@data_dict['poses'][4*i:4*(i+1)]@rot_matrix
 
         if 'roi_boxes' in data_dict.keys():
