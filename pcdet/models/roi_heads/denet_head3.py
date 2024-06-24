@@ -1303,13 +1303,13 @@ class DENet3Head(RoIHeadTemplate):
         rcnn_cls_labels = forward_ret_dict['rcnn_cls_labels'].view(-1)
         
         query_point_cls_labels = forward_ret_dict['point_cls_labels']
-        point_cls_preds = forward_ret_dict['query_point_cls']
-        positives = point_cls_preds>0
-        negative_cls_weights = (point_cls_preds==0)*1.0
+        point_cls_preds = forward_ret_dict['query_point_cls'].view(-1)
+        positives = query_point_cls_labels>0
+        negative_cls_weights = (query_point_cls_labels==0)*1.0
         cls_weights = (negative_cls_weights +1.0*positives).float()
-        pos_nromalizer = positives.sum(dim=0).float()
-        cls_weights/=torch.clamp(pos_nromalizer,min=1.0)
-        cls_loss_src = self.point_cls_loss_func(point_cls_preds,query_point_cls_labels[:,None],weights =cls_weights.squeeze())
+        pos_normalizer = positives.sum(dim=0).float()
+        cls_weights/=torch.clamp(pos_normalizer,min=1.0)
+        cls_loss_src = self.point_cls_loss_func(point_cls_preds,query_point_cls_labels,weights =cls_weights.squeeze())
         point_loss_cls = cls_loss_src.sum()
         point_loss_cls = point_loss_cls*loss_cfgs.LOSS_WEIGHTS['point_cls_weight']
         
