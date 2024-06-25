@@ -546,7 +546,7 @@ class WaymoDataset(DatasetTemplate):
         }
 
         if self.dataset_cfg.get('TRANSFORMED_POINTS',False):
-            data_tag = 'waymo_processed_data_v0_5_0_full' if self.training else 'waymo_processed_data_v0_5_0_full'
+            data_tag = 'waymo_processed_data_v0_5_0_full' if self.training else 'waymo_processed_data_v0_5_0_full_val'
             file_name = self.root_path/data_tag/sequence_name/('%04d.npy'%sample_idx)
             points = np.load(file_name)
         else:

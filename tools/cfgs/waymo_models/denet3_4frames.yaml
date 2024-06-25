@@ -6,7 +6,7 @@ DATA_CONFIG:
     TRANSFORMED_POINTS: True
     DATA_SPLIT: {
         'train': train,
-        'test': train
+        'test': val
     }
     TRAIN_WITH_SPEED: True
     SAMPLED_INTERVAL: {

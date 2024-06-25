@@ -979,7 +979,7 @@ class DENet3Head(RoIHeadTemplate):
         batch_dict['has_class_labels'] = True
         # batch_dict['trajectory_rois'] = trajectory_rois
         batch_dict['trajectory_rois'] = trajectory_rois
-        if self.training:
+        if self.training :
             if not self.model_cfg.get('PRE_AUG', False):
                 targets_dict = self.assign_targets(batch_dict)
             else:
@@ -1001,7 +1001,7 @@ class DENet3Head(RoIHeadTemplate):
         num_sample = self.num_lidar_points 
 
             # self.voxel_sampler_traj = build_voxel_sampler_traj(rois.device)
-        if self.training:
+        if self.training or not self.training:
             with torch.no_grad():
                 num_rois_pre = batch_dict['roi_list'].shape[-2]
                 roi_list = batch_dict['roi_list'][:,1:].transpose(0,1).flatten(0,1)
@@ -1075,8 +1075,9 @@ class DENet3Head(RoIHeadTemplate):
         src_all = torch.concat([src_all,time_offset],dim=-1)
 
         src_all = self.pos_embding(src_all)
-        points_targets = self.assign_stack_targets(final_query_features[:,:3],batch_dict['gt_boxes'],batch_dict['query_points_bs_idx3'],ret_box_labels=True)
-        targets_dict.update(points_targets)
+        if self.training:
+            points_targets = self.assign_stack_targets(final_query_features[:,:3],batch_dict['gt_boxes'],batch_dict['query_points_bs_idx3'],ret_box_labels=True)
+            targets_dict.update(points_targets)
 
         query_points_cls_preds = self.points_feature_cls(final_query_features)
         query_points_reg_preds = self.points_feature_reg(final_query_features)
