@@ -588,10 +588,10 @@ class VoxelPointsSampler(nn.Module):
                     key_points = key_points[torch.randperm(len(key_points)), :]
                 else:
                     key_points = cur_batch_points
-                if False:
-                    root_data = '../../data/waymo/key_points/train/'
+                if start_idx==0 and idx==0:
+                    root_data = '../../data/waymo/key_points/train/' if self.training else '../../data/waymo/key_points/val/'
                     os.makedirs(root_data+batch_dict['metadata'][0][:-4],exist_ok=True)
-                    np.save('../../data/waymo/key_points/train/'+batch_dict['metadata'][0][:-4]+'/0.4.npy' % batch_dict['sample_idx'][0][-3:],key_points.cpu().numpy())
+                    np.save(root_data+batch_dict['metadata'][0][:-4]+'/%04d.npy' % (batch_dict['sample_idx'][0][-3:] if self.training else batch_dict['sample_idx'][0]),key_points.cpu().numpy())
 
                 key_points, points_features, query_points_features = self.cylindrical_pool(key_points, cur_batch_boxes,
                                                                                            num_sample, gamma,
