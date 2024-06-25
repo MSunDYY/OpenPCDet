@@ -371,7 +371,7 @@ class DENet3Head(RoIHeadTemplate):
             nn.Linear(131,256),
             nn.BatchNorm1d(256),
             nn.ReLU(),
-            nn.Linear(256,1)
+            nn.Linear(256,3)
         )
         self.points_attention = CrossMixerBlock(channels=128)
 
@@ -833,7 +833,7 @@ class DENet3Head(RoIHeadTemplate):
                 raise NotImplementedError
 
             gt_box_of_fg_points = gt_boxes[k][box_idxs_of_pts[fg_flag]]
-            point_cls_labels_single[fg_flag] = 1 if self.num_class == 1 else gt_box_of_fg_points[:, -1].long()
+            point_cls_labels_single[fg_flag] = gt_box_of_fg_points[:, -1].long()
             point_cls_labels[points_bs_idx[k]:points_bs_idx[k+1]] = point_cls_labels_single
 
             if ret_box_labels and gt_box_of_fg_points.shape[0] > 0:
@@ -1305,13 +1305,17 @@ class DENet3Head(RoIHeadTemplate):
         rcnn_cls_labels = forward_ret_dict['rcnn_cls_labels'].view(-1)
         
         query_point_cls_labels = forward_ret_dict['point_cls_labels']
-        point_cls_preds = forward_ret_dict['query_point_cls'].view(-1)
+        point_cls_preds = forward_ret_dict['query_point_cls'].view(-1,3)
         positives = query_point_cls_labels>0
         negative_cls_weights = (query_point_cls_labels==0)*1.0
         cls_weights = (negative_cls_weights +1.0*positives).float()
         pos_normalizer = positives.sum(dim=0).float()
         cls_weights/=torch.clamp(pos_normalizer,min=1.0)
-        cls_loss_src = self.point_cls_loss_func(point_cls_preds,query_point_cls_labels,weights =cls_weights.squeeze())
+        one_hot_targets = query_point_cls_labels.new_zeros(query_point_cls_labels.shape[0],4)
+        one_hot_targets.scatter_(-1,(query_point_cls_labels*(query_point_cls_labels>=0).long()).unsqueeze(-1).long(),1.0)
+        one_hot_targets = one_hot_targets[...,1:]
+        
+        cls_loss_src = self.point_cls_loss_func(point_cls_preds,one_hot_targets,weights =cls_weights.squeeze())
         point_loss_cls = cls_loss_src.sum()
         point_loss_cls = point_loss_cls*loss_cfgs.LOSS_WEIGHTS['point_cls_weight']
         
