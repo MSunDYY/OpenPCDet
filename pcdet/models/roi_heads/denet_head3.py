@@ -1032,7 +1032,8 @@ class DENet3Head(RoIHeadTemplate):
             for idx in range(num_frames-1):
                 for bs in range(batch_size):
                     query_points_single = query_points_features_pre[query_points_bs_idx_pre[idx*batch_size+bs]:query_points_bs_idx_pre[idx*batch_size+bs+1]]
-                    query_points_single[:,:3] = torch.matmul(F.pad(query_points_single[:,:3],(0,1,0,0),value=0),batch_dict['poses'][bs,(idx+1)*4:(idx+2)*4])[:,:3]
+                    query_points_single[:,:3] = torch.matmul(F.pad(query_points_single[:,:3],(0,1,0,0),value=1),batch_dict['poses'][bs,:4].t())[:,:3]
+                    query_points_single[:,:3] = torch.matmul(F.pad(query_points_single[:,:3],(0,1,0,0),value=1),batch_dict['poses'][bs,4*(idx+1):4*(idx+2)].t().inverse())[:,:3]
 
 
         roi_boxes = roi_boxes.reshape(-1,roi_boxes.shape[-1])

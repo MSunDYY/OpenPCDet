@@ -306,7 +306,7 @@ class WaymoDataset(DatasetTemplate):
         return ordered_bboxes
 
     def get_sequence_data(self, info, points, sequence_name, sample_idx, sequence_cfg, load_pred_boxes=False,
-                          get_gt=False, transformed_points = False):
+                           transformed_points = False):
         """
         Args:
             info:
@@ -346,25 +346,13 @@ class WaymoDataset(DatasetTemplate):
             else:
                 points = np.hstack([points, np.zeros((points.shape[0], 1)).astype(points.dtype)])
 
-        if get_gt:
-            label = np.zeros((points.shape[0]))
-            gt_boxes_cur = info['annos']['gt_boxes_lidar']
-            box_idxs_of_pts = roiaware_pool3d_utils.points_in_boxes_gpu(
-                torch.from_numpy(points[:, 0:3]).unsqueeze(dim=0).float().cuda(),
-                torch.from_numpy(gt_boxes_cur[:, 0:7]).unsqueeze(dim=0).float().cuda()
-            ).long().squeeze(dim=0).cpu().numpy()
-            points_gt_cur = points[box_idxs_of_pts >= 0]
-            label = np.zeros(points.shape[0])
-            label[box_idxs_of_pts >= 0] = 1
-            points_gt_all = []
+
         num_points_pre = []
         points_pre_all = []
         pose_all = [pose_cur]
         pred_boxes_all = []
         if load_pred_boxes:
             pred_boxes = load_pred_boxes_from_dict(sequence_name, sample_idx)
-            if pred_boxes.shape[1]==12:
-                pred_boxes = np.concatenate((pred_boxes[:,:9],pred_boxes[:,10:]),axis=-1)
 
             pred_boxes_all.append(pred_boxes)
 
@@ -439,7 +427,7 @@ class WaymoDataset(DatasetTemplate):
         else:
             key_points_root = Path('../../data/waymo/key_points')/self.mode/sequence_name
             for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
-                key_points_file = key_points_root/('%03d.npy'%sample_idx_pre)
+                key_points_file = key_points_root/('%04d.npy'%sample_idx_pre)
                 points_pre = np.load(key_points_file)
                 points_pre = np.hstack([points_pre,0.1*(idx+1)*np.ones((points_pre.shape[0],1)).astype(points_pre.dtype)])
                 pose_pre = sequence_info[sample_idx_pre]['pose'].reshape(4,4)
@@ -449,7 +437,7 @@ class WaymoDataset(DatasetTemplate):
                 num_points_pre.append(points_pre.shape[0])
                 # pose_all.append(np.dot(pose_pre.T,np.linalg.inv(pose_cur.T)))
                 pose_all.append(pose_pre)
-                pred_boxes_all.append(pred_boxes)
+
             points = np.concatenate([points]+points_pre_all,axis=0).astype(np.float32)
             num_points_all = np.array([num_pts_cur]+num_points_pre).astype(np.int32)
             poses = np.concatenate(pose_all,axis=0).astype(np.float32)
@@ -461,25 +449,14 @@ class WaymoDataset(DatasetTemplate):
     
                         pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
                         pred_boxes = load_pred_boxes_from_dict(sequence_name, sample_idx_pre)
-                        if pred_boxes.shape[-1] == 12:
-                            if sequence_cfg.get('TRANSFORM_BOX',True):
-                                pred_boxes = pred_boxes[pred_boxes[:, 9] == 1] if (pred_boxes[:, 9] == 1).sum() > 10 else pred_boxes
-                            pred_boxes = np.concatenate((pred_boxes[:, :9], pred_boxes[:, 10:]), axis=-1)
-                        pred_boxes = self.transform_prebox_to_current(pred_boxes, pose_pre, pose_cur)
+                        if not self.dataset_cfg.get('USE_KEY_POINTS',False):
+                            pred_boxes = self.transform_prebox_to_current(pred_boxes, pose_pre, pose_cur)
                         pred_boxes_all.append(pred_boxes)
                     else:
                         pred_boxes_all.append(pred_boxes_all[0][pred_boxes_all[0][:, -3] == idx + 1])
 
-        if get_gt:
-            points_gt_all.append(points_gt_cur[:, :5])
-
-
-
         if load_pred_boxes:
-            if pred_boxes_all[0].shape[1]==12:
-                pred_boxes_all[0] = pred_boxes_all[0][pred_boxes_all[0][:,-3]==0]
-                for i,pred_boxes in enumerate(pred_boxes_all):
-                    pred_boxes_all[i] = np.concatenate([pred_boxes[:,:9],pred_boxes[:,-2:]],axis=-1)
+
             temp_pred_boxes = self.reorder_rois_for_refining(pred_boxes_all)
             pred_boxes = temp_pred_boxes[:,:,:9]
             pred_scores = temp_pred_boxes[:,:,9]
@@ -490,8 +467,6 @@ class WaymoDataset(DatasetTemplate):
             # pred_labels = [box[:,10] for box in pred_boxes_all]
         else:
             pred_boxes = pred_scores = pred_labels = None
-        if get_gt:
-            return points, num_points_all, sample_idx_pre_list, poses, pred_boxes, pred_scores, pred_labels, points_gt_all, label
 
         return points, num_points_all, sample_idx_pre_list, gt_boxes, annos_all, poses, pred_boxes, pred_scores, pred_labels
 
@@ -546,7 +521,7 @@ class WaymoDataset(DatasetTemplate):
         }
 
         if self.dataset_cfg.get('TRANSFORMED_POINTS',False):
-            data_tag = 'waymo_processed_data_v0_5_0_full' if self.training else 'waymo_processed_data_v0_5_0_full_val'
+            data_tag = 'waymo_processed_data_v0_5_0_full' if self.training else 'waymo_processed_data_v0_5_0_full'
             file_name = self.root_path/data_tag/sequence_name/('%04d.npy'%sample_idx)
             points = np.load(file_name)
         else:
