@@ -348,8 +348,8 @@ class DENet3Head(RoIHeadTemplate):
 
         self.transformer = build_transformer(model_cfg.Transformer)
         # self.transformer2 = build_transformer3(model_cfg.Transformer)
-        # self.compress_points = SpatialMixerBlockCompress(hidden_dim=8,grid_size=3)
-        self.compress_points = nn.Sequential(nn.Conv1d(256*27,512,kernel_size=1),
+        self.compress_points = SpatialMixerBlockCompress(hidden_dim=8,grid_size=3)
+        self.compress_points = nn.Sequential(nn.Conv1d(256*self.grid_size**3,512,kernel_size=1),
                                              nn.BatchNorm1d(512),
                                              nn.ReLU(),
                                              nn.Dropout(0.2),
@@ -1032,9 +1032,9 @@ class DENet3Head(RoIHeadTemplate):
             for idx in range(num_frames-1):
                 for bs in range(batch_size):
                     query_points_single = query_points_features_pre[query_points_bs_idx_pre[idx*batch_size+bs]:query_points_bs_idx_pre[idx*batch_size+bs+1]]
-                    query_points_single[:,:3] = torch.matmul(F.pad(query_points_single[:,:3],(0,1,0,0),value=1),batch_dict['poses'][bs,:4].t())[:,:3]
-                    query_points_single[:,:3] = torch.matmul(F.pad(query_points_single[:,:3],(0,1,0,0),value=1),batch_dict['poses'][bs,4*(idx+1):4*(idx+2)].t().inverse())[:,:3]
-
+                    query_points_single[:,:3] = torch.matmul(F.pad(query_points_single[:,:3],(0,1,0,0),value=1),batch_dict['poses'][bs,4*(idx+1):4*(idx+2)].t())[:,:3]
+                    query_points_single[:,:3] = torch.matmul(F.pad(query_points_single[:,:3],(0,1,0,0),value=1),batch_dict['poses'][bs,:4].t().inverse())[:,:3]
+                    query_points_features_pre[query_points_bs_idx_pre[idx * batch_size + bs]:query_points_bs_idx_pre[idx * batch_size + bs + 1]] = query_points_single
 
         roi_boxes = roi_boxes.reshape(-1,roi_boxes.shape[-1])
         num_rois = torch.cumsum(torch.tensor([0]+[batch_dict['roi_boxes'][i].shape[0] for i in range(batch_size)],device=device),dim=0)
@@ -1061,7 +1061,7 @@ class DENet3Head(RoIHeadTemplate):
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK', None):
             src1[empty_mask.view(-1)] = 0
             # src2[empty_mask.view(-1)] = 0
-        corner_points,_ = self.get_corner_proxy_points_of_roi(roi_boxes,grid_size=3)
+        corner_points,_ = self.get_corner_proxy_points_of_roi(roi_boxes,grid_size=self.grid_size)
         # corner_points = unflatten(corner_points,dim=0,sizes = (num_frames,-1))[0].contiguous()
         hs, tokens = self.transformer(src1, batch_dict, pos=None)
         final_src = batch_dict['final_src_xyz']

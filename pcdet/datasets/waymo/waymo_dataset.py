@@ -374,16 +374,7 @@ class WaymoDataset(DatasetTemplate):
                     # s = time.time()
                     points_pre = self.get_lidar(sequence_name, sample_idx_pre)
                     # print(' {:.3f}'.format(time.time()-st),end='')
-                if get_gt:
-                    num_points_pre_temp = points_pre.shape[0]
-                    info_pre = sequence_info[sample_idx_pre]
-                    gt_boxes_pre = info_pre['annos']['gt_boxes_lidar']
-                    box_idxs_of_pts = roiaware_pool3d_utils.points_in_boxes_gpu(
-                        torch.from_numpy(points_pre[:, 0:3]).unsqueeze(dim=0).float().cuda(),
-                        torch.from_numpy(gt_boxes_pre[:, 0:7]).unsqueeze(dim=0).float().cuda()
-                    ).long().squeeze(dim=0).cpu().numpy()
-                    points_gt_pre = points_pre[box_idxs_of_pts >= 0]
-                    points_pre = np.concatenate([points_pre, points_gt_pre])
+
 
                 pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
                 expand_points_pre = np.concatenate([points_pre[:, :3], np.ones((points_pre.shape[0], 1))], axis=-1)
@@ -393,9 +384,7 @@ class WaymoDataset(DatasetTemplate):
                 points_pre2cur = np.dot(expand_points_pre_global, np.linalg.inv(pose_cur.T))[:, :3]
                 points_pre = np.concatenate([points_pre2cur, points_pre[:, 3:]], axis=-1)
 
-                if get_gt:
-                    points_pre, points_gt_pre = np.split(points_pre, [num_points_pre_temp])
-                    points_gt_all.append(points_gt_pre)
+
 
                 if sequence_cfg.get('ONEHOT_TIMESTAMP', False):
                     onehot_vector = np.zeros((points_pre.shape[0], len(sample_idx_pre_list) + 1))
@@ -561,14 +550,12 @@ class WaymoDataset(DatasetTemplate):
         })
 
         if 'annos' in info:
-            annos = [common_utils.drop_info_with_name(anno, name='unknown') for anno in annos]
+            annos = common_utils.drop_info_with_name(info['annos'], name='unknown')
             if self.dataset_cfg.get('INFO_WITH_FAKELIDAR', False):
                 gt_boxes_lidar = box_utils.boxes3d_kitti_fakelidar_to_lidar(annos['gt_boxes_lidar'])
             else:
-                if isinstance(gt_boxes, list):
-                    gt_boxes_lidar = gt_boxes
-                else:
-                    gt_boxes_lidar = gt_boxes
+
+                gt_boxes_lidar = annos['gt_boxes_lidar']
 
             if self.dataset_cfg.get('TRAIN_WITH_SPEED', False):
                 assert gt_boxes_lidar[0].shape[-1] == 9 + (0 if self.dataset_cfg.get('CONCAT', True) else 1)
@@ -578,16 +565,15 @@ class WaymoDataset(DatasetTemplate):
                     np.concatenate([gt_box[:, :7], gt_box[:, -1:]], axis=-1) for gt_box in gt_boxes_lidar]
 
             if self.training and self.dataset_cfg.get('FILTER_EMPTY_BOXES_FOR_TRAIN', False):
-                mask = [(anno['num_points_in_gt'] > 0) for anno in annos]  # filter empty boxes
-                for i, anno in enumerate(annos):
-                    anno['name'] = anno['name'][mask[i]]
-                    gt_boxes_lidar[i] = gt_boxes_lidar[i][mask[i]]
-                    anno['num_points_in_gt'] = anno['num_points_in_gt'][mask[i]]
+                mask = (annos['num_points_in_gt']>0) # filter empty boxes
+                annos['name'] = annos['name'][mask]
+                gt_boxes_lidar = gt_boxes_lidar[mask]
+                annos['num_points_in_gt'] = annos['num_points_in_gt'][mask]
 
             input_dict.update({
-                'gt_names': np.concatenate([anno['name'] for anno in annos], axis=0),
-                'gt_boxes': np.concatenate(gt_boxes_lidar, axis=0),
-                'num_points_in_gt': np.concatenate([anno.get('num_points_in_gt', None) for anno in annos], axis=-1)
+                'gt_names': annos['name'],
+                'gt_boxes': gt_boxes_lidar,
+                'num_points_in_gt': annos.get('num_points_in_gt', None)
             })
         assert input_dict['gt_boxes'].shape[0] == input_dict['gt_names'].shape[0]
         data_dict = self.prepare_data(data_dict=input_dict)
