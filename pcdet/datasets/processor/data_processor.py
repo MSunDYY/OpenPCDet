@@ -492,7 +492,7 @@ class DataProcessor(object):
                 batch_backward_rois = cur_backward_rois[:, sampled_inds]
                 # batch_trajectory_rois[index] = cur_trajectory_rois[:,sampled_inds]
 
-            if config.USE_ROI_LIST.ENABLED:
+            if config.get('USE_ROI_LIST',False) and config.USE_ROI_LIST.ENABLED:
                 roi_list = []
                 batch_backward_rois_list = []
                 batch_trajectory_rois_list = []

@@ -310,7 +310,7 @@ class TransformerEncoderLayer(nn.Module):
             src_max_groups = torch.max(src_all_groups, 1, keepdim=True).values
             src_past_groups = torch.cat([src_all_groups[:-1], \
                                          src_max_groups[1:].repeat(1, (src.shape[0] - 1), 1, 1)], -1)
-            src_all_groups[:-1] = self.cross_norm_2(self.cross_conv_2(src_past_groups) + src_agit ll_groups[:-1])
+            src_all_groups[:-1] = self.cross_norm_2(self.cross_conv_2(src_past_groups) + src_all_groups[:-1])
 
             src_inter_group_fusion = src_all_groups.permute(1, 0, 2, 3).contiguous().flatten(1, 2)
 
