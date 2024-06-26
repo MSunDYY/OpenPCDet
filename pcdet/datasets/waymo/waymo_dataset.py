@@ -558,11 +558,10 @@ class WaymoDataset(DatasetTemplate):
                 gt_boxes_lidar = annos['gt_boxes_lidar']
 
             if self.dataset_cfg.get('TRAIN_WITH_SPEED', False):
-                assert gt_boxes_lidar[0].shape[-1] == 9 + (0 if self.dataset_cfg.get('CONCAT', True) else 1)
+                assert gt_boxes_lidar.shape[-1] == 9
             else:
-                gt_boxes_lidar = [gt_boxes[:, 0:7] for gt_boxes in gt_boxes_lidar] if self.dataset_cfg.get('CONCAT',
-                                                                                                           True) else [
-                    np.concatenate([gt_box[:, :7], gt_box[:, -1:]], axis=-1) for gt_box in gt_boxes_lidar]
+                gt_boxes_lidar = gt_boxes_lidar[:,:7]
+
 
             if self.training and self.dataset_cfg.get('FILTER_EMPTY_BOXES_FOR_TRAIN', False):
                 mask = (annos['num_points_in_gt']>0) # filter empty boxes
@@ -599,6 +598,7 @@ class WaymoDataset(DatasetTemplate):
                 'Sign': 'Sign',
                 'Car': 'Car'
             }
+
             kitti_utils.transform_annotations_to_kitti_format(eval_det_annos, map_name_to_kitti=map_name_to_kitti)
             kitti_utils.transform_annotations_to_kitti_format(
                 eval_gt_annos, map_name_to_kitti=map_name_to_kitti,
