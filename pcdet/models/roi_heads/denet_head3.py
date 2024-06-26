@@ -348,15 +348,15 @@ class DENet3Head(RoIHeadTemplate):
 
         self.transformer = build_transformer(model_cfg.Transformer)
         # self.transformer2 = build_transformer3(model_cfg.Transformer)
-        self.compress_points = SpatialMixerBlockCompress(hidden_dim=8,grid_size=3)
-        self.compress_points = nn.Sequential(nn.Conv1d(256*self.grid_size**3,512,kernel_size=1),
-                                             nn.BatchNorm1d(512),
-                                             nn.ReLU(),
-                                             nn.Dropout(0.2),
-                                             nn.Conv1d(512,256,kernel_size=1),
-                                             nn.BatchNorm1d(256),
-                                             nn.ReLU(),
-                                             )
+        self.compress_points = SpatialMixerBlockCompress(hidden_dim=256,grid_size=self.grid_size,dropout=0.1)
+        # self.compress_points = nn.Sequential(nn.Conv1d(256*self.grid_size**3,512,kernel_size=1),
+        #                                      nn.BatchNorm1d(512),
+        #                                      nn.ReLU(),
+        #                                      nn.Dropout(0.2),
+        #                                      nn.Conv1d(512,256,kernel_size=1),
+        #                                      nn.BatchNorm1d(256),
+        #                                      nn.ReLU(),
+        #                                      )
         self.corner_features_emb = PointnetSAModuleMSG(
                 npoint=4096,
                 radii=[16],
@@ -1085,10 +1085,10 @@ class DENet3Head(RoIHeadTemplate):
 
         final_src_features = self.points_attention(final_src_features,pre_src_features,src_all[:,0],src_all[:,1:].flatten(0,1)).permute(1,2,0)
         # test = batch_dict['final_src_xyz'].transpose(0,1)
-        corner_points_features = self.corner_features_emb(batch_dict['final_src_xyz'].transpose(0,1).contiguous(),final_src_features.contiguous(),corner_points)[1]
+        corner_points_features = self.corner_features_emb(batch_dict['final_src_xyz'].transpose(0,1).contiguous(),final_src_features.contiguous(),corner_points)[1].transpose(1,2)
         # points_features = corner_points_features.view(corner_points_features.shape[0],-1)
 
-        points_features = self.compress_points(corner_points_features.view(corner_points_features.shape[0],-1,1)).squeeze()
+        points_features = self.compress_points(corner_points_features).squeeze()
 
         points_reg = self.points_box_reg(points_features)
         

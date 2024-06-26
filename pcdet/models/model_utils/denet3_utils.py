@@ -118,15 +118,36 @@ class SpatialMixerBlockCompress(nn.Module):
     def __init__(self,hidden_dim,grid_size,dropout=0.0):
         super().__init__()
         self.grid_size = grid_size
-        self.mixer_x = MLP(input_dim=grid_size,hidden_dim=hidden_dim,output_dim=grid_size,num_layers=3)
-        self.mixer_y = MLP(input_dim=grid_size,hidden_dim=hidden_dim,output_dim=grid_size,num_layers=3)
-        self.mixer_z = MLP(input_dim=grid_size,hidden_dim=hidden_dim,output_dim=grid_size,num_layers=3)
+        self.mixer_x = nn.Sequential(nn.Linear(hidden_dim*grid_size,hidden_dim),
+                                     nn.BatchNorm1d(hidden_dim),
+                                     nn.ReLU())
+        self.norm_x = nn.LayerNorm(hidden_dim)
+
+        self.mixer_y = nn.Sequential(nn.Linear(hidden_dim*grid_size,hidden_dim),
+                                     nn.BatchNorm1d(hidden_dim),
+                                     nn.ReLU())
+        self.norm_y = nn.LayerNorm(hidden_dim)
+
+        self.mixer_z = nn.Sequential(nn.Linear(hidden_dim*grid_size,hidden_dim),
+                                     nn.BatchNorm1d(hidden_dim),
+                                     nn.ReLU())
+        self.norm_z = nn.LayerNorm(hidden_dim)
+        self.ffn = nn.Sequential(
+            nn.Linear(hidden_dim,2*hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(2*hidden_dim,hidden_dim)
+        )
+        self.norm_channel = nn.LayerNorm(hidden_dim)
+        # self.mixer_z = MLP(input_dim=grid_size,hidden_dim=hidden_dim,output_dim=grid_size,num_layers=3)
 
     def forward(self,src):
-        src3d = src.reshape(src.shape[0],src.shape[1],self.grid_size,self.grid_size,self.grid_size)
-        src2d = torch.max(self.mixer_x(src3d),dim=-1).values
-        src1d = torch.max(self.mixer_y(src2d),dim=-1).values
-        src0d = torch.max(self.mixer_z(src1d),dim=-1).values
+        src3d = src.reshape(src.shape[0]*self.grid_size*self.grid_size,self.grid_size,src.shape[-1])
+        src2d = self.norm_x(torch.max(src3d,dim=-2).values + self.mixer_x(src3d.flatten(1,2))).unflatten(0,(-1,self.grid_size))
+        src1d = self.norm_y(torch.max(src2d,dim=-2).values + self.mixer_y(src2d.flatten(1,2))).unflatten(0,(-1,self.grid_size))
+        src0d = self.norm_z(torch.max(src1d,dim=-2).values + self.mixer_z(src1d.flatten(1,2)))
+
+        src0d = self.norm_channel(src0d+self.ffn(src0d))
         return src0d
 class SpatialMixerBlock(nn.Module):
 
@@ -431,14 +452,14 @@ class TransformerEncoderLayer(nn.Module):
             src_all_groups = torch.stack(src_groups_list, 0)
             src_all_groups = src_all_groups[...,:self.config.hidden_dim]
             src_max_groups = torch.max(src_all_groups, 1, keepdim=True).values
-            src_past_groups =  torch.cat([src_all_groups[1:],\
-                 src_max_groups[:-1].repeat(1, src_intra_group_fusion.shape[0], 1, 1)], -1)
-            src_all_groups[1:] = self.cross_norm_1(self.cross_conv_1(src_past_groups) + src_all_groups[1:])
+            src_past_groups =  torch.cat([src_all_groups,\
+                 src_max_groups.repeat(1, src_intra_group_fusion.shape[0], 1, 1)], -1)
+            src_all_groups = self.cross_norm_1(self.cross_conv_1(src_past_groups) + src_all_groups)
 
-            src_max_groups = torch.max(src_all_groups, 1, keepdim=True).values
-            src_past_groups =  torch.cat([src_all_groups[:-1],\
-                 src_max_groups[1:].repeat(1, src_intra_group_fusion.shape[0], 1, 1)], -1)
-            src_all_groups[:-1] = self.cross_norm_2(self.cross_conv_2(src_past_groups) + src_all_groups[:-1])
+            # src_max_groups = torch.max(src_all_groups, 1, keepdim=True).values
+            # src_past_groups =  torch.cat([src_all_groups[:-1],\
+            #      src_max_groups[1:].repeat(1, src_intra_group_fusion.shape[0], 1, 1)], -1)
+            # src_all_groups[:-1] = self.cross_norm_2(self.cross_conv_2(src_past_groups) + src_all_groups[:-1])
 
             src_inter_group_fusion = src_all_groups.permute(1, 0, 2, 3).contiguous().flatten(1,2)
             
