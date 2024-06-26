@@ -64,8 +64,8 @@ DATA_CONFIG:
               THRESHOD: 0.8
           USE_ROI_LIST:
               ENABLED: True
-              MAX_ROI: 150
-              MIN_ROI: 20
+              MAX_ROI: 200
+              MIN_ROI: 30
           SAMPLE_ROI_BY_EACH_CLASS: True
           CLS_SCORE_TYPE: roi_iou
 
