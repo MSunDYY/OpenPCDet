@@ -9,7 +9,7 @@ DATA_CONFIG:
         'train': 1,
         'test': 200
     }
-    FILTER_EMPTY_BOXES_FOR_TRAIN: False
+    FILTER_EMPTY_BOXES_FOR_TRAIN: True
     DISABLE_NLZ_FLAG_ON_POINTS: True
     TRAIN_WITH_SPEED: True
     SEQUENCE_CONFIG:
