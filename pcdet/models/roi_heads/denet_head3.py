@@ -953,7 +953,7 @@ class DENet3Head(RoIHeadTemplate):
        
     def pos_offset_encoding(self,src,boxes):
         radiis = torch.norm(boxes[:,3:5]/2,dim=-1)
-        return src-boxes[None,:,:3]/radiis[None,:,None].repeat(1,1,3)
+        return (src-boxes[None,:,:3])/radiis[None,:,None].repeat(1,1,3)
 
     def forward(self, batch_dict):
         """
@@ -1069,7 +1069,9 @@ class DENet3Head(RoIHeadTemplate):
         final_query_features = batch_dict['query_points_features3']
         final_src = self.pos_offset_encoding(final_src,roi_boxes)
         pre_src,pre_src_features = self.points_features_pool(trajectory_rois[:,1:].transpose(0,1).flatten(0,1),query_points_features_pre,query_points_bs_idx_pre,num_sample=final_src.shape[0])
+       
         pre_src = pre_src.unflatten(1,(num_frames-1,-1))
+       
         pre_src_features = pre_src_features.unflatten(1,(num_frames-1,-1)).flatten(0,1)
         src_all = torch.concat([final_src.unsqueeze(1),pre_src],dim=1)
         time_offset = torch.arange(num_frames,device=device)[None,:,None,None].repeat(src_all.shape[0],1,src_all.shape[2],1)

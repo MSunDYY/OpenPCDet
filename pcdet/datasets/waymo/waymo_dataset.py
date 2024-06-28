@@ -1000,32 +1000,32 @@ def create_waymo_infos(dataset_cfg, class_names, data_path, save_path,
     print('---------------Start to generate data infos---------------')
 
     dataset.set_split(train_split)
-    # waymo_infos_train = dataset.get_infos(
-    #     raw_data_path=data_path / raw_data_tag,
-    #     save_path=save_path / processed_data_tag, num_workers=workers, has_label=True,
-    #     sampled_interval=1, update_info_only=update_info_only
-    # )
-    # with open(train_filename, 'wb') as f:
-    #     pickle.dump(waymo_infos_train, f)
-    # print('----------------Waymo info train file is saved to %s----------------' % train_filename)
-    #
-    # dataset.set_split(val_split)
-    # waymo_infos_val = dataset.get_infos(
-    #     raw_data_path=data_path / raw_data_tag.replace('training', 'validating'),
-    #     save_path=save_path / processed_data_tag, num_workers=workers, has_label=True,
-    #     sampled_interval=1, update_info_only=update_info_only
-    # )
-    # with open(val_filename, 'wb') as f:
-    #     pickle.dump(waymo_infos_val, f)
+    waymo_infos_train = dataset.get_infos(
+        raw_data_path=data_path / raw_data_tag,
+        save_path=save_path / processed_data_tag, num_workers=workers, has_label=True,
+        sampled_interval=1, update_info_only=update_info_only
+    )
+    with open(train_filename, 'wb') as f:
+        pickle.dump(waymo_infos_train, f)
+    print('----------------Waymo info train file is saved to %s----------------' % train_filename)
+
+    dataset.set_split(val_split)
+    waymo_infos_val = dataset.get_infos(
+        raw_data_path=data_path / raw_data_tag.replace('training', 'validating'),
+        save_path=save_path / processed_data_tag, num_workers=workers, has_label=True,
+        sampled_interval=1, update_info_only=update_info_only
+    )
+    with open(val_filename, 'wb') as f:
+        pickle.dump(waymo_infos_val, f)
     print('----------------Waymo info val file is saved to %s----------------' % val_filename)
 
     if update_info_only:
         return
 
-    print('---------------Start create groundtruth database for data augmentation---------------')
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-    dataset.set_split(val_split)
-    dataset.create_transform_database(info_path=val_filename,save_path=save_path)
+    # print('---------------Start create groundtruth database for data augmentation---------------')
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    # dataset.set_split(val_split)
+    # dataset.create_transform_database(info_path=val_filename,save_path=save_path)
     # dataset.create_groundtruth_database(
     #     info_path=train_filename, save_path=save_path, split='train', sampled_interval=1,
     #     used_classes=['Vehicle', 'Pedestrian', 'Cyclist'], processed_data_tag=processed_data_tag

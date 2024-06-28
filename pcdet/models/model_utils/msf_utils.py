@@ -268,6 +268,7 @@ class TransformerEncoderLayer(nn.Module):
             self.config.use_mlp_mixer
         )
 
+
     def with_pos_embed(self, tensor, pos: Optional[Tensor]):
         return tensor if pos is None else tensor + pos
 
