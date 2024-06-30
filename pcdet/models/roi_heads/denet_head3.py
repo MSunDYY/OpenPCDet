@@ -1001,7 +1001,9 @@ class DENet3Head(RoIHeadTemplate):
         num_sample = self.num_lidar_points 
 
             # self.voxel_sampler_traj = build_voxel_sampler_traj(rois.device)
-        if self.training or not self.training:
+        # if self.training or not self.training:
+        
+        if False:
             with torch.no_grad():
                 num_rois_pre = batch_dict['roi_list'].shape[-2]
                 roi_list = batch_dict['roi_list'][:,1:].transpose(0,1).flatten(0,1)

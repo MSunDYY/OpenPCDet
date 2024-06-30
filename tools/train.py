@@ -26,7 +26,7 @@ if not os.getcwd().endswith('tools'):
 
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
-    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/denet3_4frames.yaml',
+    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/denet_4frames.yaml',
                         help='specify the config for training')
     parser.add_argument('--batch_size', type=int, default=2, required=False, help='batch size for training')
     parser.add_argument('--epochs', type=int, default=None, required=False, help='number of epochs to train for')
@@ -56,6 +56,8 @@ def parse_config():
     parser.add_argument('--use_amp', action='store_true', help='use mix precision training')
     parser.add_argument('--model_name', type=str, default='detection', help='the model to be trained')
     parser.add_argument('--retrain', action='store_true', default=False, help='whether retrain')
+    parser.add_argument('--output_pkl',action='store_true',default=False)
+
     args = parser.parse_args()
 
     if args.model_name == 'Sampler':

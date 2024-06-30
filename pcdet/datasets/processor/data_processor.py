@@ -424,7 +424,16 @@ class DataProcessor(object):
                                    dim=-1).flatten()
             bg_inds = torch.concat([bg_inds[:, None] * num_anchors + i for i in range(num_anchors)],
                                    dim=-1).flatten()
+            
+
             sampled_inds = torch.concat([fg_inds, bg_inds], dim=0)
+            if config.get('USE_OVERLAP_ROI',False):
+                iou3d = iou3d_nms_utils.boxes_iou3d_cpu(cur_roi[sampled_inds,:7],cur_roi[:,:7]).max(0)[0]
+                sampled_inds = torch.nonzero(iou3d>0.3).squeeze() if (iou3d>0.3).sum()<=150 else torch.topk(iou3d,150)[1]
+                fg_inds = torch.nonzero(max_overlaps[sampled_inds]>config.REG_FG_THRESH).squeeze()
+                bg_inds = torch.nonzero(max_overlaps[sampled_inds]<=config.REG_FG_THRESH).squeeze()
+
+
             batch_roi_labels = cur_roi_labels[sampled_inds.long()]
 
             if config.get('USE_ROI_AUG', False):
@@ -569,6 +578,7 @@ class DataProcessor(object):
                             'rcnn_cls_labels': batch_cls_labels,
                             'trajectory_rois': batch_backward_rois,
                             'valid_length': batch_valid_length,
+                            'num_rois': torch.tensor([batch_rois.shape[0]])
                             }
 
             rois = targets_dict['rois']  # (B, N, 7 + C)

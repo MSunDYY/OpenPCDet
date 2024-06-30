@@ -556,7 +556,7 @@ class VoxelPointsSampler(nn.Module):
     def get_output_feature_dim(self):
         return self.num_point_features
 
-    def forward(self, batch_size, trajectory_rois, num_sample, batch_dict,start_idx=0,num_rois=None):
+    def forward1(self, batch_size, trajectory_rois, num_sample, batch_dict,start_idx=0,num_rois=None):
         src = list()
         query_points_features_list = list()
         idx_checkpoint = 0
@@ -607,102 +607,108 @@ class VoxelPointsSampler(nn.Module):
         query_points_features = torch.concat(query_points_features_list, dim=0)
         return torch.concat(src,dim=0), query_points_features, query_points_bs_idx
 
-    def forward1(self, batch_size, trajectory_rois, num_sample, batch_dict):
-
+    def forward(self, batch_size, trajectory_rois, num_sample, batch_dict, start_idx=0, num_rois=None):
         src = list()
-        # points_features_list = list()
-        query_points_features_list = [None] * batch_size * trajectory_rois.shape[1]
+        query_points_features_list = list()
+        points_index_list = list()
         idx_checkpoint = 0
-        for bs_idx in range(batch_size):
+        gamma = self.GAMMA
+        num_frames = int((batch_dict['points'][:, -1].max() * 10).item()) + 1 if start_idx > 0 else 1
+        for idx in range(num_frames - start_idx):
+            cur_time_points = batch_dict['points'][batch_dict['points'][:, -1] == 0.1 * (idx + start_idx)][:, :-1]
 
-            cur_points = batch_dict['points'][(batch_dict['points'][:, 0] == bs_idx)][:, 1:]
-            cur_batch_boxes = trajectory_rois[bs_idx]
-            points_features_single_list = list()
-            src_points = list()
-            for idx in range(trajectory_rois.shape[1]):
-                gamma = self.GAMMA  # ** (idx+1)
-
-                time_mask = (cur_points[:, -1] - idx * 0.1).abs() < 1e-3
-                cur_time_points = cur_points[time_mask, :5].contiguous()
-
-                cur_frame_boxes = cur_batch_boxes[idx]
-
-                voxel, coords, num_points = self.gen(cur_time_points)
-                coords = coords[:, [2, 1]].contiguous()
-
-                query_coords = (cur_frame_boxes[:, :2] - self.pc_start) // self.voxel_size
-
-                radiis = torch.ceil(
-                    torch.norm(cur_frame_boxes[:, 3:5] / 2, dim=-1) * gamma * 1.2 / self.voxel_size)
-
-                # h_table = torch.zeros(self.grid_x*self.grid_y).fill_(-1).to(coords)
-                # coords_ = coords[:, 0] * self.grid_y + coords[:, 1]
-                # h_table[coords_.long()] = torch.arange(len(coords)).to(coords)
-
-                # v_indice = torch.zeros((len(query_coords)), int(radiis.max())**2).fill_(-1).to(coords)
-                # scatter.hash_query(self.grid_x, self.grid_y, query_coords.int(), radiis.int(), h_table, v_indice)
-                # v_indice = v_indice.long()
-
-                # voxel_points = voxel[v_indice, :, :]
-                # num_points = num_points[v_indice, None]
-
-                # cur_radiis = torch.norm(cur_frame_boxes[:, None, None, 3:5]/2, dim=-1) * gamma
-                # dis = torch.norm(voxel_points[:, :, :, :2] - cur_frame_boxes[:, None, None, :2], dim = -1)
-                # point_mask = dis <= cur_radiis
-
-                # a, b, _ = num_points.shape
-                # points_mask = point_mask & (v_indice[:, :, None]!=-1) & \
-                #     (num_points > torch.arange(self.k)[None, None, :].repeat(a, b, 1).type_as(num_points))
-
-                # points_mask = points_mask.flatten(1, 2)
-                # voxel_points = voxel_points.flatten(1, 2)
-
-                # random_perm = torch.randperm(points_mask.shape[1])
-                # points_mask = points_mask[:, random_perm]
-                # voxel_points = voxel_points[:, random_perm, :]
-
-                # try:
-                #     sampled_mask, sampled_idx = torch.topk(points_mask.float(), num_sample)
-
-                #     key_points = torch.gather(voxel_points, 1, sampled_idx[:, :, None].repeat(1, 1, voxel_points.shape[-1]))
-                #     key_points[sampled_mask==0, :] = 0
-                # except:
-                #     key_points = torch.zeros([len(cur_frame_boxes), num_sample, 5]).to(voxel)
-                #     key_points[:, :voxel_points.shape[1], :] = voxel_points
-
-                dist = torch.abs(query_coords[:, None, :2] - coords[None, :, :])
-
-                voxel_mask = torch.all(dist < radiis[:, None, None], dim=-1).any(0)
-
-                num_points = num_points[voxel_mask]
-                key_points = voxel[voxel_mask, :]
-
-                point_mask = torch.arange(self.k)[None, :].repeat(len(key_points), 1).type_as(num_points)
-
-                point_mask = num_points[:, None] > point_mask
-                key_points = key_points[point_mask]
-                key_points = key_points[torch.randperm(len(key_points)), :]
-
-                key_points, points_features, query_points_features = self.cylindrical_pool(key_points, cur_frame_boxes,
-                                                                                           num_sample, gamma)
-
-                points_features_single_list.append(points_features)
-                src_points.append(key_points)
-                query_points_features_list[idx * batch_size + bs_idx] = query_points_features
-
-            src.append(torch.stack(src_points))
-            # points_features_list.append(torch.stack(points_features_single_list))
-        # max_query_points_num = max([q.shape[0] for q in query_points_features_list])
-        # query_points_features = torch.stack([F.pad(q,(0,0,0,max_query_points_num-q.shape[0])) for q in query_points_features_list])
-        # query_points_features = query_points_features.reshape(batch_size,-1,query_points_features.shape[-2],query_points_features.shape[-1]).transpose(0,1).reshape(-1,query_points_features.shape[-2],query_points_features.shape[-1])
-        for idx in range(trajectory_rois.shape[1]):
             for bs_idx in range(batch_size):
-                src[bs_idx][idx, :, :, -1] += idx_checkpoint
-                idx_checkpoint += query_points_features_list[idx * batch_size + bs_idx].shape[0]
-        query_points_bs_idx = torch.tensor([points.shape[0] for points in query_points_features_list],
-                                           dtype=torch.int32, device=device)
-        query_points_features = torch.concat(query_points_features_list, dim=0)
-        return torch.stack(src).permute(0, 2, 1, 3, 4).flatten(2, 3), query_points_features, query_points_bs_idx
+                cur_batch_points = cur_time_points[cur_time_points[:, 0] == bs_idx, 1:].contiguous()
+                cur_batch_boxes = trajectory_rois[
+                                  num_rois[idx * batch_size + bs_idx]:num_rois[idx * batch_size + bs_idx + 1]]
+                if start_idx == 1 or idx == 0:
+
+                    voxel, coords, num_points = self.gen(cur_batch_points)
+                    coords = coords[:, [2, 1]].contiguous()
+                    query_coords = (cur_batch_boxes[:, :2] - self.pc_start) // self.voxel_size
+                    radiis = torch.ceil(
+                        torch.norm(cur_batch_boxes[:, 3:5] / 2, dim=-1) * gamma * 1.2 / self.voxel_size)
+
+                    dist = torch.abs(query_coords[:, None, :2] - coords[None, :, :])
+                    voxel_mask = torch.all(dist < radiis[:, None, None], dim=-1).any(0)
+                    num_points = num_points[voxel_mask]
+                    key_points = voxel[voxel_mask, :]
+
+                    point_mask = torch.arange(self.k)[None, :].repeat(len(key_points), 1).type_as(num_points)
+
+                    point_mask = num_points[:, None] > point_mask
+                    key_points = key_points[point_mask]
+                    key_points = key_points[torch.randperm(len(key_points)), :]
+                else:
+                    key_points = cur_batch_points
+                if start_idx == 0 and idx == 0 and False:
+                    root_data = '../../data/waymo/key_points/train/' if self.training else '../../data/waymo/key_points/train/'
+                    os.makedirs(root_data + batch_dict['metadata'][0][:-4], exist_ok=True)
+                    np.save(root_data + batch_dict['metadata'][0][:-4] + '/%04d.npy' % (
+                        batch_dict['sample_idx'][0][-3:] if self.training else batch_dict['sample_idx'][0]),
+                            key_points.cpu().numpy())
+
+                key_points, points_index = self.cylindrical_pool_index(key_points, cur_batch_boxes,
+                                                                                           num_sample, gamma,
+                                                                                           idx_checkpoint)
+
+                idx_checkpoint += points_index.shape[0]*points_index.shape[1]
+
+                src.append(key_points)
+                points_index_list.append(points_index)
+                # query_points_features_list.append(query_points_features)
+            # src.append(torch.stack(src_points))
+        # query_points_bs_idx = torch.tensor([points.shape[0] for points in query_points_features_list],
+        #                                    dtype=torch.int32, device=device)
+        # query_points_features = torch.concat(query_points_features_list, dim=0)]
+        points_index = torch.concat(points_index_list,dim=0)
+        return torch.concat(src, dim=0), points_index
+
+    def cylindrical_pool_index(self, cur_points, cur_boxes, num_sample, gamma=1., idx_checkpoint=0):
+        if len(cur_points) < num_sample:
+            cur_points = F.pad(cur_points, [0, 0, 0, num_sample - len(cur_points)])
+        from pcdet.ops.pointnet2.pointnet2_batch.pointnet2_utils import ball_query
+        cur_radiis = torch.norm(cur_boxes[:, 3:5] / 2, dim=-1) * gamma
+        dis = torch.norm(
+            (cur_points[:, :2].unsqueeze(0) - cur_boxes[:, :2].unsqueeze(1).repeat(1, cur_points.shape[0], 1)), dim=2)
+        point_mask = (dis <= cur_radiis.unsqueeze(-1))
+        # valid_points_mask = (point_mask.sum(0))!=0
+        # cur_points,point_mask = cur_points[valid_points_mask],point_mask[:,valid_points_mask]
+
+        sampled_mask, sampled_idx = torch.topk(point_mask.float(), num_sample, 1)
+
+        # sampled, idx = torch.unique(sampled_idx, return_inverse=True)
+        # query_points = cur_points[sampled]
+        # query_points_features = self.set_abstraction(cur_points[None, :, :3].contiguous(),
+        #                                              cur_points[None, :, 3:].transpose(1, 2).contiguous(),
+        #                                              query_points[None, :, :3].contiguous())
+        # query_points_xyz = query_points_features[0][0]
+        # if self.use_absolute_xyz:
+        #     query_points_features = torch.concat([query_points_xyz, query_points_features[1].transpose(1, 2)[0]],
+        #                                          dim=-1)
+        #     query_points_features = self.point_emb(query_points_features)
+        # 
+        # else:
+        #     query_points_features = query_points_features[1].transpose(1, 2).squeeze()
+        # points_features = query_points_features[idx]
+
+        sampled_mask = sampled_mask.bool()
+        sampled_idx_ = (sampled_idx*sampled_mask).view(-1, 1).repeat(1, cur_points.shape[-1])
+        sampled_points = torch.gather(cur_points, 0, sampled_idx_).view(len(sampled_mask), num_sample, -1)
+        unordered_points = sampled_points.flatten(0,1)
+        random_col = torch.randperm(unordered_points.shape[0],device=device)
+        unordered_points = unordered_points[random_col]
+        index_idx = ball_query(0.8,8,unordered_points[None,:,:3].contiguous(),sampled_points.flatten(0,1)[None,:,:3].contiguous()).squeeze()
+        index_idx = random_col[index_idx.long()]
+        index_idx = index_idx.unflatten(0,(sampled_points.shape[0],-1))
+        
+        index_idx = index_idx * sampled_mask[:,:,None]+idx_checkpoint
+        sampled_points = sampled_points*sampled_mask[:,:,None]
+        # idx = idx * sampled_mask + idx_checkpoint
+        sampled_points = sampled_points
+
+        return sampled_points, index_idx
+
 
     def cylindrical_pool(self, cur_points, cur_boxes, num_sample, gamma=1., idx_checkpoint=0):
         if len(cur_points) < num_sample:

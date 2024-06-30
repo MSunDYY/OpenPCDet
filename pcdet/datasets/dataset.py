@@ -342,8 +342,19 @@ class DatasetTemplate(torch_data.Dataset):
                     ret[key] = torch.cat(val)
                 elif key in ['targets_dict']:
                     temp = dict()
-                    for sub_key in val[0].keys():
-                        temp[sub_key] = torch.stack([sub_val[sub_key] for sub_val in val])
+                    num_rois = torch.concat([sub_val['num_rois'] for sub_val in val])
+                    if num_rois.max().item()!=num_rois.min().item():
+                        for sub_key in val[0].keys():
+                            if sub_key=='stack_concat':
+                                continue
+                            sub_val = [sub_val[sub_key] for sub_val in val]
+                            temp[sub_key] = torch.concat(sub_val,dim=1) if sub_key in ['trajectory_rois','valid_length'] else torch.concat(sub_val,dim=0)
+                    else:
+                        for sub_key in val[0].keys():
+                            if sub_key=='stack_concat':
+                                continue
+                            sub_val = [sub_val[sub_key] for sub_val in val]
+                            temp[sub_key] = torch.stack(sub_val)
                     ret[key] = temp
                 elif key in ['anchors']:
                     max_num_anchor = max([anchor.shape[0] for anchor in val])
