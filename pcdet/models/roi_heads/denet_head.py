@@ -343,7 +343,7 @@ class DENetHead(RoIHeadTemplate):
         self.jointembed = MLP(self.hidden_dim * (self.num_groups) + 256, model_cfg.Transformer.hidden_dim,
                               self.box_coder.code_size * self.num_class, 4)
         self.jointclsembed = MLP(self.hidden_dim + 256, 256, 1, num_layers=2)
-        self.up_dimension_geometry = MLP(input_dim=227+5, hidden_dim=64, output_dim=hidden_dim, num_layers=3)
+        self.up_dimension_geometry = MLP(input_dim=27+5, hidden_dim=64, output_dim=hidden_dim, num_layers=3)
         self.up_dimension_motion = MLP(input_dim=30, hidden_dim=64, output_dim=hidden_dim, num_layers=3)
         self.points_box_reg = MLP(256, 256, 7, 3)
 
@@ -1087,29 +1087,15 @@ class DENetHead(RoIHeadTemplate):
 
         point_reg = torch.cat(point_reg_list, 0)
         hs = hs.permute(1, 0, 2).reshape(hs.shape[1], -1)
-
+        # hs2 = hs2.permute(1,0,2).reshape(hs2.shape[1],-1)
         joint_reg = self.jointembed(torch.cat([hs, feat_box], -1))
 
-        for i in range(self.num_enc_layer):
-            point_cls_list.append(self.class_embed[0](tokens[i][0]))
-
-        for i in range(hs.shape[0]):
-            for j in range(self.num_enc_layer):
-                point_reg_list.append(self.bbox_embed[i](tokens[j][i]))
-
-        point_cls = torch.cat(point_cls_list, 0)
-
-        point_reg = torch.cat(point_reg_list, 0)
-        hs = hs.permute(1, 0, 2).reshape(hs.shape[1], -1)
-        # hs2 = hs2.permute(1,0,2).reshape(hs2.shape[1],-1)
-        joint_reg = self.jointembed(torch.cat([hs, points_features], -1))
-        joint_cls = self.jointclsembed(torch.cat([points_features, tokens[-1][0]], dim=-1))
         rcnn_cls = point_cls
         rcnn_reg = joint_reg
 
         if not self.training:
-            # rcnn_cls = rcnn_cls[-rcnn_cls.shape[0]//self.num_enc_layer:]
-            rcnn_cls = joint_cls
+            rcnn_cls = rcnn_cls[-rcnn_cls.shape[0]//self.num_enc_layer:]
+            # rcnn_cls = joint_cls
             batch_cls_preds, batch_box_preds = self.generate_predicted_boxes(
                 batch_size=batch_dict['batch_size'], rois=batch_dict['roi_boxes'], cls_preds=rcnn_cls,
                 box_preds=rcnn_reg
@@ -1159,9 +1145,9 @@ class DENetHead(RoIHeadTemplate):
             targets_dict['box_reg'] = box_reg
             targets_dict['point_reg'] = point_reg
             targets_dict['point_cls'] = point_cls
-            targets_dict['joint_cls'] = joint_cls
-            targets_dict['query_point_cls'] = query_points_cls_preds
-            targets_dict['query_point_reg'] = query_points_reg_preds
+            # targets_dict['joint_cls'] = joint_cls
+            # targets_dict['query_point_cls'] = query_points_cls_preds
+            # targets_dict['query_point_reg'] = query_points_reg_preds
             self.forward_ret_dict = targets_dict
 
         return batch_dict
@@ -1200,7 +1186,7 @@ class DENetHead(RoIHeadTemplate):
 
         if loss_cfgs.REG_LOSS == 'smooth-l1':
 
-            rois_anchor = roi_boxes3d.clone().detach()[:, :, :7].contiguous().view(-1, code_size)
+            rois_anchor = roi_boxes3d.clone().detach()[:, :7].contiguous().view(-1, code_size)
             rois_anchor[:, 0:3] = 0
             rois_anchor[:, 6] = 0
             reg_targets = self.box_coder.encode_torch(
@@ -1260,7 +1246,7 @@ class DENetHead(RoIHeadTemplate):
 
             if loss_cfgs.CORNER_LOSS_REGULARIZATION and fg_sum > 0:
                 fg_rcnn_reg = rcnn_reg.view(rcnn_batch_size, -1)[fg_mask]
-                fg_roi_boxes3d = roi_boxes3d[:, :, :7].contiguous().view(-1, code_size)[fg_mask]
+                fg_roi_boxes3d = roi_boxes3d[:, :7].contiguous().view(-1, code_size)[fg_mask]
 
                 fg_roi_boxes3d = fg_roi_boxes3d.view(1, -1, code_size)
                 batch_anchors = fg_roi_boxes3d.clone().detach()
@@ -1290,40 +1276,13 @@ class DENetHead(RoIHeadTemplate):
 
         else:
             raise NotImplementedError
-        pos_mask = forward_ret_dict['point_cls_labels'] > 0
-        point_box_labels = self.forward_ret_dict['point_box_labels']
-        point_box_preds = self.forward_ret_dict['query_point_reg']
-        reg_weights = pos_mask.float()
-        pos_normalizer = pos_mask.sum().float()
-        reg_weights /= torch.clamp(pos_normalizer, min=1.0)
-        point_loss_box_src = self.point_reg_loss_func(point_box_preds[None, ...], point_box_labels[None, ...],
-                                                      reg_weights[None, ...])
-        query_point_reg = point_loss_box_src.sum() * loss_cfgs.LOSS_WEIGHTS.point_reg_weight
-        tb_dict['query_point_reg'] = query_point_reg.item()
-        rcnn_loss_reg += query_point_reg
+
         return rcnn_loss_reg, tb_dict
 
     def get_box_cls_layer_loss(self, forward_ret_dict):
         loss_cfgs = self.model_cfg.LOSS_CONFIG
         rcnn_cls = forward_ret_dict['rcnn_cls']
         rcnn_cls_labels = forward_ret_dict['rcnn_cls_labels'].view(-1)
-
-        query_point_cls_labels = forward_ret_dict['point_cls_labels']
-        point_cls_preds = forward_ret_dict['query_point_cls'].view(-1, 3)
-        positives = query_point_cls_labels > 0
-        negative_cls_weights = (query_point_cls_labels == 0) * 1.0
-        cls_weights = (negative_cls_weights + 1.0 * positives).float()
-        pos_normalizer = positives.sum(dim=0).float()
-        cls_weights /= torch.clamp(pos_normalizer, min=1.0)
-        one_hot_targets = query_point_cls_labels.new_zeros(query_point_cls_labels.shape[0], 4)
-        one_hot_targets.scatter_(-1,
-                                 (query_point_cls_labels * (query_point_cls_labels >= 0).long()).unsqueeze(-1).long(),
-                                 1.0)
-        one_hot_targets = one_hot_targets[..., 1:]
-
-        cls_loss_src = self.point_cls_loss_func(point_cls_preds, one_hot_targets, weights=cls_weights.squeeze())
-        point_loss_cls = cls_loss_src.sum()
-        point_loss_cls = point_loss_cls * loss_cfgs.LOSS_WEIGHTS['point_cls_weight']
 
         if loss_cfgs.CLS_LOSS == 'BinaryCrossEntropy':
 
@@ -1343,12 +1302,13 @@ class DENetHead(RoIHeadTemplate):
 
                 rcnn_loss_cls = rcnn_loss_cls / groups
 
-
             else:
+
                 batch_loss_cls = F.binary_cross_entropy(torch.sigmoid(rcnn_cls_flat), rcnn_cls_labels.float(),
                                                         reduction='none')
                 cls_valid_mask = (rcnn_cls_labels >= 0).float()
                 rcnn_loss_cls = (batch_loss_cls * cls_valid_mask).sum() / torch.clamp(cls_valid_mask.sum(), min=1.0)
+
 
         elif loss_cfgs.CLS_LOSS == 'CrossEntropy':
             batch_loss_cls = F.cross_entropy(rcnn_cls, rcnn_cls_labels, reduction='none', ignore_index=-1)
@@ -1360,14 +1320,8 @@ class DENetHead(RoIHeadTemplate):
 
         rcnn_loss_cls = rcnn_loss_cls * loss_cfgs.LOSS_WEIGHTS['rcnn_cls_weight']
 
-        joint_cls = forward_ret_dict['joint_cls'].view(-1)
-        joint_loss_cls = F.binary_cross_entropy(torch.sigmoid(joint_cls), rcnn_cls_labels.float(), reduction='none')
-        joint_loss_cls = joint_loss_cls * loss_cfgs.LOSS_WEIGHTS['joint_cls_weight']
-        joint_loss_cls = (joint_loss_cls * cls_valid_mask).sum() / torch.clamp(cls_valid_mask.sum(), min=1.0)
-        tb_dict = {'rcnn_loss_cls': rcnn_loss_cls.item(), 'joint_loss_cls': joint_loss_cls.item(),
-                   'point_loss_cls': point_loss_cls}
-
-        return rcnn_loss_cls + joint_loss_cls + point_loss_cls, tb_dict
+        tb_dict = {'rcnn_loss_cls': rcnn_loss_cls.item()}
+        return rcnn_loss_cls, tb_dict
 
     def generate_predicted_boxes(self, batch_size, rois, cls_preds=None, box_preds=None):
         """
