@@ -1164,6 +1164,7 @@ class DENetHead(RoIHeadTemplate):
         rcnn_loss_reg, reg_tb_dict = self.get_box_reg_layer_loss(self.forward_ret_dict)
         rcnn_loss += rcnn_loss_reg
         tb_dict.update(reg_tb_dict)
+        tb_dict['num_boxes'] = self.forward_ret_dict['box_reg'].shape[0]
         tb_dict['rcnn_loss'] = rcnn_loss.item()
         return rcnn_loss, tb_dict
 
