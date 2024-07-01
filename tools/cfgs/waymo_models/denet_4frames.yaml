@@ -131,7 +131,7 @@ MODEL:
             pre_norm: False
             num_frames: 1
             num_groups: 1
-            num_frames_all: 4
+            num_frames_all: 1
             use_grid_pos:
                 enabled: True
                 init_type: index

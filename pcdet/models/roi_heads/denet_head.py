@@ -1000,6 +1000,8 @@ class DENetHead(RoIHeadTemplate):
             empty_mask = batch_dict['roi_boxes'][:, :, :6].sum(-1) == 0
             batch_dict['valid_traj_mask'] = ~empty_mask
             batch_dict['roi_boxes'] = trajectory_rois[:, 0]
+            batch_dict['num_rois'] = torch.tensor([batch_dict['roi_boxes'].shape[1]],device=device)
+            trajectory_rois = trajectory_rois.transpose(0,1).flatten(1,2)
         roi_boxes = batch_dict['roi_boxes']
         # num_rois = batch_dict['roi_boxes'].shape[1]
         num_sample = self.num_lidar_points
