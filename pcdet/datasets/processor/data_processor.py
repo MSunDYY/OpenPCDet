@@ -579,8 +579,8 @@ class DataProcessor(object):
                             'rcnn_cls_labels': batch_cls_labels,
                             'trajectory_rois': batch_backward_rois,
                             'valid_length': batch_valid_length,
-                            'num_rois': torch.tensor([batch_rois.shape[0]])
-
+                            'num_rois': torch.tensor([batch_rois.shape[0]]),
+                            'stack_concat':True if config.get('STACK_CONCAT',False) else False
                             }
 
             rois = targets_dict['rois']  # (B, N, 7 + C)

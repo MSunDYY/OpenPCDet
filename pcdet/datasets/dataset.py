@@ -342,8 +342,8 @@ class DatasetTemplate(torch_data.Dataset):
                     ret[key] = torch.cat(val)
                 elif key in ['targets_dict']:
                     temp = dict()
-                    num_rois = torch.concat([sub_val['num_rois'] for sub_val in val])
-                    if True:
+
+                    if val[0]['stack_concat']:
                         for sub_key in val[0].keys():
                             if sub_key=='stack_concat':
                                 continue
