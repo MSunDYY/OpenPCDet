@@ -320,7 +320,9 @@ class TransformerEncoderLayer(nn.Module):
                         self.config.hidden_dim, 
                         self.config.use_mlp_mixer
         )
-        self.points_src_fuse = nn.Linear(self.config.hidden_dim*2,self.config.hidden_dim)
+        self.points_src_fuse = nn.Sequential(nn.Conv1d(self.config.hidden_dim*2,self.config.hidden_dim,kernel_size=1),
+                                             nn.BatchNorm1d(self.config.hidden_dim),
+                                             nn.ReLU())
         self.point_attention = nn.MultiheadAttention(self.config.hidden_dim,num_heads=8,dropout=0.1,batch_first=True)
 
         if self.layer_count<=self.config.enc_layers-1 and config.get('sampler',False) is not False:
@@ -418,7 +420,7 @@ class TransformerEncoderLayer(nn.Module):
             query_features = self.point_attention(query_features,query_features,query_features)[0]
             query_features = torch.max(query_features,1).values
             src_features = query_features[src_index]
-            src_inter_group_fusion = self.points_src_fuse(torch.concat([src_inter_group_fusion,src_features],dim=-1))
+            src_inter_group_fusion = self.points_src_fuse(torch.concat([src_inter_group_fusion,src_features],dim=-1).transpose(1,2)).transpose(1,2)
 
             src = torch.cat([src[:1],src_inter_group_fusion],0)
 
