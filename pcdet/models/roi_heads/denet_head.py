@@ -1058,10 +1058,13 @@ class DENetHead(RoIHeadTemplate):
         roi_boxes = roi_boxes.reshape(-1, roi_boxes.shape[-1])
         num_rois = torch.cumsum(
             torch.tensor([0] + batch_dict['num_rois'].cpu().tolist(), device=device), dim=0)
-        src, src_index,points_index = self.voxel_sampler(batch_size, roi_boxes, num_sample,
+        src, src_index,points_index,query_points_features,query_points_bs_idx = self.voxel_sampler(batch_size, roi_boxes, num_sample,
                                                                              batch_dict, start_idx=0, num_rois=num_rois)
         batch_dict['points_index'] = points_index
         batch_dict['src_index'] = src_index
+        batch_dict['query_points_features'] = query_points_features
+        batch_dict['query_points_bs_idx'] = query_points_bs_idx
+
         # src1, src1_features, query_points_features = torch.zeros_like(src1),torch.zeros_like(src1_features),torch.zeros_like(query_points_features)
         src_geometry_feature = self.get_proposal_aware_geometry_feature(src, batch_size, roi_boxes, num_rois)
 

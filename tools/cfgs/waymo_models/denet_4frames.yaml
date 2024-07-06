@@ -3,7 +3,7 @@ CLASS_NAMES: ['Vehicle', 'Pedestrian', 'Cyclist']
 DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/waymo_dataset.yaml
     PROCESSED_DATA_TAG: 'waymo_processed_data_v0_5_0'
-    TRANSFORMED_POINTS: False
+    TRANSFORMED_POINTS: True
     DATA_SPLIT: {
         'train': train,
         'test': val
@@ -15,11 +15,11 @@ DATA_CONFIG:
     }
     FILTER_EMPTY_BOXES_FOR_TRAIN: True
     DISABLE_NLZ_FLAG_ON_POINTS: True
-    USE_KEY_POINTS: True
+    USE_KEY_POINTS: False
     SEQUENCE_CONFIG:
         ENABLED: True
         SAMPLE_OFFSET: [-3,0]
-        USE_PRE_PREDBOX: True
+        USE_PRE_PREDBOX: False
         TRANSFORM_BOX: False
 
     USE_PREDBOX: True

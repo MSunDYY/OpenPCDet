@@ -320,30 +320,32 @@ class TransformerEncoderLayer(nn.Module):
                         self.config.hidden_dim, 
                         self.config.use_mlp_mixer
         )
-        self.points_src_fuse = nn.Sequential(nn.Conv1d(self.config.hidden_dim*2,self.config.hidden_dim,kernel_size=1),
-                                             nn.BatchNorm1d(self.config.hidden_dim),
-                                             nn.ReLU())
+
         self.point_attention = nn.MultiheadAttention(self.config.hidden_dim,num_heads=8,dropout=0.1,batch_first=True)
 
         if self.layer_count<=self.config.enc_layers-1 and config.get('sampler',False) is not False:
 
-
-            from pcdet.ops.pointnet2.pointnet2_batch import pointnet2_utils
-            self.group = pointnet2_utils.QueryAndGroup(config.sampler.radius[self.layer_count-1],config.sampler.nsample[self.layer_count-1],use_xyz=False)
-
+            from pcdet.ops.pointnet2.pointnet2_stack import pointnet2_utils,pointnet2_modules
+            self.points_src_fuse = nn.Sequential(
+                nn.Linear(self.config.hidden_dim + sum([mlp[-1] for mlp in config.sampler.mlp[self.layer_count - 1]]),
+                          self.config.hidden_dim),
+                nn.BatchNorm1d(self.config.hidden_dim),
+                nn.ReLU(),
+                nn.Linear(self.config.hidden_dim,self.config.hidden_dim),
+                nn.BatchNorm1d(self.config.hidden_dim),
+                nn.ReLU()
+            )
+            self.group =pointnet2_modules.StackSAModuleMSG(radii=config.sampler.radius[self.layer_count-1],nsamples=config.sampler.nsample[self.layer_count-1],mlps=config.sampler.mlp[self.layer_count-1],use_xyz=True)
+            self.norm = nn.LayerNorm(config.hidden_dim)
     def with_pos_embed(self, tensor, pos: Optional[Tensor]):
         return tensor if pos is None else tensor + pos
 
     def forward_post(self,
                      src,batch_dict,
                      pos: Optional[Tensor] = None):
-        # query_points_features = batch_dict['query_points_features'+str(self.layer_count)]
-        # src_idx = batch_dict['src_idx'+str(self.layer_count)]
-        src_intra_group_fusion,weight = self.mlp_mixer_3d(src[1:],return_weight=True)
+        src_intra_group_fusion = self.mlp_mixer_3d(src[1:])
+        src = torch.cat([src[:1], src_intra_group_fusion], 0)
 
-
-        # src_intra_group_fusion = torch.concat([src_intra_group_fusion[:1], src[1:,:,self.config.hidden_dim:]], dim=-1)
-        src = torch.concat([src[:1],src_intra_group_fusion],dim=0)
         token = src[:1]
 
         if not pos is None:
@@ -351,76 +353,54 @@ class TransformerEncoderLayer(nn.Module):
         else:
             key = src_intra_group_fusion
 
-      
-        src_summary = self.self_attn(token, key,src_intra_group_fusion)[0]
+        src_summary = self.self_attn(token, key, value=src_intra_group_fusion)[0]
         token = token + self.dropout1(src_summary)
         token = self.norm1(token)
         src_summary = self.linear2(self.dropout(self.activation(self.linear1(token))))
         token = token + self.dropout2(src_summary)
         token = self.norm2(token)
-        src = torch.cat([token,src[1:]],0)
+        src = torch.cat([token, src[1:]], 0)
+        if self.config.get('SHRINK_POINTS', False):
+            sampled_inds = torch.topk(weight.sum(1), k=weight.shape[1] // 2)[1]
 
-
-        if self.layer_count <= self.config.enc_layers-1:
-            # weight = weight.sum(1).transpose(0, 1)
-            # src = torch.cat([src[:1],src_intra_group_fusion],0)
-            # sampled_inds = torch.topk(weight, dim=0, k=weight.shape[0] // 2)[1]
-            # new_src_idx = torch.gather(src_idx, 0, sampled_inds)
-            # new_query_idx = new_src_idx.transpose(0, 1).reshape(batch_dict['num_frames'] * batch_dict['batch_size'], -1)
-            # new_query_idx = [torch.unique(new_query_idx[i]) for i in range(new_query_idx.shape[0])]
-            # num_new_query = max([n.shape[0] for n in new_query_idx])
-            # new_query_idx = torch.stack([F.pad(n, (0, num_new_query - n.shape[0])) for n in new_query_idx])
-            # new_query_xyz, new_query_features = torch.split(torch.gather(query_points_features, 1,
-            #                                                          new_query_idx[:, :, None].repeat(1, 1,query_points_features.shape[-1])),
-            #                                             [3, query_points_features.shape[-1] - 3], dim=-1)
-            # new_query_features_grouped = self.group(query_points_features[..., :3].contiguous(), new_query_xyz.contiguous(),
-            #                                       query_points_features[..., 3:].transpose(-1, -2).contiguous())
-            # new_query_features = self.point_attention(new_query_features.reshape(1, -1, new_query_features.shape[-1]),
-            #                                         new_query_features_grouped.permute(3, 0, 2, 1).flatten(1, 2)).reshape(
-            #     -1, new_query_xyz.shape[1], new_query_features.shape[-1])
-            # new_query_points_features = torch.zeros_like(query_points_features)
-            #
-            # new_query_points_features.scatter_(1, new_query_idx[:, :, None].repeat(1, 1,
-            #                                                                      new_query_points_features.shape[-1]),
-            #                                    torch.concat([new_query_xyz,new_query_features], dim=-1))
-            # batch_dict['query_points_features' + str(self.layer_count + 1)] = new_query_points_features
-            # batch_dict['src_idx'+str(self.layer_count+1)] = torch.gather(src_idx,0,sampled_inds)
-            # src_point_feature = torch.gather(new_query_points_features,1,new_src_idx.transpose(0,1).reshape(batch_dict['batch_size']*batch_dict['num_frames'],-1,1).repeat(1,1,new_query_points_features.shape[-1]))
-            # src_point_feature = src_point_feature.reshape(-1,sampled_inds.shape[0],src_point_feature.shape[-1]).transpose(0,1)
-            #
-            # src_intra_group_fusion = torch.gather(src_intra_group_fusion, 0, sampled_inds[:, :, None].repeat(1, 1,
-            #                                                                                                  src_intra_group_fusion.shape[-1]))
-            # num_points = src.shape[0]-1
-            src_all_groups = src_intra_group_fusion.view((src_intra_group_fusion.shape[0])*self.num_groups,-1,src_intra_group_fusion.shape[-1])
-            src_groups_list = src_all_groups.chunk(self.num_groups,0)
-            # src_groups_list = [src_all_groups[torch.arange(sampled_inds.shape[0])*self.num_groups+i] for i in range(self.num_groups)]
+            src = torch.cat(
+                [token, torch.gather(src[1:], 0, sampled_inds.transpose(0, 1)[:, :, None].repeat(1, 1, src.shape[-1]))],
+                dim=0)
+        if self.layer_count <= self.config.enc_layers - 1:
+            src_all_groups = src[1:].view((src.shape[0] - 1) * self.num_groups, -1, src.shape[-1])
+            src_groups_list = src_all_groups.chunk(self.num_groups, 0)
 
             src_all_groups = torch.stack(src_groups_list, 0)
-            # src_all_groups,src_features = src_all_groups[...,:self.config.hidden_dim],src_all_groups[...,self.config.hidden_dim:]
+
             src_max_groups = torch.max(src_all_groups, 1, keepdim=True).values
-            src_past_groups =  torch.cat([src_all_groups[1:],\
-                 src_max_groups[:-1].repeat(1, src_intra_group_fusion.shape[0], 1, 1)], -1)
+            src_past_groups = torch.cat([src_all_groups[1:], \
+                                         src_max_groups[:-1].repeat(1, (src.shape[0] - 1), 1, 1)], -1)
             src_all_groups[1:] = self.cross_norm_1(self.cross_conv_1(src_past_groups) + src_all_groups[1:])
 
             src_max_groups = torch.max(src_all_groups, 1, keepdim=True).values
-            src_past_groups =  torch.cat([src_all_groups[:-1],\
-                 src_max_groups[1:].repeat(1, src_intra_group_fusion.shape[0], 1, 1)], -1)
+            src_past_groups = torch.cat([src_all_groups[:-1], \
+                                         src_max_groups[1:].repeat(1, (src.shape[0] - 1), 1, 1)], -1)
             src_all_groups[:-1] = self.cross_norm_2(self.cross_conv_2(src_past_groups) + src_all_groups[:-1])
 
-            src_inter_group_fusion = src_all_groups.permute(1, 0, 2, 3).contiguous().flatten(1,2)
-
+            src_inter_group_fusion = src_all_groups.permute(1, 0, 2, 3).contiguous().flatten(1, 2)
 
             src_index = batch_dict['src_index'].transpose(0,1)
             points_index = batch_dict['points_index'].long()
-
+            query_points_features = batch_dict['query_points_features']
+            query_points_bs_idx = batch_dict['query_points_bs_idx']
+            query_points_features = self.group(query_points_features[:,:3].contiguous(),query_points_bs_idx,query_points_features[:,:3].contiguous(),query_points_bs_idx,query_points_features[:,3:].contiguous())
+            batch_dict['query_points_features'] = torch.concat(query_points_features,dim=-1)
 
             query_features = src_inter_group_fusion[points_index[...,1],points_index[...,0]]
             query_features = query_features*(points_index[...,0,None]==-1)
 
             query_features = self.point_attention(query_features,query_features,query_features)[0]
             query_features = torch.max(query_features,1).values
-            src_features = query_features[src_index]
-            src_inter_group_fusion = self.points_src_fuse(torch.concat([src_inter_group_fusion,src_features],dim=-1).transpose(1,2)).transpose(1,2)
+
+
+            # src_features = query_features[src_index]
+            query_points_features = self.points_src_fuse(torch.concat([query_points_features[1],query_features],dim=-1))
+            src_inter_group_fusion = self.norm(src_inter_group_fusion+query_points_features[src_index])
 
             src = torch.cat([src[:1],src_inter_group_fusion],0)
 
