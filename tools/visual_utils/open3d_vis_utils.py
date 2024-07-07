@@ -235,7 +235,7 @@ def draw_box(vis, gt_boxes, color=(0, 1, 0), ref_labels=None, score=None):
     for i in range(gt_boxes.shape[0]):
         line_set, box3d = translate_boxes_to_open3d_instance(gt_boxes[i])
         if score is not None:
-            color = (0,score[i],0)
+            color = np.array([0,score[i],0],dtype=object)
         
         if ref_labels is None:
             line_set.paint_uniform_color(color)

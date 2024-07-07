@@ -429,7 +429,7 @@ class DataProcessor(object):
             sampled_inds = torch.concat([fg_inds, bg_inds], dim=0)
             if config.get('USE_OVERLAP_ROI',False):
                 iou3d = iou3d_nms_utils.boxes_iou3d_cpu(cur_roi[sampled_inds,:7],cur_roi[:,:7]).max(0)[0]
-                sampled_inds = torch.nonzero(iou3d>0).squeeze() if (iou3d>0).sum()<=150 else torch.topk(iou3d,150)[1]
+                sampled_inds = torch.nonzero(iou3d>0).squeeze() if (iou3d>0).sum()<=180 else torch.topk(iou3d,180)[1]
                 fg_inds = sampled_inds[max_overlaps[sampled_inds]>=config.REG_FG_THRESH]
                 bg_inds = sampled_inds[max_overlaps[sampled_inds]<config.REG_FG_THRESH]
                 sampled_inds = torch.concat([fg_inds,bg_inds],dim=0)

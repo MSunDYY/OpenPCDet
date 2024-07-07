@@ -52,7 +52,7 @@ DATA_CONFIG:
             }
         - NAME: anchor_aug
           NUM_FRAMES: 1
-          ROI_PER_IMAGE: 48
+          ROI_PER_IMAGE: 56
           FG_RATIO: 0.7
           REG_AUG_METHOD: single
           ROI_FG_AUG_TIMES: 10
