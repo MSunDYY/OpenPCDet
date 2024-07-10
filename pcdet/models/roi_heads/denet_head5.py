@@ -356,8 +356,8 @@ class KPTransformer(nn.Module):
         src_new = self.Attention3(src_new)
         token = self.decoder_layer(token,src_new)
 
-        src_cur = self.pointnet(src_cur.permute(1,2,0))
-        box_feature = torch.max(src_cur,dim=-1).values
+        src_new = self.pointnet(src_new.permute(1,2,0))
+        box_feature = torch.max(src_new,dim=-1).values
         box_reg = self.box_reg(box_feature)
         return token,box_reg,box_feature
 
