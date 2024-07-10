@@ -922,7 +922,7 @@ class DENet5Head(RoIHeadTemplate):
         src_pre = self.voxel_sampler(batch_size,trajectory_rois,num_sample//4,batch_dict)
         src_pre_transform = src_pre.reshape(-1,num_frames,num_sample//4,src_pre.shape[-1])
         src_pre_transform = self.pointLK(src_pre_transform.flatten(0,1).transpose(-1,-2),src_pre_transform[:,:1,:,:].repeat(1,num_frames,1,1).flatten(0,1).transpose(-1,-2))
-        trajectory_rois = trajectory_rois.flatten(0,1).transpose(0,1)
+        trajectory_rois = trajectory_rois.transpose(1,2).flatten(0,1)
         src_pre = self.get_proposal_aware_motion_feature(src_pre.flatten(0,1), trajectory_rois)
 
         src_pre = src_pre.unflatten(1, (num_frames, -1))
