@@ -339,6 +339,20 @@ class KPTransformer(nn.Module):
         self.box_reg = nn.Sequential(nn.Linear(self.channels,self.channels),
                                      nn.ReLU(),
                                      nn.Linear(self.channels,7))
+
+        self.fc1 = nn.Linear(256, 256)
+        self.fc2 = nn.Linear(256, 256)
+
+        self.x_bn1 = nn.BatchNorm1d(256)
+        self.x_bn2 = nn.BatchNorm1d(256)
+
+        self.fc_s1 = nn.Linear(256, 256)
+        self.fc_s2 = nn.Linear(256, 3, bias=False)
+        self.fc_ce1 = nn.Linear(256, 256)
+        self.fc_ce2 = nn.Linear(256, 3, bias=False)
+        self.fc_hr1 = nn.Linear(256, 256)
+        self.fc_hr2 = nn.Linear(256, 1, bias=False)
+
     def forward(self, src,token,src_cur):
         src = src.permute(2,1,0,3).flatten(1,2)
         num_frames_single_group = self.num_frames // self.num_groups
@@ -357,9 +371,15 @@ class KPTransformer(nn.Module):
         token = self.decoder_layer(token,src_new)
 
         src_new = self.pointnet(src_new.permute(1,2,0))
-        box_feature = torch.max(src_new,dim=-1).values
-        box_reg = self.box_reg(box_feature)
-        return token,box_reg,box_feature
+        x = torch.max(src_new,dim=-1).values
+
+        x = F.relu(self.x_bn1(self.fc1(x)))
+        feat = F.relu(self.x_bn2(self.fc2(x)))
+
+        centers = self.fc_ce2(F.relu(self.fc_ce1(feat)))
+        sizes = self.fc_s2(F.relu(self.fc_s1(feat)))
+        headings = self.fc_hr2(F.relu(self.fc_hr1(feat)))
+        return token,torch.concat([centers,sizes,headings],-1),feat
 
 class Pointnet(nn.Module):
     def __init__(self,channels):
