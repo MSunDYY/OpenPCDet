@@ -1015,7 +1015,7 @@ class DENet3Head(RoIHeadTemplate):
                 src_pre,query_points_features_pre,query_points_bs_idx_pre = self.voxel_sampler(batch_size,roi_list,num_sample,batch_dict,start_idx=1,num_rois=num_rois)
                 
                 # src_pre,query_points_features_re,query_points_bs_idx_pre = self.voxel_sampler(batch_size,batch_dict['roi_list'],num_sample,batch_dict,start_idx=1)
-                src_pre,src_idx_pre = src_pre[...,:-1],src_pre[...,-1].long()
+                src_pre,src_idx_pre = src_pre,src_pre[...,-1].long()
                 batch_dict['num_rois'] = num_rois
                 batch_dict['src_idx1'] = src_idx_pre.transpose(0,1)
                 batch_dict['query_points_features1'] = query_points_features_pre
@@ -1042,7 +1042,7 @@ class DENet3Head(RoIHeadTemplate):
         num_rois = torch.cumsum(torch.tensor([0]+[batch_dict['roi_boxes'][i].shape[0] for i in range(batch_size)],device=device),dim=0)
         src,query_points_features,query_points_bs_idx = self.voxel_sampler(batch_size, roi_boxes, num_sample, batch_dict,start_idx=0,num_rois=num_rois)
         # src1, src1_features, query_points_features = torch.zeros_like(src1),torch.zeros_like(src1_features),torch.zeros_like(query_points_features)
-        src1, src_idx1 = src[..., :-1], src[..., -1].long()
+        src1, src_idx1 = src, src[..., -1].long()
         batch_dict['src_idx1'] = src_idx1.transpose(0,1)
         batch_dict['query_points_features1'] = query_points_features
         batch_dict['query_points_bs_idx1'] = query_points_bs_idx

@@ -230,23 +230,14 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
             # save trained model
             trained_epoch = cur_epoch + 1
 
-            if (isinstance(model,Sampler) or isinstance(model,PillarSampler)) and cur_epoch%4==0:
+            if (type(model).__name__)=='DENet':
 
                 model.eval()
-                with torch.no_grad():
 
-                    accuracy_average,recall_average = eval_sampler_one_epoch(model,test_loader,logger = logger,is_print=False)
-                if recall_average>recall_all:
-                    recall_all =recall_average
-                    best_file_name = ckpt_save_dir/'best_model'
-                    save_checkpoint(
-                        checkpoint_state(model, optimizer, trained_epoch, accumulated_iter), filename=best_file_name,
-                    )
-                    for sub_model in model.module_list:
-                        best_file_dir = ckpt_save_dir/sub_model.name
-                        best_file_dir.mkdir(parents=True, exist_ok=True)
-                        best_file_name = best_file_dir/'best_model.pth'
-                        torch.save(sub_model, best_file_name, _use_new_zipfile_serialization=False)
+                for i,batch_dict in enumerate(test_loader):
+                    load_data_to_gpu(batch_dict)
+                    with torch.no_grad():
+                        _,_ = model(batch_dict)
 
             if trained_epoch % ckpt_save_interval == 0 and rank == 0:
 
@@ -261,7 +252,6 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
                 save_checkpoint(
                     checkpoint_state(model, optimizer, trained_epoch, accumulated_iter), filename=ckpt_name,
                 )
-    print('---best_accuracy= %f ---,---best_recall=%f'%(accuracy_all,recall_all))
 
 def model_state_to_cpu(model_state):
     model_state_cpu = type(model_state)()  # ordered dict

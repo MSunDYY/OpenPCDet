@@ -1,3 +1,4 @@
+import os.path
 from typing import ValuesView
 import torch.nn as nn
 import torch
@@ -14,7 +15,8 @@ from .target_assigner.proposal_target_layer import ProposalTargetLayer
 from pcdet.ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_stack_modules
 from pcdet.ops.pointnet2.pointnet2_batch.pointnet2_modules import PointnetSAModuleMSG
 from pcdet import device
-
+from pathlib import Path
+import os
 class ProposalTargetLayerMPPNet1(ProposalTargetLayer):
     def __init__(self, roi_sampler_cfg):
         super().__init__(roi_sampler_cfg = roi_sampler_cfg)
@@ -932,7 +934,8 @@ class DENet5Head(RoIHeadTemplate):
         roi_boxes = roi_boxes.reshape(-1,roi_boxes.shape[-1])
         num_rois = torch.cumsum(torch.tensor([0]+[batch_dict['roi_boxes'][i].shape[0] for i in range(batch_size)],device=device),dim=0)
 
-        src_cur = self.voxel_sampler_cur(batch_size,trajectory_rois[:,0,...].flatten(0,1),num_sample,batch_dict,start_idx=0,num_rois=num_rois)
+        src_cur,src_idx,query_points = self.voxel_sampler_cur(batch_size,trajectory_rois[:,0,...].flatten(0,1),num_sample,batch_dict,start_idx=0,num_rois=num_rois)
+        batch_dict['src_idx'] = src_idx.transpose(0,1)
 
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK', None):
             src_cur[empty_mask.view(-1)] = 0
@@ -1018,7 +1021,12 @@ class DENet5Head(RoIHeadTemplate):
                 batch_dict['cls_preds_normalized']  = True
 
             batch_dict['batch_cls_preds'] = batch_cls_preds
-                
+            memory_bank_root =Path('../../data/waymo/key_points_mini')/batch_dict['metadata'][0][:-4]
+            src_idx = batch_dict['src_idx']
+            query_points = query_points[torch.unique(src_idx)]
+            if not os.path.exists(memory_bank_root):
+                os.makedirs(memory_bank_root)
+            np.save(memory_bank_root/('%04d.npy'%batch_dict['sample_idx'][0]),query_points.cpu().numpy())
 
         else:
             targets_dict['batch_size'] = batch_size

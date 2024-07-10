@@ -417,7 +417,7 @@ class WaymoDataset(DatasetTemplate):
             key_points_mini_root = Path('../../data/waymo/key_points_mini')
             key_points_root = Path('../../data/waymo/key_points')
             for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
-                key_points_file = key_points_mini_root/self.mode/sequence_name/('%04d.npy'%sample_idx_pre)
+                key_points_file = key_points_mini_root/sequence_name/('%04d.npy'%sample_idx_pre)
                 if not os.path.exists(key_points_file):
                     key_points_file = key_points_root/self.mode/sequence_name/('%04d.npy'%sample_idx_pre)
 

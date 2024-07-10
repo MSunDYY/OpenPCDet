@@ -63,7 +63,7 @@ DATA_CONFIG:
               ENABLED: False
               THRESHOD: 0.8
           USE_ROI_LIST:
-              ENABLED: True
+              ENABLED: False
               MAX_ROI: 200
               MIN_ROI: 30
           STACK_CONCAT: True

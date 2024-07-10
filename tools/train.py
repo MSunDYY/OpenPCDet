@@ -42,7 +42,7 @@ def parse_config():
     parser.add_argument('--local_rank', type=int, default=0, help='local rank for distributed training')
     parser.add_argument('--max_ckpt_save_num', type=int, default=30, help='max number of saved checkpoint')
     parser.add_argument('--merge_all_iters_to_one_epoch', action='store_true', default=False, help='')
-    parser.add_argument('--set', dest='set_cfgs', default=['DATA_CONFIG.SAMPLED_INTERVAL.train','1'], nargs=argparse.REMAINDER,
+    parser.add_argument('--set', dest='set_cfgs', default=None, nargs=argparse.REMAINDER,
                         help='set extra config keys if needed')
     parser.add_argument('--max_waiting_mins', type=int, default=0, help='max waiting minutes')
     parser.add_argument('--start_epoch', type=int, default=0, help='')
@@ -145,7 +145,12 @@ def main(args, cfgs):
         total_epochs=args.epochs,
         seed=666 if args.fix_random_seed else None
     )
-
+    test_set, test_loader, sampler = build_dataloader(
+        dataset_cfg=cfg.DATA_CONFIG,
+        class_names=cfg.CLASS_NAMES,
+        batch_size=1,
+        dist=dist_train, workers=args.workers, logger=logger, training=False
+    )
     model = build_network(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=train_set)
     if args.sync_bn:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
@@ -219,7 +224,7 @@ def main(args, cfgs):
         use_logger_to_record=not args.use_tqdm_to_record,
         show_gpu_stat=not args.wo_gpu_stat,
         use_amp=args.use_amp,
-        cfg=cfg,
+        cfg=cfg,test_loader=test_loader
     )
 
     if hasattr(train_set, 'use_shared_memory') and train_set.use_shared_memory:
@@ -230,12 +235,7 @@ def main(args, cfgs):
 
     logger.info('**********************Start evaluation %s/%s(%s)**********************' %
                 (cfg.EXP_GROUP_PATH, cfg.TAG, args.extra_tag))
-    test_set, test_loader, sampler = build_dataloader(
-        dataset_cfg=cfg.DATA_CONFIG,
-        class_names=cfg.CLASS_NAMES,
-        batch_size=1,
-        dist=dist_train, workers=args.workers, logger=logger, training=False
-    )
+
     eval_output_dir = output_dir / 'eval' / 'eval_with_train'
     eval_output_dir.mkdir(parents=True, exist_ok=True)
     args.start_epoch = max(args.epochs - args.num_epochs_to_eval,
@@ -250,115 +250,8 @@ def main(args, cfgs):
                 (cfg.EXP_GROUP_PATH, cfg.TAG, args.extra_tag))
 
 
-def train_my_model(args, cfg):
-    if args.launcher == 'none':
-        dist_train = False
-        total_gpus = 1
-    else:
-        total_gpus, cfg.LOCAL_RANK = getattr(common_utils, 'init_dist_%s' % args.launcher)(
-            args.tcp_port, args.local_rank, backend='nccl'
-        )
-        dist_train = True
-    output_dir = cfg.ROOT_DIR / 'output' / cfg.EXP_GROUP_PATH / cfg.TAG / args.extra_tag
-    ckpt_dir = output_dir / 'ckpt'
-    output_dir.mkdir(parents=True, exist_ok=True)
-    ckpt_dir.mkdir(parents=True, exist_ok=True)
-    args.epochs = cfg.OPTIMIZATION.NUM_EPOCHS if args.epochs is None else args.epochs
-    log_file = output_dir / ('train_%s.log' % datetime.datetime.now().strftime('%Y%m%d-%H%M%S'))
-    logger = common_utils.create_logger(log_file, rank=cfg.LOCAL_RANK)
-    train_set, train_loader, train_sampler = build_dataloader(
-        dataset_cfg=cfg.DATA_CONFIG,
-        class_names=cfg.CLASS_NAMES,
-        batch_size=args.batch_size,
-        dist=dist_train, workers=args.workers,
-        logger=logger,
-        training=True,
-        merge_all_iters_to_one_epoch=args.merge_all_iters_to_one_epoch,
-        total_epochs=args.epochs,
-        seed=666 if args.fix_random_seed else None
-    )
-    if args.model_name == 'Sampler':
-        model = PillarSampler(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=train_set)
-    elif args.model_name == 'FlowNet':
-        model = FlowNet(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=train_set)
-
-    test_set, test_loader, sampler = build_dataloader(
-        dataset_cfg=cfg.DATA_CONFIG,
-        class_names=cfg.CLASS_NAMES,
-        batch_size=1    ,
-        dist=dist_train, workers=args.workers, logger=logger, training=False
-    )
-    tb_log = SummaryWriter(log_dir=str(output_dir / 'tensorboard')) if cfg.LOCAL_RANK == 0 else None
-    if args.sync_bn:
-        model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
-    model.to(device)
-    optimizer = build_optimizer(model, cfg.OPTIMIZATION)
-    # load checkpoint if it is possible
-    start_epoch = it = 0
-    last_epoch = -1
-    if args.pretrained_model is not None:
-        model.load_params_from_file(filename=args.pretrained_model, to_cpu=dist_train, logger=logger)
-
-    if not args.retrain:
-
-        if args.ckpt is not None:
-            it, start_epoch = model.load_params_with_optimizer(args.ckpt, to_cpu=dist_train, optimizer=optimizer,
-                                                               logger=logger)
-            last_epoch = start_epoch + 1
-        else:
-            ckpt_list = glob.glob(str(ckpt_dir / '*.pth'))
-
-            if len(ckpt_list) > 0:
-                ckpt_list.sort(key=os.path.getmtime)
-                while len(ckpt_list) > 0:
-                    try:
-                        it, start_epoch = model.load_params_with_optimizer(
-                            ckpt_list[-1], to_cpu=dist_train, optimizer=optimizer, logger=logger
-                        )
-                        last_epoch = start_epoch + 1
-                        break
-                    except:
-                        ckpt_list = ckpt_list[:-1]
-
-    model.train()
-    if dist_train:
-        model = nn.parallel.DistributedDataParallel(model, device_ids=[cfg.LOCAL_RANK % torch.cuda.device_count()])
-    lr_schedular, lr_warmup_scheduler = build_scheduler(optimizer, total_iters_each_epoch=len(train_loader),
-                                                        total_epochs=args.epochs,
-                                                        last_epoch=last_epoch, optim_cfg=cfg.OPTIMIZATION)
-    train_model(model,
-                optimizer,
-                train_loader,
-                model_func=model_fn_decorator(),
-                lr_scheduler=lr_schedular,
-                optim_cfg=cfg.OPTIMIZATION,
-                start_epoch=start_epoch,
-                total_epochs=args.epochs,
-                start_iter=it,
-                rank=cfg.LOCAL_RANK,
-                tb_log=tb_log,
-                ckpt_save_dir=ckpt_dir,
-                train_sampler=train_sampler,
-                lr_warmup_scheduler=lr_warmup_scheduler,
-                ckpt_save_interval=args.ckpt_save_interval,
-                max_ckpt_save_num=args.max_ckpt_save_num,
-                merge_all_iters_to_one_epoch=args.merge_all_iters_to_one_epoch,
-                logger=logger,
-                logger_iter_interval=args.logger_iter_interval,
-                ckpt_save_time_interval=args.ckpt_save_time_interval,
-                use_logger_to_record=not args.use_tqdm_to_record,
-                show_gpu_stat=not args.wo_gpu_stat,
-                use_amp=args.use_amp,
-                cfg=cfg,
-                test_loader=test_loader
-                )
-
-
 
 if __name__ == '__main__':
     args, cfg = parse_config()
+    main(args, cfg)
 
-    if args.model_name == 'detection':
-        main(args, cfg)
-    else:
-        train_my_model(args, cfg)
