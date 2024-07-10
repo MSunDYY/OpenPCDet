@@ -3,7 +3,7 @@ CLASS_NAMES: ['Vehicle', 'Pedestrian', 'Cyclist']
 DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/waymo_dataset.yaml
     PROCESSED_DATA_TAG: 'waymo_processed_data_v0_5_0'
-    TRANSFORMED_POINTS: True
+    TRANSFORMED_POINTS: False
     DATA_SPLIT: {
         'train': train,
         'test': val
@@ -85,7 +85,7 @@ MODEL:
 
     ROI_HEAD:
         NAME: MSFHead
-        TRANS_INPUT: 256
+        TRANS_INPUT: 128
         CLASS_AGNOSTIC: True
         USE_BOX_ENCODING:
             ENABLED: True 
@@ -93,7 +93,7 @@ MODEL:
         USE_TRAJ_EMPTY_MASK: True
         USE_AUX_LOSS: True
         IOU_WEIGHT: [0.5,0.4]
-        PRE_AUG: True
+        PRE_AUG: False
         VoxelSampler:
             voxel_size: .4
             pc_range: [-75.2, -75.2, -10, 75.2, 75.2, 10]
@@ -113,7 +113,7 @@ MODEL:
             pos_hidden_dim: 64
             enc_layers: 3
             dim_feedforward: 512
-            hidden_dim: 256 #equal to ROI_HEAD.TRANS_INPUT
+            hidden_dim: 128 #equal to ROI_HEAD.TRANS_INPUT
             dropout: 0.1
             nheads: 4
             pre_norm: False

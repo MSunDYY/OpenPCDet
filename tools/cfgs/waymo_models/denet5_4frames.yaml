@@ -3,7 +3,7 @@ CLASS_NAMES: ['Vehicle', 'Pedestrian', 'Cyclist']
 DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/waymo_dataset.yaml
     PROCESSED_DATA_TAG: 'waymo_processed_data_v0_5_0'
-    TRANSFORMED_POINTS: True
+    TRANSFORMED_POINTS: False
     DATA_SPLIT: {
         'train': train,
         'test': val
@@ -11,7 +11,7 @@ DATA_CONFIG:
     TRAIN_WITH_SPEED: True
     SAMPLED_INTERVAL: {
         'train': 1,
-        'test': 10
+        'test': 1
     }
     FILTER_EMPTY_BOXES_FOR_TRAIN: True
     DISABLE_NLZ_FLAG_ON_POINTS: True
@@ -19,7 +19,7 @@ DATA_CONFIG:
     SEQUENCE_CONFIG:
         ENABLED: True
         SAMPLE_OFFSET: [-15,0]
-        USE_PRE_PREDBOX: False
+        USE_PRE_PREDBOX: True
         TRANSFORM_BOX: False
 
     USE_PREDBOX: True
@@ -52,8 +52,8 @@ DATA_CONFIG:
             }
         - NAME: anchor_aug
           NUM_FRAMES: 16
-          ROI_PER_IMAGE: 56
-          FG_RATIO: 0.7
+          ROI_PER_IMAGE: 96
+          FG_RATIO: 0.5
           REG_AUG_METHOD: single
           ROI_FG_AUG_TIMES: 10
           RATIO: 0.2
@@ -66,10 +66,9 @@ DATA_CONFIG:
               ENABLED: True
               MAX_ROI: 200
               MIN_ROI: 30
-          STACK_CONCAT: True
           SAMPLE_ROI_BY_EACH_CLASS: True
           CLS_SCORE_TYPE: roi_iou
-          USE_OVERLAP_ROI: True
+
           CLS_FG_THRESH: 0.75
           CLS_BG_THRESH: 0.25
           CLS_BG_THRESH_LO: 0.1
@@ -80,9 +79,9 @@ DATA_CONFIG:
 
 
     POINT_FEATURE_ENCODING: {
-        encoding_type: absolute_coordinates_encoding,
+        encoding_type: absolute_coordinates_encoding, 
         used_feature_list: ['x', 'y', 'z', 'intensity', 'elongation','time'],
-        src_feature_list: ['x', 'y', 'z', 'intensity', 'elongation','time'],
+        src_feature_list: ['x', 'y', 'z', 'intensity', 'elongation','time'],       
         }
 
 
@@ -90,11 +89,11 @@ MODEL:
     NAME: DENet
 
     ROI_HEAD:
-        NAME: DENetHead
+        NAME: DENet5Head
         TRANS_INPUT: 256
         CLASS_AGNOSTIC: True
         USE_BOX_ENCODING:
-            ENABLED: True
+            ENABLED: True 
         AVG_STAGE1_SCORE: True
         USE_TRAJ_EMPTY_MASK: True
         USE_AUX_LOSS: True
@@ -103,7 +102,7 @@ MODEL:
         PRE_AUG: True
 
         USE_POINTNET:
-            ENABLE: True
+            ENABLE: False
             USE_ABSOLUTE_XYZ: False
             USE_SPHER: True
             mlps: [[2,64,64]]
@@ -118,10 +117,10 @@ MODEL:
             POOL_RADIUS: [0.8, 1.6]
             NSAMPLE: [16, 16]
             POOL_METHOD: max_pool
-
+            
 
         Transformer:
-            num_lidar_points: 128
+            num_lidar_points: 192
             pos_hidden_dim: 64
             enc_layers: 3
             dim_feedforward: 512
@@ -131,18 +130,31 @@ MODEL:
             pre_norm: False
             num_frames: 1
             num_groups: 1
-            num_frames_all: 1
             use_grid_pos:
                 enabled: True
                 init_type: index
-            sampler:
-                USE_SPHER: True
-                radius: [[0.4],[0.8]]
-                nsample: [[8],[4]]
-                mlp: [[[64,96,96]],[[96,128,128]]]
             use_mlp_mixer:
                 enabled: True
                 hidden_dim: 16
+
+        Transformer2st:
+            num_lidar_points: 48
+            pos_hidden_dim: 64
+            enc_layers: 3
+            dim_feedforward: 512
+            hidden_dim: 256 #equal to ROI_HEAD.TRANS_INPUT
+            dropout: 0.1
+            nheads: 4
+            pre_norm: False
+            num_frames: 16
+            num_groups: 4
+            use_grid_pos:
+                enabled: True
+                init_type: index
+            use_mlp_mixer:
+                enabled: True
+                hidden_dim: 16
+
 
         TARGET_CONFIG:
             BOX_CODER: ResidualCoder

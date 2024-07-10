@@ -248,7 +248,7 @@ class DataProcessor(object):
             # simply propagate proposal based on velocity
             for i in range(1, num_frames):
                 frame = torch.zeros_like(cur_batch_boxes)
-                frame[:, 0:2] = cur_batch_boxes[:, 0:2] + i * cur_batch_boxes[:, 7:9]
+                frame[:, 0:2] = cur_batch_boxes[:, 0:2] + (i * cur_batch_boxes[:, 7:9] if batch_dict['sample_idx']-i>=0 else 0)
                 frame[:, 2:] = cur_batch_boxes[:, 2:]
 
                 trajectory_rois[i, :, :] = frame
@@ -366,37 +366,24 @@ class DataProcessor(object):
             
             
             cur_frame_idx = 0
-            # batch_size = batch_dict['batch_size']
+
             rois = batch_dict['backward_rois'][cur_frame_idx, :, :]
-            # roi_scores = batch_dict['roi_scores'][:, :, cur_frame_idx]
+
             anchor_labels = batch_dict['backward_rois'][cur_frame_idx, :, -1].long()
             gt_boxes = torch.from_numpy(batch_dict['gt_boxes']).float()
             num_anchors = batch_dict['num_anchors']
             code_size = rois.shape[-1]
-            # batch_rois = torch.zeros(config.ROI_PER_IMAGE * num_anchors, code_size)
-            # batch_gt_of_rois = torch.zeros(config.ROI_PER_IMAGE * num_anchors,
-            #                              gt_boxes.shape[-1])
-            # batch_roi_ious = torch.zeros(config.ROI_PER_IMAGE * num_anchors)
-            # batch_roi_scores = torch.zeros(config.ROI_PER_IMAGE * num_anchors)
-            # batch_roi_labels = torch.zeros((config.ROI_PER_IMAGE * num_anchors),
-            #                             dtype=torch.long)
-            backward_rois = batch_dict['backward_rois']
-            # trajectory_rois = batch_dict['trajectory_rois']
-            # batch_trajectory_rois = rois.new_zeros(batch_size, trajectory_rois.shape[1], config.ROI_PER_IMAGE,
-            #                                         trajectory_rois.shape[-1])
-            # batch_backward_rois = torch.zeros((backward_rois.shape[0],
-            #                                 config.ROI_PER_IMAGE * num_anchors,
-            #                                 backward_rois.shape[-1]))
 
-            # valid_length = batch_dict['valid_length']
+            backward_rois = batch_dict['backward_rois']
+
             batch_valid_length = torch.zeros(
                 ((batch_dict['backward_rois'].shape[0], config.ROI_PER_IMAGE)))
 
-            # for index in range(batch_size):
+
 
             cur_backward_rois = backward_rois
-            # cur_trajectory_rois = trajectory_rois[index]
-            cur_roi, cur_gt, cur_roi_labels = rois[:, :-1], gt_boxes, data_dict['roi_labels'][0].long()
+
+            cur_roi, cur_gt, cur_roi_labels = rois, gt_boxes, data_dict['roi_labels'][0].long()
 
             if 'valid_length' in batch_dict.keys():
                 cur_valid_length = batch_dict['valid_length']
@@ -531,7 +518,7 @@ class DataProcessor(object):
 
 
 
-            return batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_labels, batch_backward_rois[...,:-1], batch_valid_length
+            return batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_labels, batch_backward_rois, batch_valid_length
 
         with torch.no_grad():
             if data_dict['roi_boxes'].shape[0]>1:

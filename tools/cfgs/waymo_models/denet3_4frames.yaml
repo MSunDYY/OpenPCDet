@@ -18,7 +18,7 @@ DATA_CONFIG:
     USE_KEY_POINTS: True
     SEQUENCE_CONFIG:
         ENABLED: True
-        SAMPLE_OFFSET: [-3,0]
+        SAMPLE_OFFSET: [-15,0]
         USE_PRE_PREDBOX: True
         TRANSFORM_BOX: False
 
@@ -51,7 +51,7 @@ DATA_CONFIG:
                 'test': True
             }
         - NAME: anchor_aug
-          NUM_FRAMES: 4
+          NUM_FRAMES: 16
           ROI_PER_IMAGE: 96
           FG_RATIO: 0.5
           REG_AUG_METHOD: single
