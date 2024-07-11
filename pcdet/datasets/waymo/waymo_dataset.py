@@ -326,8 +326,10 @@ class WaymoDataset(DatasetTemplate):
             boxes: (N, 11)  [x, y, z, dx, dy, dn, raw, vx, vy, score, label]
             """
             sequence_name = sequence_name.replace('training_', '').replace('validation_', '')
+
             load_boxes = self.pred_boxes_dict[sequence_name][sample_idx]
-            # assert load_boxes.shape[-1] == 11
+
+                # assert load_boxes.shape[-1] == 11
 
             load_boxes[:, 7:9] = -0.1 * load_boxes[:, 7:9]  # transfer speed to negtive motion from t to t-1
             return load_boxes
@@ -419,7 +421,7 @@ class WaymoDataset(DatasetTemplate):
             for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
                 key_points_file = key_points_mini_root/sequence_name/('%04d.npy'%sample_idx_pre)
                 if not os.path.exists(key_points_file):
-                    key_points_file = key_points_root/self.mode/sequence_name/('%04d.npy'%sample_idx_pre)
+                    key_points_file = key_points_root/sequence_name/('%04d.npy'%sample_idx_pre)
 
 
                 points_pre = np.load(key_points_file)
