@@ -326,9 +326,9 @@ class KPTransformer(nn.Module):
         self.channels = model_cfg.hidden_dim
         self.num_frames = model_cfg.num_frames
         self.num_groups = model_cfg.num_groups
-        self.Attention = SpatialMixerBlock(self.channels,dropout=0.1)
-        self.Attention2 = SpatialMixerBlock(self.channels,dropout=0.1)
-        self.Attention3 = SpatialMixerBlock(self.channels,dropout=0.1)
+        self.Attention = SpatialMixerBlock(self.channels,dropout=0.1,batch_first=True)
+        self.Attention2 = SpatialMixerBlock(self.channels,dropout=0.1,batch_first=True)
+        self.Attention3 = SpatialMixerBlock(self.channels,dropout=0.1,batch_first=True)
         self.decoder_layer = CrossMixerBlock(self.channels,dropout=0.1)
 
         self.pointnet = nn.Sequential(
@@ -356,23 +356,24 @@ class KPTransformer(nn.Module):
         self.fc_hr2 = nn.Linear(256, 1, bias=False)
 
     def forward(self, src,token,src_cur):
-        src = src.permute(2,1,0,3).flatten(1,2)
+        # src = src.permute(2,1,0,3).flatten(1,2)
+        src = src.reshape(src.shape[0]*self.num_frames,-1,src.shape[-1])
         num_frames_single_group = self.num_frames // self.num_groups
         src,weight = self.Attention(src,return_weight=True)
 
-        sampled_inds = torch.topk(weight.sum(1),k=weight.shape[-1]//2,dim=-1)[1].transpose(0,1)
-        src_new = torch.gather(src,0,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))
-        src_new = src_new.unflatten(1,(self.num_frames,-1))
+        sampled_inds = torch.topk(weight.sum(1),k=weight.shape[-1]//2,dim=-1)[1]
+        src_new = torch.gather(src,1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))
+        src_new = src_new.unflatten(0,(-1,self.num_frames))
         src_list = [src_new[:,torch.arange(num_frames_single_group)*self.num_groups+i] for i in range(self.num_groups)]
-        src = torch.concat([src_.flatten(0,1) for src_ in src_list],dim=1)
+        src = torch.stack([src_.flatten(1,2) for src_ in src_list],dim=1).flatten(0,1)
         src,weight = self.Attention2(src,return_weight=True)
-        sampled_inds = torch.topk(weight.sum(1),k=weight.shape[-1]//2,dim=-1)[1].transpose(0,1)
-        src_new = torch.gather(src,0,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))
-        src_new = src_new.reshape(src_new.shape[0]*self.num_groups,-1,src_new.shape[-1])
+        sampled_inds = torch.topk(weight.sum(1),k=weight.shape[-1]//2,dim=-1)[1]
+        src_new = torch.gather(src,1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))
+        src_new = src_new.reshape(-1,self.num_groups*src_new.shape[1],src_new.shape[-1])
         src_new = self.Attention3(src_new)
-        token = self.decoder_layer(token,src_new)
+        token = self.decoder_layer(token,src_new.transpose(0,1))
 
-        src_new = self.pointnet(src_new.permute(1,2,0))
+        src_new = self.pointnet(src_new.permute(0,2,1))
         x = torch.max(src_new,dim=-1).values
 
         x = F.relu(self.x_bn1(self.fc1(x)))
@@ -944,13 +945,14 @@ class DENet5Head(RoIHeadTemplate):
         hs, tokens,src_cur = self.transformer(src_cur, batch_dict, pos=None)
 
         src_pre = self.voxel_sampler(batch_size,trajectory_rois,num_sample//4,batch_dict)
+
+
         src_pre_transform = src_pre.reshape(-1,num_frames,num_sample//4,src_pre.shape[-1])
         # src_pre_transform = self.pointLK(src_pre_transform.flatten(0,1).transpose(-1,-2),src_pre_transform[:,:1,:,:].repeat(1,num_frames,1,1).flatten(0,1).transpose(-1,-2))
         trajectory_rois = trajectory_rois.transpose(1,2).flatten(0,1)
-        src_pre = self.get_proposal_aware_motion_feature(src_pre.flatten(0,1), trajectory_rois)
-
-        src_pre = src_pre.unflatten(1, (num_frames, -1))
-        # src_pre = src_pre + src_pre_transform.reshape(-1,src_pre.shape[1],1,src_pre.shape[-1])
+        src_pre = src_pre.flatten(0,1)
+        src_pre[:,:num_sample//4] = torch.gather(query_points,0,batch_dict['src_idx'].view(-1,1).repeat(1,query_points.shape[-1])).unflatten(0,batch_dict['src_idx'].shape).transpose(0,1)
+        src_pre = self.get_proposal_aware_motion_feature(src_pre, trajectory_rois)
 
         token,box_reg,feat_box = self.transformer2st(src_pre,tokens[-1],src_cur)
 

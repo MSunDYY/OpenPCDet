@@ -151,10 +151,10 @@ class SpatialMixerBlockCompress(nn.Module):
         return src0d
 class SpatialMixerBlock(nn.Module):
 
-    def __init__(self, channels,config=None, dropout=0.0):
+    def __init__(self, channels,config=None, dropout=0.0,batch_first=False):
         super().__init__()
 
-        self.mixer = nn.MultiheadAttention(channels, 8, dropout=dropout)
+        self.mixer = nn.MultiheadAttention(channels, 8, dropout=dropout,batch_first=batch_first)
         
         self.dropout = nn.Dropout(dropout)
         self.norm = nn.LayerNorm(channels)
