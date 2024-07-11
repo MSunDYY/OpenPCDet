@@ -509,7 +509,7 @@ def build_transformer(args):
 
 
 class VoxelSampler(nn.Module):
-    GAMMA = 1.1
+    GAMMA = 1.05
 
     def __init__(self, device, voxel_size, pc_range, max_points_per_voxel, num_point_features=5):
         super().__init__()
@@ -544,7 +544,7 @@ class VoxelSampler(nn.Module):
             src_points = list()
 
             for idx in range(trajectory_rois.shape[1]):
-                gamma = self.GAMMA *(1+speed[bs_idx,idx]/2) # ** (idx+1)
+                gamma = torch.clamp((self.GAMMA *(1+speed[bs_idx,idx])) **(idx/5),max=2.5)# ** (idx+1)
 
                 time_mask = (cur_points[:, -1] - idx * 0.1).abs() < 1e-3
                 cur_time_points = cur_points[time_mask, :5].contiguous()

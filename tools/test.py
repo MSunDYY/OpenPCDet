@@ -36,7 +36,7 @@ def parse_config():
     parser.add_argument('--workers', type=int, default=4, help='number of workers for dataloader')
     parser.add_argument('--extra_tag', type=str, default='default', help='extra tag for this experiment')
     parser.add_argument('--ckpt', type=str,
-                        default='../output/waymo_models/msf_4frames/Interval1/ckpt/checkpoint_epoch_6.pth',
+                        default='../output/waymo_models/msf_4frames/shrinkpoints_128pts/ckpt/checkpoint_epoch_7.pth',
                         help='checkpoint to start from')
     parser.add_argument('--pretrained_model', type=str, default=None, help='pretrained_model')
     parser.add_argument('--launcher', choices=['none', 'pytorch', 'slurm'], default='none')
@@ -132,71 +132,6 @@ def get_no_evaluated_ckpt(ckpt_dir, ckpt_record_file, args):
         if float(epoch_id) not in evaluated_ckpt_list and int(float(epoch_id)) >= args.start_epoch:
             return epoch_id, cur_ckpt
     return -1, None
-
-
-def evaluate_sampler(args, cfg):
-    if args.infer_time:
-        os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
-    if args.launcher == 'none':
-        dist_test = False
-        total_gpus = 1
-    else:
-        total_gpus, cfg.LOCAL_RANK = getattr(common_utils, 'init_dist_%s' % args.launcher)(
-            args.tcp_port, args.local_rank, backend='nccl'
-        )
-        dist_test = True
-
-    if args.batch_size is None:
-        args.batch_size = cfg.OPTIMIZATION.BATCH_SIZE_PER_GPU
-    else:
-        assert args.batch_size % total_gpus == 0, 'Batch size should match the number of gpus'
-        args.batch_size = args.batch_size // total_gpus
-
-    output_dir = cfg.ROOT_DIR / 'output' / cfg.EXP_GROUP_PATH / cfg.TAG / args.extra_tag
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    eval_output_dir = output_dir / 'eval'
-
-    if not args.eval_all:
-        num_list = re.findall(r'\d+', args.ckpt) if args.ckpt is not None else []
-        epoch_id = num_list[-1] if num_list.__len__() > 0 else 'no_number'
-        eval_output_dir = eval_output_dir / ('epoch_%s' % epoch_id) / cfg.DATA_CONFIG['DATA_SPLIT']['test']
-    else:
-        eval_output_dir = eval_output_dir / 'eval_all_default'
-
-    if args.eval_tag is not None:
-        eval_output_dir = eval_output_dir / args.eval_tag
-
-    eval_output_dir.mkdir(parents=True, exist_ok=True)
-    log_file = eval_output_dir / ('log_eval_%s.txt' % datetime.datetime.now().strftime('%Y%m%d-%H%M%S'))
-    logger = common_utils.create_logger(log_file, rank=cfg.LOCAL_RANK)
-
-    # log to file
-    logger.info('**********************Start logging**********************')
-    gpu_list = os.environ['CUDA_VISIBLE_DEVICES'] if 'CUDA_VISIBLE_DEVICES' in os.environ.keys() else 'ALL'
-    logger.info('CUDA_VISIBLE_DEVICES=%s' % gpu_list)
-
-    if dist_test:
-        logger.info('total_batch_size: %d' % (total_gpus * args.batch_size))
-    for key, val in vars(args).items():
-        logger.info('{:16} {}'.format(key, val))
-    log_config_to_file(cfg, logger=logger)
-
-    ckpt_dir = args.ckpt_dir if args.ckpt_dir is not None else output_dir / 'ckpt'
-
-    test_set, test_loader, sampler = build_dataloader(
-        dataset_cfg=cfg.DATA_CONFIG,
-        class_names=cfg.CLASS_NAMES,
-        batch_size=args.batch_size,
-        dist=dist_test, workers=args.workers, logger=logger, training=False
-    )
-
-    model = PillarSampler(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=test_set)
-    model.to(device)
-    model.eval()
-    with torch.no_grad():
-        eval_sampler_one_epoch(model=model, test_loader=test_loader, logger=logger, dist_test=dist_test, args=args,
-                               threshold=0.4)
 
 
 def repeat_eval_ckpt(model, test_loader, args, eval_output_dir, logger, ckpt_dir, dist_test=False):
@@ -319,9 +254,5 @@ def main(args, cfg):
 
 if __name__ == '__main__':
     args, cfg = parse_config()
-    print('test_sampler:',args.test_sampler)
+    main(args, cfg)
 
-    if not args.test_sampler:
-        main(args, cfg)
-    else:
-        evaluate_sampler(args, cfg)

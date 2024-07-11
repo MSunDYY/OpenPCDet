@@ -491,7 +491,7 @@ class VoxelSampler(nn.Module):
                 key_points = key_points[point_mask]
                 key_points = key_points[torch.randperm(len(key_points)), :]
 
-                if idx==0 and True:
+                if idx==0 and False:
                     root_data = '../../data/waymo/key_points/'
                     os.makedirs(root_data+batch_dict['metadata'][0][:-4],exist_ok=True)
                     np.save(root_data+batch_dict['metadata'][0][:-4]+'/%04d.npy' % (batch_dict['sample_idx'][0]),key_points.cpu().numpy())

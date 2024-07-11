@@ -936,10 +936,11 @@ class DENet5Head(RoIHeadTemplate):
 
         src_cur,src_idx,query_points = self.voxel_sampler_cur(batch_size,trajectory_rois[:,0,...].flatten(0,1),num_sample,batch_dict,start_idx=0,num_rois=num_rois)
         batch_dict['src_idx'] = src_idx.transpose(0,1)
-
+        batch_dict['query_points'] = query_points
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK', None):
             src_cur[empty_mask.view(-1)] = 0
         src_cur = self.get_proposal_aware_geometry_feature(src_cur,batch_size,trajectory_rois[:,0,...].flatten(0,1))
+
         hs, tokens,src_cur = self.transformer(src_cur, batch_dict, pos=None)
 
         src_pre = self.voxel_sampler(batch_size,trajectory_rois,num_sample//4,batch_dict)
