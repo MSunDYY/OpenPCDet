@@ -16,7 +16,7 @@ from pathlib import Path
 from functools import partial
 import sys
 import os
-
+import time
 ROOT_DIR = (Path(__file__).resolve().parent / '../../../').resolve()
 sys.path.append(str(ROOT_DIR))
 sys.path.append('/home/msun/pan1/pointcloud/OpenPCDet/pcdet/datasets')
@@ -386,8 +386,6 @@ class WaymoDataset(DatasetTemplate):
                 points_pre2cur = np.dot(expand_points_pre_global, np.linalg.inv(pose_cur.T))[:, :3]
                 points_pre = np.concatenate([points_pre2cur, points_pre[:, 3:]], axis=-1)
 
-
-
                 if sequence_cfg.get('ONEHOT_TIMESTAMP', False):
                     onehot_vector = np.zeros((points_pre.shape[0], len(sample_idx_pre_list) + 1))
                     onehot_vector[:, idx + 1] = 1
@@ -418,13 +416,19 @@ class WaymoDataset(DatasetTemplate):
         else:
             key_points_mini_root = Path('../../data/waymo/key_points_mini')
             key_points_root = Path('../../data/waymo/key_points')
+            key_points_1st = key_points_mini_root / sequence_name / ('%04d.npy' % (sample_idx_pre_list[0]+1))
+
+
             for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
                 key_points_file = key_points_mini_root/sequence_name/('%04d.npy'%sample_idx_pre)
                 if not os.path.exists(key_points_file):
                     key_points_file = key_points_root/sequence_name/('%04d.npy'%sample_idx_pre)
+                try:
+                    points_pre = np.load(key_points_file)
+                except:
+                    time.sleep(0.1)
+                    points_pre = np.load(key_points_file)
 
-
-                points_pre = np.load(key_points_file)
                 points_pre = np.hstack([points_pre,0.1*(idx+1)*np.ones((points_pre.shape[0],1)).astype(points_pre.dtype)])
                 pose_pre = sequence_info[sample_idx_pre]['pose'].reshape(4,4)
                 pred_boxes = load_pred_boxes_from_dict(sequence_name, sample_idx_pre)
@@ -519,7 +523,7 @@ class WaymoDataset(DatasetTemplate):
         }
 
         if self.dataset_cfg.get('TRANSFORMED_POINTS',False):
-            data_tag = 'waymo_processed_data_v0_5_0_full' if self.training else 'waymo_processed_data_v0_5_0_full'
+            data_tag = 'waymo_processed_data_v0_5_0_full' if self.training else 'waymo_processed_data_v0_5_0_full_val'
             file_name = self.root_path/data_tag/sequence_name/('%04d.npy'%sample_idx)
             points = np.load(file_name)
         else:

@@ -186,7 +186,7 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
     for i,sub_model in enumerate(model_list):
         if getattr(sub_model,'is_train',True) is False:
             model.module_list[i] = torch.load(sub_model.ckpt)
-    with tqdm.trange(start_epoch, total_epochs, desc='epochs', dynamic_ncols=True, leave=(rank == 0)) as tbar:
+    with tqdm.trange(start_epoch, total_epochs,ncols=80, desc='epochs', dynamic_ncols=True, leave=(rank == 0)) as tbar:
         total_it_each_epoch = len(train_loader)
         if merge_all_iters_to_one_epoch:
             assert hasattr(train_loader.dataset, 'merge_all_iters_to_one_epoch')
@@ -228,16 +228,8 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
 
 
             # save trained model
+
             trained_epoch = cur_epoch + 1
-
-            if (type(model).__name__)=='DENet':
-
-                model.eval()
-
-                for i,batch_dict in enumerate(test_loader):
-                    load_data_to_gpu(batch_dict)
-                    with torch.no_grad():
-                        _,_ = model(batch_dict)
 
             if trained_epoch % ckpt_save_interval == 0 and rank == 0:
 
@@ -252,6 +244,16 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
                 save_checkpoint(
                     checkpoint_state(model, optimizer, trained_epoch, accumulated_iter), filename=ckpt_name,
                 )
+            if (type(model).__name__)=='DENet' and trained_epoch in [1,4]:
+
+                model.eval()
+                for i,batch_dict in tqdm.tqdm(enumerate(test_loader),dynamic_ncols=True):
+                    load_data_to_gpu(batch_dict)
+                    with torch.no_grad():
+                        _,_ = model(batch_dict)
+
+                model.train()
+
 
 def model_state_to_cpu(model_state):
     model_state_cpu = type(model_state)()  # ordered dict

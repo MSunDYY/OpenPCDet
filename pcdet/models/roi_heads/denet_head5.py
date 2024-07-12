@@ -943,7 +943,14 @@ class DENet5Head(RoIHeadTemplate):
         src_cur = self.get_proposal_aware_geometry_feature(src_cur,batch_size,trajectory_rois[:,0,...].flatten(0,1))
 
         hs, tokens,src_cur = self.transformer(src_cur, batch_dict, pos=None)
-
+        if not self.training:
+            memory_bank_root = Path('../../data/waymo/key_points_mini') / batch_dict['metadata'][0][:-4]
+            src_idx = batch_dict['src_idx']
+            query_points = query_points[torch.unique(src_idx)]
+            if not os.path.exists(memory_bank_root):
+                os.makedirs(memory_bank_root)
+            np.save(memory_bank_root / ('%04d.npy' % batch_dict['sample_idx'][0]), query_points.cpu().numpy())
+            return batch_dict
         src_pre = self.voxel_sampler(batch_size,trajectory_rois,num_sample//4,batch_dict)
 
 
@@ -1024,12 +1031,7 @@ class DENet5Head(RoIHeadTemplate):
                 batch_dict['cls_preds_normalized']  = True
 
             batch_dict['batch_cls_preds'] = batch_cls_preds
-            memory_bank_root =Path('../../data/waymo/key_points_mini')/batch_dict['metadata'][0][:-4]
-            src_idx = batch_dict['src_idx']
-            query_points = query_points[torch.unique(src_idx)]
-            if not os.path.exists(memory_bank_root):
-                os.makedirs(memory_bank_root)
-            np.save(memory_bank_root/('%04d.npy'%batch_dict['sample_idx'][0]),query_points.cpu().numpy())
+
 
         else:
             targets_dict['batch_size'] = batch_size
