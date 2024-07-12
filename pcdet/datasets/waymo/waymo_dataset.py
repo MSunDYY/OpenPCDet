@@ -416,10 +416,9 @@ class WaymoDataset(DatasetTemplate):
         else:
             key_points_mini_root = Path('../../data/waymo/key_points_mini')
             key_points_root = Path('../../data/waymo/key_points')
-            key_points_1st = key_points_mini_root / sequence_name / ('%04d.npy' % (sample_idx_pre_list[0]+1))
 
 
-            for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
+            for idx, sample_idx_pre in enumerate(reversed(sample_idx_pre_list)):
                 key_points_file = key_points_mini_root/sequence_name/('%04d.npy'%sample_idx_pre)
                 if not os.path.exists(key_points_file):
                     key_points_file = key_points_root/sequence_name/('%04d.npy'%sample_idx_pre)
@@ -429,7 +428,7 @@ class WaymoDataset(DatasetTemplate):
                     time.sleep(0.1)
                     points_pre = np.load(key_points_file)
 
-                points_pre = np.hstack([points_pre,0.1*(idx+1)*np.ones((points_pre.shape[0],1)).astype(points_pre.dtype)])
+                points_pre = np.hstack([points_pre,0.1*(len(sample_idx_pre_list)-idx)*np.ones((points_pre.shape[0],1)).astype(points_pre.dtype)])
                 pose_pre = sequence_info[sample_idx_pre]['pose'].reshape(4,4)
                 pred_boxes = load_pred_boxes_from_dict(sequence_name, sample_idx_pre)
                 pose_pre2cur = np.dot(pose_pre.T,np.linalg.inv(pose_cur.T))
