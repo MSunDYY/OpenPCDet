@@ -244,7 +244,7 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
                 save_checkpoint(
                     checkpoint_state(model, optimizer, trained_epoch, accumulated_iter), filename=ckpt_name,
                 )
-            if (type(model).__name__)=='DENet' and trained_epoch in [1,4]:
+            if (type(model).__name__)=='DENet' and trained_epoch in [3,5]:
 
                 model.eval()
                 for i,batch_dict in tqdm.tqdm(enumerate(test_loader),dynamic_ncols=True):

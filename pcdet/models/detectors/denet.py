@@ -27,7 +27,7 @@ class DENet(Detector3DTemplate):
 
             return ret_dict, tb_dict, disp_dict
         else:
-            if batch_dict.get('batch_box_preds'):
+            if 'batch_box_pred' in batch_dict.keys():
                 pred_dicts, recall_dicts = self.post_processing(batch_dict)
             # print(recall_dicts, torch.count_nonzero(pred_dicts[0]['pred_labels'] == 2), torch.count_nonzero(batch_dict['gt_boxes'][0, :, 7] == 2))
                 return pred_dicts, recall_dicts
