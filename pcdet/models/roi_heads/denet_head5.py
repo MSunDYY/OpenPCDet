@@ -946,20 +946,23 @@ class DENet5Head(RoIHeadTemplate):
         if not self.training:
             memory_bank_root = Path('../../data/waymo/key_points_mini') / batch_dict['metadata'][0][:-4]
             src_idx = batch_dict['src_idx']
-            query_points = query_points[torch.unique(src_idx)]
+            query_points_shrink = query_points[torch.unique(src_idx)]
             if not os.path.exists(memory_bank_root):
                 os.makedirs(memory_bank_root)
-            np.save(memory_bank_root / ('%04d.npy' % batch_dict['sample_idx'][0]), query_points.cpu().numpy())
-            return batch_dict
+            np.save(memory_bank_root / ('%04d.npy' % batch_dict['sample_idx'][0]), query_points_shrink.cpu().numpy())
+            if self.signal=='train':
+                return batch_dict
         src_pre = self.voxel_sampler(batch_size,trajectory_rois,num_sample//4,batch_dict)
 
 
         src_pre_transform = src_pre.reshape(-1,num_frames,num_sample//4,src_pre.shape[-1])
-        # src_pre_transform = self.pointLK(src_pre_transform.flatten(0,1).transpose(-1,-2),src_pre_transform[:,:1,:,:].repeat(1,num_frames,1,1).flatten(0,1).transpose(-1,-2))
+        src_pre_transform = self.pointLK(src_pre_transform.flatten(0,1).transpose(-1,-2),src_pre_transform[:,:1,:,:].repeat(1,num_frames,1,1).flatten(0,1).transpose(-1,-2))
         trajectory_rois = trajectory_rois.transpose(1,2).flatten(0,1)
         src_pre = src_pre.flatten(0,1)
         src_pre[:,:num_sample//4] = torch.gather(query_points,0,batch_dict['src_idx'].view(-1,1).repeat(1,query_points.shape[-1])).unflatten(0,batch_dict['src_idx'].shape).transpose(0,1)
         src_pre = self.get_proposal_aware_motion_feature(src_pre, trajectory_rois)
+        src_pre_transform = src_pre_transform.reshape(src_pre.shape[0],-1,1,src_pre_transform.shape[-1])
+        src_pre = src_pre+ src_pre_transform.repeat(1,1,src_pre.shape[1]//src_pre_transform.shape[1],1).reshape(src_pre.shape)
 
         token,box_reg,feat_box = self.transformer2st(src_pre,tokens[-1],src_cur)
 
