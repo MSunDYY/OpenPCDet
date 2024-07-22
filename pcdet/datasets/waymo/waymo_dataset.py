@@ -143,7 +143,7 @@ class WaymoDataset(DatasetTemplate):
 
         self.logger.info(f'Predicted boxes has been loaded, total sequences: {len(pred_boxes_dict)}')
 
-        return pred_boxes_dict if not return_anchors else (pred_boxes_dict,pred_anchors_dict)
+        return pred_boxes_dict
 
     def load_pred_anchors_to_dict(self, pred_anchors_path):
         self.logger.info(f'Loading and reorganizing pred_boxes to dict from path: {pred_anchors_path}')
