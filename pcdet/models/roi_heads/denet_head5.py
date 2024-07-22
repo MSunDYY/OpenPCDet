@@ -420,7 +420,7 @@ class PointNetLK(nn.Module):
 
     def estimate_transform(self, source_feature, target_feature):
         # 简单的线性变换估计
-        transform = source_feature - target_feature
+        transform = target_feature - source_feature
         return transform
 
 class DENet5Head(RoIHeadTemplate):
@@ -955,7 +955,7 @@ class DENet5Head(RoIHeadTemplate):
         src_pre = self.voxel_sampler(batch_size,trajectory_rois,num_sample//4,batch_dict)
 
 
-        src_pre_transform = src_pre.reshape(-1,num_frames,num_sample//4,src_pre.shape[-1])
+        src_pre_transform = src_pre.clone().reshape(-1,num_frames,num_sample//4,src_pre.shape[-1])
         src_pre_transform = self.pointLK(src_pre_transform.flatten(0,1).transpose(-1,-2),src_pre_transform[:,:1,:,:].repeat(1,num_frames,1,1).flatten(0,1).transpose(-1,-2))
         trajectory_rois = trajectory_rois.transpose(1,2).flatten(0,1)
         src_pre = src_pre.flatten(0,1)
