@@ -209,6 +209,17 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
             model.train()
 
 
+            if (type(model).__name__)=='DENet' and cur_epoch in [0,5]:
+
+                model.eval()
+                model.roi_head.signal='train'
+                for i,batch_dict in tqdm.tqdm(enumerate(train_loader),dynamic_ncols=True):
+                    load_data_to_gpu(batch_dict)
+                    with torch.no_grad():
+                        _,_ = model(batch_dict)
+
+                model.train()
+
 
             accumulated_iter = train_one_epoch(
                 model, optimizer, train_loader, model_func,
@@ -230,15 +241,7 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
             # save trained model
 
             trained_epoch = cur_epoch + 1
-            if (type(model).__name__)=='DENet' and trained_epoch in [3,5]:
 
-                model.eval()
-                for i,batch_dict in tqdm.tqdm(enumerate(test_loader),dynamic_ncols=True):
-                    load_data_to_gpu(batch_dict)
-                    with torch.no_grad():
-                        _,_ = model(batch_dict)
-
-                model.train()
             if trained_epoch % ckpt_save_interval == 0 and rank == 0:
 
                 ckpt_list = glob.glob(str(ckpt_save_dir / 'checkpoint_epoch_*.pth'))

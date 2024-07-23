@@ -13,10 +13,7 @@ class DENet(Detector3DTemplate):
     def __init__(self, model_cfg, num_class, dataset):
         super().__init__(model_cfg=model_cfg, num_class=num_class, dataset=dataset)
         self.module_list = self.build_networks()
-        if self.dataset.dataset_cfg.SAMPLED_INTERVAL.test=='train':
-            self.module_list[0].signal='train'
-        else:
-            self.module_list[0].signal='val'
+        self.module_list[0].signal='val'
 
     def forward(self, batch_dict):
         for cur_module in self.module_list[:]:
