@@ -148,12 +148,7 @@ def main(args, cfgs):
 
     model = build_network(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=train_set)
 
-    test_set, test_loader, sampler = build_dataloader(
-        dataset_cfg=cfg.DATA_CONFIG,
-        class_names=cfg.CLASS_NAMES,
-        batch_size=1,
-        dist=dist_train, workers=args.workers, logger=logger, training=False
-    )
+
     if args.sync_bn:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
@@ -202,6 +197,20 @@ def main(args, cfgs):
     logger.info('**********************Start training %s/%s(%s)**********************'
                 % (cfg.EXP_GROUP_PATH, cfg.TAG, args.extra_tag))
 
+    if cfg.MODEL.NAME=='DENet':
+        from easydict import EasyDict
+        data_config = EasyDict(cfg.DATA_CONFIG.copy())
+        data_config.DATA_SPLIT.test = 'train'
+        data_config.SAMPLED_INTERVAL.test=1
+        data_config.ROI_BOXES_PATH.test = data_config.ROI_BOXES_PATH.test.replace('/val','/train')
+        model.roi_head.signal = 'train'
+        test_set, test_loader, sampler = build_dataloader(
+            dataset_cfg=data_config,
+            class_names=cfg.CLASS_NAMES,
+            batch_size=1,
+            dist=dist_train, workers=args.workers, logger=logger, training=False
+        )
+
     train_model(
         model,
         optimizer,
@@ -226,7 +235,14 @@ def main(args, cfgs):
         use_logger_to_record=not args.use_tqdm_to_record,
         show_gpu_stat=not args.wo_gpu_stat,
         use_amp=args.use_amp,
-        cfg=cfg,test_loader=test_loader
+        cfg=cfg,test_loader=test_loader if cfg.MODEL.NAME=='DENet' else None
+    )
+
+    test_set, test_loader, sampler = build_dataloader(
+        dataset_cfg=cfg.DATA_CONFIG,
+        class_names=cfg.CLASS_NAMES,
+        batch_size=1,
+        dist=dist_train, workers=args.workers, logger=logger, training=False
     )
 
     if hasattr(train_set, 'use_shared_memory') and train_set.use_shared_memory:

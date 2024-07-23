@@ -209,11 +209,11 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
             model.train()
 
 
-            if (type(model).__name__)=='DENet' and cur_epoch in [0,5]:
+            if (type(model).__name__)=='DENet' and cur_epoch in [3,5]:
 
                 model.eval()
-                model.roi_head.signal='train'
-                for i,batch_dict in tqdm.tqdm(enumerate(train_loader),dynamic_ncols=True):
+
+                for i,batch_dict in tqdm.tqdm(enumerate(test_loader),dynamic_ncols=True):
                     load_data_to_gpu(batch_dict)
                     with torch.no_grad():
                         _,_ = model(batch_dict)
