@@ -663,43 +663,7 @@ class WaymoDataset(DatasetTemplate):
 
         return ap_result_str, ap_dict
 
-    def create_waymo_flow_infos(self, info_path, save_path, split_type='ground_truth'):
-        use_sequence_data = self.dataset_cfg.get('SEQUENCE_CONFIG',
-                                                 None) is not None and self.dataset_cfg.SEQUENCE_CONFIG.ENABLED
-        save_data_path = save_path / split_type
-        if use_sequence_data:
-            save_data_path.mkdir(parents=True, exist_ok=True)
-        with open(info_path, 'rb') as f:
-            infos = pickle.load(f)
-        for i in tqdm(range(0, len(infos))):
-            info = infos[i]
-            pc_info = info['point_cloud']
-            sequence_name = pc_info['lidar_sequence']
-            sample_idx = pc_info['sample_idx']
-            points = self.get_lidar(sequence_name, sample_idx)
-            if use_sequence_data:
-                self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET = [-1, 0]
-                points, num_points_all, sample_idx_pre_list, _, _, _, _, points_gt_all, label = self.get_sequence_data(
-                    info, points, sequence_name, sample_idx, self.dataset_cfg.SEQUENCE_CONFIG,
-                    get_gt=split_type == 'ground_truth'
-                )
-            if split_type == 'without_ground':
-                for i, num_points in enumerate(num_points_all):
-                    points_single, points = np.array_split(points, [num_points])
-                    points_single = points_single[points_single[:, 2] > 0.5]
-                    np.save(save_data_path / ('%s_%d_%3d' % (sequence_name, sample_idx, i)), points_single)
-            else:
-                annos = info['annos']
-                names = annos['name']
-                difficulty = annos['difficulty']
-                gt_boxes = annos['gt_boxes_lidar']
-                num_obj = gt_boxes.shape[0]
-                if num_obj == 0:
-                    continue
-                for i, points_gt in enumerate(points_gt_all):
-                    np.save(save_data_path / ('%s_%03d_%d' % (sequence_name, sample_idx, i)), points_gt)
 
-                np.save(save_data_path / ('%s_%03d_label' % (sequence_name, sample_idx)), label)
 
 
 
@@ -1003,18 +967,19 @@ def create_waymo_infos(dataset_cfg, class_names, data_path, save_path,
     #     print('>{} and <{}:'.format(min_dis,min(min_dis+10,distances.max())),((distances>=min_dis)&(distances<min(min_dis+10,distances.max()))).sum())
     #     min_dis+=10
 
-    train_split, val_split = 'train', 'val'
+    train_split, val_split,test_split = 'train', 'val','test'
     #
     train_filename = save_path / ('%s_infos_%s.pkl' % (processed_data_tag, train_split))
     val_filename = save_path / ('%s_infos_%s.pkl' % (processed_data_tag, val_split))
+    test_filename = save_path/('%s_infos_%s.pkl' % (processed_data_tag, test_split))
     #
     os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
     print('---------------Start to generate data infos---------------')
 
     dataset.set_split(train_split)
     waymo_infos_train = dataset.get_infos(
-        raw_data_path=data_path / raw_data_tag,
-        save_path=save_path / processed_data_tag, num_workers=workers, has_label=True,
+        raw_data_path=data_path ,
+        save_path=save_path / (processed_data_tag), num_workers=workers, has_label=True,
         sampled_interval=1, update_info_only=update_info_only
     )
     with open(train_filename, 'wb') as f:
@@ -1031,17 +996,28 @@ def create_waymo_infos(dataset_cfg, class_names, data_path, save_path,
         pickle.dump(waymo_infos_val, f)
     print('----------------Waymo info val file is saved to %s----------------' % val_filename)
 
+    dataset.set_split(test_split)
+    waymo_infos_test = dataset.get_infos(
+        raw_data_path=data_path / raw_data_tag.replace('training', 'testing'),
+        save_path=save_path / (processed_data_tag + '_test'), num_workers=workers, has_label=True,
+        sampled_interval=1, update_info_only=update_info_only
+    )
+    with open(test_filename, 'wb') as f:
+        pickle.dump(waymo_infos_test, f)
+    print('----------------Waymo info test file is saved to %s----------------' % test_filename)
+
+
     if update_info_only:
         return
 
-    # print('---------------Start create groundtruth database for data augmentation---------------')
-    # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-    # dataset.set_split(val_split)
-    # dataset.create_transform_database(info_path=val_filename,save_path=save_path)
-    # dataset.create_groundtruth_database(
-    #     info_path=train_filename, save_path=save_path, split='train', sampled_interval=1,
-    #     used_classes=['Vehicle', 'Pedestrian', 'Cyclist'], processed_data_tag=processed_data_tag
-    # )
+    print('---------------Start create groundtruth database for data augmentation---------------')
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    dataset.set_split(val_split)
+    dataset.create_transform_database(info_path=val_filename,save_path=save_path)
+    dataset.create_groundtruth_database(
+        info_path=train_filename, save_path=save_path, split='train', sampled_interval=1,
+        used_classes=['Vehicle', 'Pedestrian', 'Cyclist'], processed_data_tag=processed_data_tag
+    )
     print('---------------Data preparation Done---------------')
 
 
@@ -1072,21 +1048,6 @@ def create_waymo_gt_database(
     print('---------------Data preparation Done---------------')
 
 
-def create_waymo_flow_infos(dataset_cfg, class_names, data_path, save_path, processed_data_tag='waymo_processed_data',
-                            workers=min(16, multiprocessing.cpu_count()), use_parallel=False, crop_gt_with_tail=False):
-    dataset = WaymoDataset(
-        dataset_cfg=dataset_cfg, class_names=class_names, root_path=data_path,
-        training=False, logger=common_utils.create_logger()
-    )
-    # train_split = 'train'
-    # dataset.set_split(train_split)
-    # train_filename = save_path / ('%s_infos_%s.pkl' % (processed_data_tag, train_split))
-    # dataset.create_waymo_flow_infos(info_path=train_filename, save_path=save_path)
-
-    val_split = 'val'
-    dataset.set_split(val_split)
-    val_filename = save_path / ('%s_infos_%s.pkl' % (processed_data_tag, val_split))
-    dataset.create_waymo_flow_infos(info_path=val_filename, save_path=save_path)
 
 
 if __name__ == '__main__':
@@ -1140,19 +1101,6 @@ if __name__ == '__main__':
             use_parallel=args.use_parallel,
             crop_gt_with_tail=not args.wo_crop_gt_with_tail
         )
-    elif args.func == 'create_waymo_flow_infos':
-        try:
-            yaml_config = yaml.sage_load(open(args.cfg_file), Loader=yaml.FullLoader)
-        except:
-            yaml_config = yaml.safe_load(open(args.cfg_file))
-        dataset_cfg = EasyDict(yaml_config)
-        dataset_cfg.PROCESSED_DATA_TAG = args.processed_data_tag
-        create_waymo_flow_infos(dataset_cfg=dataset_cfg,
-                                class_names=['Vehicle', 'Pedestrian', 'Cyclist'],
-                                data_path=ROOT_DIR / 'data' / 'waymo',
-                                save_path=ROOT_DIR / 'data' / 'waymo',
-                                processed_data_tag=args.processed_data_tag,
-                                use_parallel=args.use_parallel,
-                                )
+
     else:
         raise NotImplementedError
