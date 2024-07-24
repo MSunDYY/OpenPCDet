@@ -238,6 +238,9 @@ def main(args, cfgs):
         cfg=cfg,test_loader=test_loader if cfg.MODEL.NAME=='DENet' else None
     )
 
+    if cfg.MODEL.NAME=='DENet':
+        model.roi_head.signal = 'val'
+
     test_set, test_loader, sampler = build_dataloader(
         dataset_cfg=cfg.DATA_CONFIG,
         class_names=cfg.CLASS_NAMES,
