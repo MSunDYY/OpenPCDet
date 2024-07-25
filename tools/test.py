@@ -29,14 +29,14 @@ current_file_path = os.path.dirname(__file__)
 
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
-    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/msf_4frames.yaml',
+    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/denet5_4frames.yaml',
                         help='specify the config for training')
 
     parser.add_argument('--batch_size', type=int, default=1, required=False, help='batch size for training')
     parser.add_argument('--workers', type=int, default=4, help='number of workers for dataloader')
     parser.add_argument('--extra_tag', type=str, default='default', help='extra tag for this experiment')
     parser.add_argument('--ckpt', type=str,
-                        default='../output/waymo_models/msf_4frames/Interval1/ckpt/checkpoint_epoch_6.pth',
+                        default='../output/waymo_models/denet5_4frames/version2/ckpt/checkpoint_epoch_6.pth',
                         help='checkpoint to start from')
     parser.add_argument('--pretrained_model', type=str, default=None, help='pretrained_model')
     parser.add_argument('--launcher', choices=['none', 'pytorch', 'slurm'], default='none')
@@ -68,39 +68,6 @@ def parse_config():
         cfg_from_list(args.set_cfgs, cfg)
 
     return args, cfg
-
-
-def eval_sampler_one_epoch(model, test_loader, logger, dist_test=False, args=None, threshold=0.5, is_print=True):
-    if args != None:
-        model.load_params_from_file(filename=args.ckpt, logger=logger, to_cpu=dist_test,
-                                    pre_trained_path=args.pretrained_model)
-    model.to(device)
-    accuracy_all = 0
-    recall_all = 0
-    for i, batch_dict in tqdm.tqdm(enumerate(test_loader)):
-        load_data_to_gpu(batch_dict)
-        with torch.no_grad():
-            batch_dict = model(batch_dict)
-        if isinstance(model, PillarSampler):
-            pred_label = (batch_dict['key_pillars_pred'] > threshold).float()
-            real_label = batch_dict['key_pillars_label']
-        elif isinstance(model, Sampler):
-            pred_label = batch_dict['pred_label']
-            real_label = batch_dict['real_label']
-        interest_mask = (pred_label + real_label).bool()
-        accuracy = ((pred_label[interest_mask] == real_label[interest_mask]).sum() / interest_mask.sum())
-        recall = ((pred_label[interest_mask] == real_label[interest_mask]).sum() / real_label.sum())
-        if is_print:
-            print(
-                '---accuracy_%f = %f---,---recall_%f = %f---' % (threshold, accuracy, threshold, recall))
-
-        accuracy_all += accuracy
-        recall_all += recall
-    accuracy_all /= (i+1)
-    recall_all /= (i+1)
-    print('-----------accuracy_all_%f = %f----------' % (threshold, accuracy_all ))
-    print('------------recall_all_%f = %f-----------' % (threshold, recall_all ))
-    return accuracy_all, recall_all
 
 
 def eval_single_ckpt(model, test_loader, args, eval_output_dir, logger, epoch_id, dist_test=False):

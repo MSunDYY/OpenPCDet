@@ -524,9 +524,11 @@ class DataProcessor(object):
             if data_dict['roi_boxes'].shape[0]>1:
                 data_dict['roi_list'] = torch.from_numpy(data_dict['roi_boxes'])
                 mask = data_dict['roi_boxes'][0,:,0]!=0
+
                 data_dict['roi_boxes'] = data_dict['roi_boxes'][0:1,mask]
                 data_dict['roi_scores'] = data_dict['roi_scores'][0:1,mask]
                 data_dict['roi_labels'] = data_dict['roi_labels'][0:1,mask]
+
             if not 'anchors' in data_dict.keys():
                 data_dict['anchors'] = np.transpose(data_dict['roi_boxes'],(1,0,2))
             data_dict['num_frames'] = config.NUM_FRAMES

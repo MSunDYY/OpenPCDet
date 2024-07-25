@@ -900,12 +900,13 @@ class DENet5Head(RoIHeadTemplate):
         """
         num_frames = self.model_cfg.Transformer2st.num_frames
         roi_scores = batch_dict['roi_scores'][:, 0, :]
+
         batch_dict['roi_scores'] = roi_scores[:,roi_scores.sum(0)>0]
         batch_dict['proposals_list'] = batch_dict['roi_boxes']
         batch_dict['roi_boxes'] = batch_dict['roi_boxes'][:,0,:][:,roi_scores.sum(0)>0]
         batch_dict['roi_labels'] = batch_dict['roi_labels'][:, 0, :][:, roi_scores.sum(0) > 0].long()
         batch_dict['num_frames'] = num_frames
-
+        roi_labels = batch_dict['roi_labels']
         batch_size = batch_dict['batch_size']
         cur_batch_boxes = copy.deepcopy(batch_dict['roi_boxes'].detach())
 
@@ -943,9 +944,11 @@ class DENet5Head(RoIHeadTemplate):
         
 
         roi_boxes = roi_boxes.reshape(-1,roi_boxes.shape[-1])
+        roi_scores = roi_scores.reshape(-1)
+        roi_labels = roi_labels.reshape(-1)
         num_rois = torch.cumsum(torch.tensor([0]+[batch_dict['roi_boxes'][i].shape[0] for i in range(batch_size)],device=device),dim=0)
 
-        src_cur,src_idx,query_points = self.voxel_sampler_cur(batch_size,trajectory_rois[:,0,...].flatten(0,1),num_sample,batch_dict,start_idx=0,num_rois=num_rois)
+        src_cur,src_idx,query_points,points_pre = self.voxel_sampler_cur(batch_size,trajectory_rois[:,0,...].flatten(0,1),num_sample,batch_dict,start_idx=0,num_rois=num_rois)
         batch_dict['src_idx'] = src_idx.transpose(0,1)
         batch_dict['query_points'] = query_points
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK', None):
@@ -954,12 +957,16 @@ class DENet5Head(RoIHeadTemplate):
 
         hs, tokens,src_cur = self.transformer(src_cur, batch_dict, pos=None)
         if not self.training:
-            memory_bank_root = Path('../../data/waymo/key_points_mini') / batch_dict['metadata'][0][:-4]
+            key_points_root = Path('../../data/waymo/key_points_mini') / batch_dict['metadata'][0][:-4]
+            key_roi_root = Path('../../data/waymo/key_rois') / batch_dict['metadata'][0][:-4]
             src_idx = batch_dict['src_idx']
             query_points_shrink = query_points[torch.unique(src_idx)]
-            if not os.path.exists(memory_bank_root):
-                os.makedirs(memory_bank_root)
-            np.save(memory_bank_root / ('%04d.npy' % batch_dict['sample_idx'][0]), query_points_shrink.cpu().numpy())
+            os.makedirs(key_points_root,exist_ok=True)
+            os.makedirs(key_roi_root,exist_ok=True)
+            key_roi_mask = (src_idx!=0).sum(0)<28
+            np.save(key_roi_root/('%04d.npy' % batch_dict['sample_idx'][0]),torch.concat([roi_boxes[key_roi_mask],roi_scores[key_roi_mask,None],roi_labels[key_roi_mask,None].float()],dim=1).cpu().numpy())
+            # np.save(key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]), torch.concat([query_points_shrink,points_pre],dim=0).cpu().numpy())
+            # print(self.voxel_sampler_cur.num_recall_points, '/', self.voxel_sampler_cur.num_gt_points ,'/' ,self.voxel_sampler_cur.num_recall_points/max(self.voxel_sampler_cur.num_gt_points,1))
             if self.signal=='train':
                 return batch_dict
         src_pre = self.voxel_sampler(batch_size,trajectory_rois,num_sample//4,batch_dict)

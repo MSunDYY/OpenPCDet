@@ -616,7 +616,8 @@ class VoxelPointsSampler(nn.Module):
             max_num_points_per_voxel=max_points_per_voxel,
             device=device
         )
-
+        self.num_recall_points=0
+        self.num_gt_points=0
         self.use_absolute_xyz = config.USE_ABSOLUTE_XYZ
         self.pc_start = torch.FloatTensor(pc_range[:2]).to(device)
         self.k = max_points_per_voxel
@@ -624,15 +625,6 @@ class VoxelPointsSampler(nn.Module):
         self.grid_y = int((pc_range[4] - pc_range[1]) / voxel_size)
         self.return_point_feature = config.ENABLE
         # self.point_emb = nn.Linear(sum([mlp[-1] for mlp in config.mlps])+(3 if self.use_absolute_xyz else 0),96)
-        if config.ENABLE == True:
-            self.set_abstraction = pointnet2_modules.PointnetSAModuleMSG(
-                npoint=4096,
-                radii=[0.8, ],
-                nsamples=[16],
-                mlps=config.mlps,
-                use_xyz=True,
-                use_spher=config.USE_SPHER
-            )
 
     def get_output_feature_dim(self):
         return self.num_point_features
@@ -641,55 +633,90 @@ class VoxelPointsSampler(nn.Module):
         src = list()
         query_points_list = list()
         src_idx_list = list()
+        points_pre_list = list()
         idx_checkpoint = 0
         gamma = self.GAMMA
         num_frames = int((batch_dict['points'][:, -1].max() * 10).item()) + 1 if start_idx > 0 else 1
-        for idx in range(num_frames - start_idx):
-            cur_time_points = batch_dict['points'][batch_dict['points'][:, -1] == 0.1 * (idx + start_idx)][:, :-1]
 
-            for bs_idx in range(batch_size):
-                cur_batch_points = cur_time_points[cur_time_points[:, 0] == bs_idx, 1:].contiguous()
-                cur_batch_boxes = trajectory_rois[
-                                  num_rois[idx * batch_size + bs_idx]:num_rois[idx * batch_size + bs_idx + 1]]
+        cur_time_points = batch_dict['points'][batch_dict['points'][:, -1] == 0][:, :-1]
+
+        for bs_idx in range(batch_size):
+            cur_batch_points = cur_time_points[cur_time_points[:, 0] == bs_idx, 1:].contiguous()
+            cur_batch_boxes = trajectory_rois[
+                                  num_rois[bs_idx]:num_rois[bs_idx + 1]]
 
 
-                voxel, coords, num_points = self.gen(cur_batch_points)
-                coords = coords[:, [2, 1]].contiguous()
-                query_coords = (cur_batch_boxes[:, :2] - self.pc_start) // self.voxel_size
-                radiis = torch.ceil(
-                    torch.norm(cur_batch_boxes[:, 3:5] / 2, dim=-1) * gamma / self.voxel_size)
+            voxel, coords, num_points = self.gen(cur_batch_points)
+            num_voxel=num_points
+            coords = coords[:, [2, 1]].contiguous()
+            query_coords = (cur_batch_boxes[:, :2] - self.pc_start) // self.voxel_size
 
-                dist = torch.abs(query_coords[:, None, :2] - coords[None, :, :])
-                voxel_mask = torch.all(dist < radiis[:, None, None], dim=-1).any(0)
-                num_points = num_points[voxel_mask]
-                key_points = voxel[voxel_mask, :]
 
-                point_mask = torch.arange(self.k)[None, :].repeat(len(key_points), 1).type_as(num_points)
+            radiis = torch.ceil(
+                torch.norm(cur_batch_boxes[:, 3:5] / 2, dim=-1) * gamma / self.voxel_size)
 
-                point_mask = num_points[:, None] > point_mask
-                key_points = key_points[point_mask]
-                key_points = key_points[torch.randperm(len(key_points)), :]
 
-                if False:
-                    root_data = '../../data/waymo/key_points/train/' if self.training else '../../data/waymo/key_points/train/'
-                    os.makedirs(root_data + batch_dict['metadata'][0][:-4], exist_ok=True)
-                    np.save(root_data + batch_dict['metadata'][0][:-4] + '/%04d.npy' % (
-                        batch_dict['sample_idx'][0][-3:] if self.training else batch_dict['sample_idx'][0]),
-                            key_points.cpu().numpy())
+            dist = torch.abs(query_coords[:, None, :2] - coords[None, :, :])
+            voxel_mask = torch.all(dist < radiis[:, None, None], dim=-1).any(0)
 
-                key_points, src_idx ,query_points = self.cylindrical_pool(key_points, cur_batch_boxes,
-                                                            num_sample, gamma,
-                                                            idx_checkpoint)
-                idx_checkpoint+=query_points.shape[0]
+            if not self.training:
+                pre_roi = batch_dict['roi_list'][bs_idx,1:6]
+                pre_roi[:,:,:2]-=pre_roi[:,:,7:]*torch.arange(1,6,device=device)[:,None,None]
+                pre_roi[:,:,3:6]*=1.5
+                pre_roi = pre_roi.flatten(0,1)
+                query_coords_pre = (pre_roi[:,:2] - self.pc_start) // self.voxel_size
+                radiis_pre = torch.ceil(torch.norm(pre_roi[:,3:5]/2,dim=-1)*gamma/self.voxel_size)
+                dist_pre = torch.abs(query_coords_pre[:,None,:2] - coords[None,:,:])
+                voxel_mask_pre = torch.all(dist_pre<radiis_pre[:,None,None],-1).any(0)
+                voxel_mask_pre = voxel_mask_pre!=voxel_mask
+                key_points_pre = voxel[voxel_mask_pre,:]
+                num_points_pre = num_points[voxel_mask_pre]
+                point_mask_pre = torch.arange(self.k,device=device)[None,:].repeat(len(key_points_pre),1)
+                point_mask_pre = point_mask_pre<num_points_pre[:,None]
+                key_points_pre = key_points_pre[point_mask_pre]
 
-                src.append(key_points)
-                src_idx_list.append(src_idx)
-                query_points_list.append(query_points)
+            num_points = num_points[voxel_mask]
+            key_points = voxel[voxel_mask, :]
+
+            point_mask = torch.arange(self.k)[None, :].repeat(len(key_points), 1).type_as(num_points)
+
+            point_mask = num_points[:, None] > point_mask
+            key_points = key_points[point_mask]
+            key_points = key_points[torch.randperm(len(key_points)), :]
+
+            if True:
+                from pcdet.ops.roiaware_pool3d import roiaware_pool3d_utils
+                idx = torch.arange(voxel.shape[1],device=device)[None,:].repeat(voxel.shape[0],1)
+                idx = idx<num_voxel[:,None]
+
+
+                gt_points = roiaware_pool3d_utils.points_in_boxes_gpu(voxel[idx][None,:,:3],
+                                                                      batch_dict['gt_boxes'][:, :, :7])
+                self.num_gt_points += (gt_points >= 0).sum().item()
+
+                recall_points = roiaware_pool3d_utils.points_in_boxes_gpu(key_points[None,:,:3],
+                                                                      batch_dict['gt_boxes'][:, :, :7])
+                self.num_recall_points += (recall_points>=0).sum().item()
+            if False:
+
+                root_data = '../../data/waymo/key_points/train/' if self.training else '../../data/waymo/key_points/train/'
+                os.makedirs(root_data + batch_dict['metadata'][0][:-4], exist_ok=True)
+                np.save(root_data + batch_dict['metadata'][0][:-4] + '/%04d.npy' % (
+                    batch_dict['sample_idx'][0][-3:] if self.training else batch_dict['sample_idx'][0]),
+                        key_points.cpu().numpy())
+
+            key_points, src_idx ,query_points,points_pre = self.cylindrical_pool(key_points, cur_batch_boxes,
+                                                        num_sample, gamma,
+                                                        idx_checkpoint,pre_roi=None if self.training else pre_roi)
+            idx_checkpoint+=query_points.shape[0]
+
+            src.append(key_points)
+            src_idx_list.append(src_idx)
+            query_points_list.append(query_points)
+            points_pre_list.append(torch.concat([key_points_pre,points_pre],dim=0))
 
             # src.append(torch.stack(src_points))
-
-
-        return torch.concat(src, dim=0),torch.concat(src_idx_list,dim=0),torch.concat(query_points_list,dim=0)
+        return torch.concat(src, dim=0),torch.concat(src_idx_list,dim=0),torch.concat(query_points_list,dim=0),torch.concat(points_pre_list,dim=0)
 
     def forward1(self, batch_size, trajectory_rois, num_sample, batch_dict, start_idx=0, num_rois=None):
         src = list()
@@ -808,18 +835,23 @@ class VoxelPointsSampler(nn.Module):
         points_idx = torch.stack([points_idx // src_idx.shape[1], points_idx % src_idx.shape[1]], -1)
         return sampled_points, src_idx, points_idx, query_points_features
 
-    def cylindrical_pool(self, cur_points, cur_boxes, num_sample, gamma=1., idx_checkpoint=0):
+    def cylindrical_pool(self, cur_points, cur_boxes, num_sample, gamma=1., idx_checkpoint=0,pre_roi=None):
         if len(cur_points) < num_sample:
             cur_points = F.pad(cur_points, [0, 0, 0, num_sample - len(cur_points)])
 
         cur_radiis = torch.norm(cur_boxes[:, 3:5] / 2, dim=-1) * gamma
         dis = torch.norm(
             (cur_points[:, :2].unsqueeze(0) - cur_boxes[:, :2].unsqueeze(1).repeat(1, cur_points.shape[0], 1)), dim=2)
+
+
+
         point_mask = (dis <= cur_radiis.unsqueeze(-1))
-        # valid_points_mask = (point_mask.sum(0))!=0
-        # cur_points,point_mask = cur_points[valid_points_mask],point_mask[:,valid_points_mask]
+
 
         sampled_mask, sampled_idx = torch.topk(point_mask.float(), num_sample, 1)
+
+
+
 
         sampled, idx = torch.unique(sampled_idx, return_inverse=True)
         query_points = cur_points[sampled]
@@ -830,8 +862,9 @@ class VoxelPointsSampler(nn.Module):
         sampled_points = torch.gather(cur_points, 0, sampled_idx_).view(len(sampled_mask), num_sample, -1)
         idx = idx * sampled_mask + idx_checkpoint
 
+        points_pre = cur_points[~point_mask.sum(0).bool()]
 
-        return sampled_points, idx,query_points
+        return sampled_points, idx,query_points,points_pre
 def build_voxel_sampler(device, return_point_feature=False):
     if not return_point_feature:
         return VoxelSampler(

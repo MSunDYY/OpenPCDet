@@ -450,8 +450,14 @@ class WaymoDataset(DatasetTemplate):
     
                         pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
                         pred_boxes = load_pred_boxes_from_dict(sequence_name, sample_idx_pre)
-                        if not self.dataset_cfg.get('USE_KEY_POINTS',False):
-                            pred_boxes = self.transform_prebox_to_current(pred_boxes, pose_pre, pose_cur)
+
+                        if sequence_cfg.get('USE_KEY_BOX',False):
+                            roi_path = Path('../../data/waymo/key_rois')/sequence_name/('%04d.npy' % sample_idx_pre)
+                            if os.path.exists(roi_path):
+                                pred_boxes = np.load(roi_path)
+                                pred_boxes[:, 7:9] = -0.1 * pred_boxes[:,7:9]  # transfer speed to negtive motion from t to t-1
+
+                        pred_boxes = self.transform_prebox_to_current(pred_boxes, pose_pre, pose_cur)
                         pred_boxes_all.append(pred_boxes)
                     else:
                         pred_boxes_all.append(pred_boxes_all[0][pred_boxes_all[0][:, -3] == idx + 1])
@@ -580,6 +586,12 @@ class WaymoDataset(DatasetTemplate):
                 annos['name'] = annos['name'][mask]
                 gt_boxes_lidar = gt_boxes_lidar[mask]
                 annos['num_points_in_gt'] = annos['num_points_in_gt'][mask]
+
+            # if True:
+            #     mask = (annos['num_points_in_gt']<10)
+            #     annos['name'] = annos['name'][mask]
+            #     gt_boxes_lidar = gt_boxes_lidar[mask]
+            #     annos['num_points_in_gt'] = annos['num_points_in_gt'][mask]
 
             input_dict.update({
                 'gt_names': annos['name'],
