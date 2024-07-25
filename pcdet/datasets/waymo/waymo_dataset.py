@@ -454,7 +454,11 @@ class WaymoDataset(DatasetTemplate):
                         if sequence_cfg.get('USE_KEY_BOX',False):
                             roi_path = Path('../../data/waymo/key_rois')/sequence_name/('%04d.npy' % sample_idx_pre)
                             if os.path.exists(roi_path):
-                                pred_boxes = np.load(roi_path)
+                                try:
+                                    pred_boxes = np.load(roi_path)
+                                except:
+                                    time.sleep(0.1)
+                                    pred_boxes = np.load(roi_path)
                                 pred_boxes[:, 7:9] = -0.1 * pred_boxes[:,7:9]  # transfer speed to negtive motion from t to t-1
 
                         pred_boxes = self.transform_prebox_to_current(pred_boxes, pose_pre, pose_cur)

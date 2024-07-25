@@ -10,7 +10,6 @@ from pcdet.models.sampler.point_sampler import Sampler
 from pcdet.models.sampler.pillar_sampler import PillarSampler
 from pcdet.models import build_network , load_data_to_gpu
 from torch.nn.parallel import DistributedDataParallel
-from tools.test import eval_sampler_one_epoch
 
 def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, accumulated_iter, optim_cfg,
                     rank, tbar, total_it_each_epoch, dataloader_iter, tb_log=None, leave_pbar=False, 

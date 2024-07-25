@@ -636,7 +636,6 @@ class VoxelPointsSampler(nn.Module):
         points_pre_list = list()
         idx_checkpoint = 0
         gamma = self.GAMMA
-        num_frames = int((batch_dict['points'][:, -1].max() * 10).item()) + 1 if start_idx > 0 else 1
 
         cur_time_points = batch_dict['points'][batch_dict['points'][:, -1] == 0][:, :-1]
 
@@ -649,26 +648,24 @@ class VoxelPointsSampler(nn.Module):
             voxel, coords, num_points = self.gen(cur_batch_points)
             num_voxel=num_points
             coords = coords[:, [2, 1]].contiguous()
-            query_coords = (cur_batch_boxes[:, :2] - self.pc_start) // self.voxel_size
+            query_coords = (cur_batch_boxes[:, :2] - self.pc_start) / self.voxel_size
 
+            radiis = torch.norm(cur_batch_boxes[:, 3:5] / 2, dim=-1)/ self.voxel_size
 
-            radiis = torch.ceil(
-                torch.norm(cur_batch_boxes[:, 3:5] / 2, dim=-1) * gamma / self.voxel_size)
-
-
-            dist = torch.abs(query_coords[:, None, :2] - coords[None, :, :])
-            voxel_mask = torch.all(dist < radiis[:, None, None], dim=-1).any(0)
+            dist = torch.norm(query_coords[:, None, :2] - coords[None, :, :],dim=-1)
+            voxel_mask = (dist < radiis[:, None]).any(0)
 
             if not self.training:
                 pre_roi = batch_dict['roi_list'][bs_idx,1:6]
-                pre_roi[:,:,:2]-=pre_roi[:,:,7:]*torch.arange(1,6,device=device)[:,None,None]
+                pre_roi[:,:,:2]-=pre_roi[:,:,7:]*torch.clamp(torch.arange(1,6,device=device),max=batch_dict['sample_idx'][0].item())[:,None,None]
                 pre_roi[:,:,3:6]*=1.5
                 pre_roi = pre_roi.flatten(0,1)
-                query_coords_pre = (pre_roi[:,:2] - self.pc_start) // self.voxel_size
-                radiis_pre = torch.ceil(torch.norm(pre_roi[:,3:5]/2,dim=-1)*gamma/self.voxel_size)
-                dist_pre = torch.abs(query_coords_pre[:,None,:2] - coords[None,:,:])
-                voxel_mask_pre = torch.all(dist_pre<radiis_pre[:,None,None],-1).any(0)
-                voxel_mask_pre = voxel_mask_pre!=voxel_mask
+                pre_roi = pre_roi[pre_roi[:,2]!=0]
+                query_coords_pre = (pre_roi[:,:2] - self.pc_start) / self.voxel_size
+                radiis_pre = torch.norm(pre_roi[:,3:5]/2,dim=-1)/self.voxel_size
+                dist_pre = torch.norm(query_coords_pre[:,None,:2] - coords[None,:,:],dim=-1)
+                voxel_mask_pre = (dist_pre<radiis_pre[:,None]).any(0)
+                voxel_mask_pre = voxel_mask_pre*(~voxel_mask)
                 key_points_pre = voxel[voxel_mask_pre,:]
                 num_points_pre = num_points[voxel_mask_pre]
                 point_mask_pre = torch.arange(self.k,device=device)[None,:].repeat(len(key_points_pre),1)
@@ -684,7 +681,7 @@ class VoxelPointsSampler(nn.Module):
             key_points = key_points[point_mask]
             key_points = key_points[torch.randperm(len(key_points)), :]
 
-            if True:
+            if False:
                 from pcdet.ops.roiaware_pool3d import roiaware_pool3d_utils
                 idx = torch.arange(voxel.shape[1],device=device)[None,:].repeat(voxel.shape[0],1)
                 idx = idx<num_voxel[:,None]
@@ -713,7 +710,7 @@ class VoxelPointsSampler(nn.Module):
             src.append(key_points)
             src_idx_list.append(src_idx)
             query_points_list.append(query_points)
-            points_pre_list.append(torch.concat([key_points_pre,points_pre],dim=0))
+            points_pre_list.append(torch.concat([key_points_pre,points_pre],dim=0) if not self.training else points_pre)
 
             # src.append(torch.stack(src_points))
         return torch.concat(src, dim=0),torch.concat(src_idx_list,dim=0),torch.concat(query_points_list,dim=0),torch.concat(points_pre_list,dim=0)
