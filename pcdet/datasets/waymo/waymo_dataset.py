@@ -372,19 +372,12 @@ class WaymoDataset(DatasetTemplate):
                     sa_key = f'{sequence_name}___{sample_idx}'
                     points_pre = SharedArray.attach(f"shm://{sa_key}").copy()
                 else:
-                    # import time
-                    # s = time.time()
                     points_pre = self.get_lidar(sequence_name, sample_idx_pre)
-                    # print(' {:.3f}'.format(time.time()-st),end='')
 
-
-                pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
-                expand_points_pre = np.concatenate([points_pre[:, :3], np.ones((points_pre.shape[0], 1))], axis=-1)
-                points_pre_global = np.dot(expand_points_pre, pose_pre.T)[:, :3]
-                expand_points_pre_global = np.concatenate([points_pre_global, np.ones((points_pre_global.shape[0], 1))],
-                                                          axis=-1)
-                points_pre2cur = np.dot(expand_points_pre_global, np.linalg.inv(pose_cur.T))[:, :3]
-                points_pre = np.concatenate([points_pre2cur, points_pre[:, 3:]], axis=-1)
+                pose_pre = sequence_info[sample_idx_pre]['pose'].reshape(4, 4)
+                pose_pre2cur = np.dot(pose_pre.T, np.linalg.inv(pose_cur.T))
+                points_pre[:, :3] = np.dot(
+                    np.concatenate([points_pre[:, :3], np.ones((points_pre.shape[0], 1))], axis=1), pose_pre2cur[:, :3])
 
                 if sequence_cfg.get('ONEHOT_TIMESTAMP', False):
                     onehot_vector = np.zeros((points_pre.shape[0], len(sample_idx_pre_list) + 1))
