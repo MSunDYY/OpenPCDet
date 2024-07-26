@@ -401,7 +401,6 @@ class WaymoDataset(DatasetTemplate):
         elif not self.dataset_cfg.get('USE_KEY_POINTS',False):
             for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
                 pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
-                num_points_pre
                 pose_all.append(pose_pre)
             num_points_all = [(points[:,-1]==0.1*i).sum() for i in range(len(sample_idx_pre_list)+1)]
             poses = np.concatenate(pose_all, axis=0).astype(np.float32)
@@ -465,10 +464,6 @@ class WaymoDataset(DatasetTemplate):
             pred_boxes = temp_pred_boxes[:,:,:9]
             pred_scores = temp_pred_boxes[:,:,9]
             pred_labels = temp_pred_boxes[:,:,10]
-
-            # pred_boxes = [box[:, 0:9] for box in pred_boxes_all]
-            # pred_scores =[box[ :, 9] for box in pred_boxes_all]
-            # pred_labels = [box[:,10] for box in pred_boxes_all]
         else:
             pred_boxes = pred_scores = pred_labels = None
 
@@ -584,11 +579,11 @@ class WaymoDataset(DatasetTemplate):
                 gt_boxes_lidar = gt_boxes_lidar[mask]
                 annos['num_points_in_gt'] = annos['num_points_in_gt'][mask]
 
-            # if True:
-            #     mask = (annos['num_points_in_gt']<10)
-            #     annos['name'] = annos['name'][mask]
-            #     gt_boxes_lidar = gt_boxes_lidar[mask]
-            #     annos['num_points_in_gt'] = annos['num_points_in_gt'][mask]
+            if True:
+                mask = (annos['num_points_in_gt']<10)
+                annos['name'] = annos['name'][mask]
+                gt_boxes_lidar = gt_boxes_lidar[mask]
+                annos['num_points_in_gt'] = annos['num_points_in_gt'][mask]
 
             input_dict.update({
                 'gt_names': annos['name'],

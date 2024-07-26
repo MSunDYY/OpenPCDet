@@ -369,9 +369,9 @@ class DataProcessor(object):
 
             rois = batch_dict['trajectory_rois'][cur_frame_idx, :, :]
 
-            # anchor_labels = batch_dict['backward_rois'][cur_frame_idx, :, -1].long()
+
             gt_boxes = torch.from_numpy(batch_dict['gt_boxes']).float()
-            # num_anchors = batch_dict['num_anchors']
+
             code_size = rois.shape[-1]
 
             trajectory_rois = batch_dict['trajectory_rois']
@@ -407,10 +407,10 @@ class DataProcessor(object):
             num_rois = max_overlaps.shape[0]
             sampled_inds, fg_inds, bg_inds = subsample_rois(
                 max_overlaps=max_overlaps[torch.arange(num_rois)],config=config)
-            # fg_inds = torch.concat([fg_inds[:, None]  + i for i in range(num_anchors)],
-            #                        dim=-1).flatten()
-            # bg_inds = torch.concat([bg_inds[:, None] * num_anchors + i for i in range(num_anchors)],
-            #                        dim=-1).flatten()
+
+
+
+
             
 
             sampled_inds = torch.concat([fg_inds, bg_inds], dim=0)
@@ -529,17 +529,17 @@ class DataProcessor(object):
                 data_dict['roi_scores'] = data_dict['roi_scores'][0:1,mask]
                 data_dict['roi_labels'] = data_dict['roi_labels'][0:1,mask]
 
-            # if not 'anchors' in data_dict.keys():
-            #     data_dict['anchors'] = np.transpose(data_dict['roi_boxes'],(1,0,2))
+
+
             data_dict['num_frames'] = config.NUM_FRAMES
-            # anchors = torch.from_numpy(data_dict['anchors'])
+
             data_dict['roi_labels'] = torch.from_numpy(data_dict['roi_labels'])
-            # data_dict['anchors'] = anchors
+
             trajectory_rois = generate_trajectory_msf(data_dict['roi_boxes'].reshape(-1, data_dict['roi_boxes'].shape[-1]),
                                                     data_dict)
             data_dict['trajectory_rois'] = trajectory_rois
-            # data_dict['num_anchors'] = data_dict['anchors'].shape[-2]
-            # data_dict['num_frames'] = data_dict['num_points_all'].shape[0]
+
+
             data_dict['has_class_labels'] = True
             batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_labels, batch_trajectory_rois, batch_valid_length = sample_rois_for_mppnet(
                 batch_dict=data_dict, config=config)

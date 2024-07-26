@@ -618,6 +618,8 @@ class VoxelPointsSampler(nn.Module):
         )
         self.num_recall_points=0
         self.num_gt_points=0
+        self.num_recall_new = 0
+
         self.use_absolute_xyz = config.USE_ABSOLUTE_XYZ
         self.pc_start = torch.FloatTensor(pc_range[:2]).to(device)
         self.k = max_points_per_voxel
@@ -681,26 +683,8 @@ class VoxelPointsSampler(nn.Module):
             key_points = key_points[point_mask]
             key_points = key_points[torch.randperm(len(key_points)), :]
 
-            if False:
-                from pcdet.ops.roiaware_pool3d import roiaware_pool3d_utils
-                idx = torch.arange(voxel.shape[1],device=device)[None,:].repeat(voxel.shape[0],1)
-                idx = idx<num_voxel[:,None]
+            key_points_raw = key_points
 
-
-                gt_points = roiaware_pool3d_utils.points_in_boxes_gpu(voxel[idx][None,:,:3],
-                                                                      batch_dict['gt_boxes'][:, :, :7])
-                self.num_gt_points += (gt_points >= 0).sum().item()
-
-                recall_points = roiaware_pool3d_utils.points_in_boxes_gpu(key_points[None,:,:3],
-                                                                      batch_dict['gt_boxes'][:, :, :7])
-                self.num_recall_points += (recall_points>=0).sum().item()
-            if False:
-
-                root_data = '../../data/waymo/key_points/train/' if self.training else '../../data/waymo/key_points/train/'
-                os.makedirs(root_data + batch_dict['metadata'][0][:-4], exist_ok=True)
-                np.save(root_data + batch_dict['metadata'][0][:-4] + '/%04d.npy' % (
-                    batch_dict['sample_idx'][0][-3:] if self.training else batch_dict['sample_idx'][0]),
-                        key_points.cpu().numpy())
 
             key_points, src_idx ,query_points,points_pre = self.cylindrical_pool(key_points, cur_batch_boxes,
                                                         num_sample, gamma,
@@ -711,6 +695,22 @@ class VoxelPointsSampler(nn.Module):
             src_idx_list.append(src_idx)
             query_points_list.append(query_points)
             points_pre_list.append(torch.concat([key_points_pre,points_pre],dim=0) if not self.training else points_pre)
+
+            if not self.training:
+                from pcdet.ops.roiaware_pool3d import roiaware_pool3d_utils
+                idx = torch.arange(voxel.shape[1],device=device)[None,:].repeat(voxel.shape[0],1)
+                idx = idx<num_voxel[:,None]
+
+
+                gt_points = roiaware_pool3d_utils.points_in_boxes_gpu(voxel[idx][None,:,:3],
+                                                                      batch_dict['gt_boxes'][:, :, :7])
+                self.num_gt_points += (gt_points >= 0).sum().item()
+
+                recall_points = roiaware_pool3d_utils.points_in_boxes_gpu(key_points_raw[None,:,:3],
+                                                                      batch_dict['gt_boxes'][:, :, :7])
+                self.num_recall_points += (recall_points>=0).sum().item()
+                recall_points_new = roiaware_pool3d_utils.points_in_boxes_gpu(torch.concat([key_points_pre,key_points_raw],dim=0)[None,:,:3],batch_dict['gt_boxes'][:,:,:7])
+                self.num_recall_new +=(recall_points_new>=0).sum().item()
 
             # src.append(torch.stack(src_points))
         return torch.concat(src, dim=0),torch.concat(src_idx_list,dim=0),torch.concat(query_points_list,dim=0),torch.concat(points_pre_list,dim=0)

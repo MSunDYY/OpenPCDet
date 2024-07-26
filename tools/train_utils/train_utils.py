@@ -62,13 +62,12 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
 
         model.train()
         optimizer.zero_grad()
-        st = time.time()
+
 
         with torch.cuda.amp.autocast(enabled=use_amp):
             loss, tb_dict, disp_dict = model_func(model, batch)
         time.sleep(delay_time)
-        t3 = time.time()
-        # print('train_time:',t3-t2)
+
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
         clip_grad_norm_(model.parameters(), optim_cfg.GRAD_NORM_CLIP)
@@ -86,11 +85,6 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
         avg_forward_time = commu_utils.average_reduce_value(cur_forward_time)
         avg_batch_time = commu_utils.average_reduce_value(cur_batch_time)
 
-        t4 = time.time()
-        #
-        # print('bf:', t4 - t3)
-        # print('-------------------')
-        # log to console and tensorboard
         if rank == 0:
             batch_size = batch.get('batch_size', None)
         #
