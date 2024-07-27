@@ -403,7 +403,7 @@ class WaymoDataset(DatasetTemplate):
                 pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
                 pose_all.append(pose_pre)
                 points_pre_all.append(points[points[:,-1]==(idx+1)*0.1])
-                points = points[points[:,-1]==0]
+            points = np.concatenate([points[points[:,-1]==0]]+points_pre_all,axis=0).astype(np.float32)
             num_points_all = [(points[:,-1]==0.1*i).sum() for i in range(len(sample_idx_pre_list)+1)]
             poses = np.concatenate(pose_all, axis=0).astype(np.float32)
             num_points_all = np.array(num_points_all)

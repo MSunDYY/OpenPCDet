@@ -520,8 +520,9 @@ class DataProcessor(object):
             return batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_labels, batch_trajectory_rois, batch_valid_length
 
         with torch.no_grad():
+            data_dict['roi_boxes'] = torch.from_numpy(data_dict['roi_boxes'])
             if data_dict['roi_boxes'].shape[0]>1:
-                data_dict['roi_boxes'] = torch.from_numpy(data_dict['roi_boxes'])
+
                 data_dict['roi_list'] = data_dict['roi_boxes'].clone()
                 mask = data_dict['roi_boxes'][0,:,0]!=0
 
