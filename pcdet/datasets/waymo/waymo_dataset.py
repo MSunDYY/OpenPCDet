@@ -581,11 +581,11 @@ class WaymoDataset(DatasetTemplate):
                 gt_boxes_lidar = gt_boxes_lidar[mask]
                 annos['num_points_in_gt'] = annos['num_points_in_gt'][mask]
 
-            if True:
-                mask = (annos['num_points_in_gt']<10)
-                annos['name'] = annos['name'][mask]
-                gt_boxes_lidar = gt_boxes_lidar[mask]
-                annos['num_points_in_gt'] = annos['num_points_in_gt'][mask]
+            # if True:
+            #     mask = (annos['num_points_in_gt']<10)
+            #     annos['name'] = annos['name'][mask]
+            #     gt_boxes_lidar = gt_boxes_lidar[mask]
+            #     annos['num_points_in_gt'] = annos['num_points_in_gt'][mask]
 
             input_dict.update({
                 'gt_names': annos['name'],
