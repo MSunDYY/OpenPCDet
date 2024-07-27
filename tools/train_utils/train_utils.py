@@ -6,8 +6,7 @@ import time
 import glob
 from torch.nn.utils import clip_grad_norm_
 from pcdet.utils import common_utils, commu_utils
-from pcdet.models.sampler.point_sampler import Sampler
-from pcdet.models.sampler.pillar_sampler import PillarSampler
+
 from pcdet.models import build_network , load_data_to_gpu
 from torch.nn.parallel import DistributedDataParallel
 

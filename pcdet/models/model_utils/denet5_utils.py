@@ -619,7 +619,8 @@ class VoxelPointsSampler(nn.Module):
         self.num_recall_points=0
         self.num_gt_points=0
         self.num_recall_new = 0
-
+        self.num_points = 0
+        self.iteration = 0
         self.use_absolute_xyz = config.USE_ABSOLUTE_XYZ
         self.pc_start = torch.FloatTensor(pc_range[:2]).to(device)
         self.k = max_points_per_voxel
@@ -652,15 +653,15 @@ class VoxelPointsSampler(nn.Module):
             coords = coords[:, [2, 1]].contiguous()
             query_coords = (cur_batch_boxes[:, :2] - self.pc_start) / self.voxel_size
 
-            radiis = torch.norm(cur_batch_boxes[:, 3:5] / 2, dim=-1)/ self.voxel_size
+            radiis = torch.norm(cur_batch_boxes[:, 3:5] / 2, dim=-1)*gamma/ self.voxel_size
 
             dist = torch.norm(query_coords[:, None, :2] - coords[None, :, :],dim=-1)
             voxel_mask = (dist < radiis[:, None]).any(0)
 
             if not self.training:
                 pre_roi = batch_dict['roi_list'][bs_idx,1:6]
-                pre_roi[:,:,:2]-=pre_roi[:,:,7:]*torch.clamp(torch.arange(1,6,device=device),max=batch_dict['sample_idx'][0].item())[:,None,None]
-                pre_roi[:,:,3:6]*=1.5
+                pre_roi[:,:,:2]-=pre_roi[:,:,7:]*torch.clamp(torch.arange(1,6,device=device),max=batch_dict['sample_idx'][0].item()+3)[:,None,None]
+                pre_roi[:,:,3:5]*=1.5
                 pre_roi = pre_roi.flatten(0,1)
                 pre_roi = pre_roi[pre_roi[:,2]!=0]
                 query_coords_pre = (pre_roi[:,:2] - self.pc_start) / self.voxel_size
@@ -711,6 +712,10 @@ class VoxelPointsSampler(nn.Module):
                 self.num_recall_points += (recall_points>=0).sum().item()
                 recall_points_new = roiaware_pool3d_utils.points_in_boxes_gpu(torch.concat([key_points_pre,key_points_raw],dim=0)[None,:,:3],batch_dict['gt_boxes'][:,:,:7])
                 self.num_recall_new +=(recall_points_new>=0).sum().item()
+                self.num_points +=key_points_pre.shape[0]
+                self.iteration+=1
+                # if (recall_points_new>=0).sum()<(gt_points>=0).sum()-5:
+                #     print('sdf')
 
             # src.append(torch.stack(src_points))
         return torch.concat(src, dim=0),torch.concat(src_idx_list,dim=0),torch.concat(query_points_list,dim=0),torch.concat(points_pre_list,dim=0)
