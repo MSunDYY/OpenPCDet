@@ -583,7 +583,7 @@ class MSFHead(RoIHeadTemplate):
         rcnn_reg = joint_reg
 
         if not self.training:
-            rcnn_cls = rcnn_cls[-rcnn_cls.shape[0]//self.num_enc_layer*2:-rcnn_cls.shape[0]//self.num_enc_layer*1]
+            rcnn_cls = rcnn_cls[-rcnn_cls.shape[0]//self.num_enc_layer:]
             batch_cls_preds, batch_box_preds = self.generate_predicted_boxes(
                 batch_size=batch_dict['batch_size'], rois=batch_dict['roi_boxes'], cls_preds=rcnn_cls, box_preds=rcnn_reg
             )
