@@ -342,15 +342,14 @@ class Detector3DTemplate(nn.Module):
         recall_scores = {}
         rois = data_dict['rois'][batch_index] if 'rois' in data_dict else None
         gt_boxes = data_dict['gt_boxes'][batch_index]
-        signal = False
+
         if recall_dict.__len__() == 0:
-            recall_dict = {'gt': 0}
+            recall_dict = {'gt': 0,'pred':0,'loss_cls':0.}
+
             for cur_thresh in thresh_list:
                 recall_dict['roi_%s' % (str(cur_thresh))] = 0
                 recall_dict['rcnn_%s' % (str(cur_thresh))] = 0
-                if signal:
-                    recall_dict['velocity_diff_%s' %(str(cur_thresh))] = 0
-                    recall_dict['velocity_diff_num_%s' % (str(cur_thresh))] = 0
+
         cur_gt = gt_boxes
         k = cur_gt.__len__() - 1
         while k >= 0 and cur_gt[k].sum() == 0:
@@ -371,25 +370,19 @@ class Detector3DTemplate(nn.Module):
                     recall_dict['rcnn_%s' % str(cur_thresh)] += 0
                 else:
                     rcnn_recalled = (iou3d_rcnn.max(dim=0)[0] > cur_thresh).sum().item()
-                    if signal:
-                        gt_recalled_mask = (iou3d_rcnn.max(dim=0)[0]>cur_thresh)
-                        gt_recalled = cur_gt[gt_recalled_mask]
-                        roi_recalled = iou3d_rcnn.max(dim=0)[1]
-                        roi_recalled_ind = roi_recalled[gt_recalled_mask]
-                        roi_of_gt = box_preds[roi_recalled_ind]
-                        v_mask = (gt_recalled[:,7]**2+gt_recalled[:,8]**2)>3
-                        v_diff = ((roi_of_gt[:,-2:][v_mask]-gt_recalled[:,7:9][v_mask]).abs().sum(-1)/gt_recalled[:,7:9][v_mask].abs().sum(-1)).sum()
-                        # recall_boxes['roi_%s' % (str(cur_thresh))] = box_preds[iou3d_rcnn.max(dim=1)[0] > cur_thresh]
-                        # #
-                        # recall_scores['roi_%s' % (str(cur_thresh))] = data_dict['final_box_dicts'][0]['pred_scores'][
-                        #     iou3d_rcnn.max(dim=1)[0] > cur_thresh]
-                        recall_dict['velocity_diff_%s' % str(cur_thresh)]+=v_diff
-                        recall_dict['velocity_diff_num_%s'%str(cur_thresh)]+=v_mask.sum()
+
                     recall_dict['rcnn_%s' % str(cur_thresh)] += rcnn_recalled
                 if rois is not None:
                     roi_recalled = (iou3d_roi.max(dim=0)[0] > cur_thresh).sum().item()
                     recall_dict['roi_%s' % str(cur_thresh)] += roi_recalled
-
+            recall_gt_threshold = torch.full((cur_gt.shape[0],), fill_value=0.7, device=device)
+            recall_gt_threshold[cur_gt[:, -1] > 1] = 0.5
+            max_overlaps, gt_assignment = torch.max(iou3d_rcnn, dim=-1)
+            fg_roi = (max_overlaps >= recall_gt_threshold[gt_assignment])
+            final_scores = data_dict['final_scores']
+            loss_cls = (-torch.log(final_scores[fg_roi]).sum()-torch.log(1-final_scores[~fg_roi]).sum()).item()
+            recall_dict['pred'] +=box_preds.shape[0]
+            recall_dict['loss_cls'] +=loss_cls
             recall_dict['gt'] += cur_gt.shape[0]
         else:
             gt_iou = box_preds.new_zeros(box_preds.shape[0])

@@ -14,23 +14,20 @@ def statistics_info(cfg, ret_dict, metric, disp_dict):
         metric['recall_roi_%s' % str(cur_thresh)] += ret_dict.get('roi_%s' % str(cur_thresh), 0)
         metric['recall_rcnn_%s' % str(cur_thresh)] += ret_dict.get('rcnn_%s' % str(cur_thresh), 0)
 
-        metric['velocity_diff_%s' % str(cur_thresh)] += ret_dict.get('velocity_diff_%s' % str(cur_thresh), 0)
-        metric['velocity_diff_num_%s'%str(cur_thresh)]+=ret_dict.get('velocity_diff_num_%s' %str(cur_thresh),0)
+
+
     metric['gt_num'] += ret_dict.get('gt', 0)
+    metric['pred_num'] +=ret_dict.get('pred' ,0)
+    metric['loss_cls'] +=ret_dict.get('loss_cls',0.)
     min_thresh = cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST[0]
     thresh = cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST
-    if ret_dict.get('velocity_diff_0.3', 0) != 0:
-        disp_dict['recall_%s' % str(min_thresh)] = \
-            '(%d, %d) / %d  diff: %f' % (
-                metric['recall_roi_%s' % str(min_thresh)], metric['recall_rcnn_%s' % str(min_thresh)], metric['gt_num'],
-                metric['velocity_diff_%s' % str(min_thresh)].item() / metric['velocity_diff_num_%s' % str(min_thresh)])
-    else:
-        disp_dict['recall_%s_%s_%s ' % (str(min_thresh),str(thresh[1]),str(thresh[2]))] = \
-            '(%d, %d)  (%d, %d )  (%d, %d )/ %d' % (
+
+    disp_dict['recall_%s_%s_%s ' % (str(min_thresh),str(thresh[1]),str(thresh[2]))] = \
+            '(%d,%d) (%d,%d) (%d,%d ) / %d(cls %.8s)' % (
                 metric['recall_roi_%s' % str(min_thresh)], metric['recall_rcnn_%s' % str(min_thresh)],
                 metric['recall_roi_%s' % str(thresh[1])], metric['recall_rcnn_%s' % str(thresh[1])],
                 metric['recall_roi_%s' % str(thresh[2])], metric['recall_rcnn_%s' % str(thresh[2])],
-                metric['gt_num'],)
+                metric['gt_num'],metric['loss_cls']/metric['pred_num'])
 
 
 def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=False, result_dir=None):
@@ -42,12 +39,13 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
 
     metric = {
         'gt_num': 0,
+        'pred_num':0,
+        'loss_cls':0,
     }
     for cur_thresh in cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST:
         metric['recall_roi_%s' % str(cur_thresh)] = 0
         metric['recall_rcnn_%s' % str(cur_thresh)] = 0
-        metric['velocity_diff_%s' % str(cur_thresh)] = 0
-        metric['velocity_diff_num_%s'%str(cur_thresh)] = 0
+
     dataset = dataloader.dataset
     class_names = dataset.class_names
     det_annos = []
