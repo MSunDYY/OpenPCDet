@@ -23,7 +23,7 @@ def statistics_info(cfg, ret_dict, metric, disp_dict):
     thresh = cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST
 
     disp_dict['recall_%s_%s_%s ' % (str(min_thresh),str(thresh[1]),str(thresh[2]))] = \
-            '(%d,%d) (%d,%d) (%d,%d ) / %d(cls %.8s)' % (
+            '(%d,%d) (%d,%d) (%d,%d ) / %d /(cls %.8s)' % (
                 metric['recall_roi_%s' % str(min_thresh)], metric['recall_rcnn_%s' % str(min_thresh)],
                 metric['recall_roi_%s' % str(thresh[1])], metric['recall_rcnn_%s' % str(thresh[1])],
                 metric['recall_roi_%s' % str(thresh[2])], metric['recall_rcnn_%s' % str(thresh[2])],
@@ -133,8 +133,10 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
     total_pred_objects = 0
     for anno in det_annos:
         total_pred_objects += anno['name'].__len__()
+
     logger.info('Average predicted number of objects(%d samples): %.3f'
                 % (len(det_annos), total_pred_objects / max(1, len(det_annos))))
+    logger.info('Average loss cls : %.6f' % (metric['loss_cls']/metric['pred_num']))
     if getattr(args, 'infer_time', False):
         logger.info('Average infer time %.4f/frame'%(infer_time_meter.avg))
     if args.output_pkl:
