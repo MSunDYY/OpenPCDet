@@ -177,6 +177,7 @@ class DENet(Detector3DTemplate):
 
                 #########  Car DONOT Using NMS ###### 
             batch_dict['rois'] = batch_dict['roi_boxes']
+            batch_dict['final_scores'] = final_scores
             recall_dict = self.generate_recall_record(
                 box_preds=final_boxes,
                 recall_dict=recall_dict, batch_index=index, data_dict=batch_dict,

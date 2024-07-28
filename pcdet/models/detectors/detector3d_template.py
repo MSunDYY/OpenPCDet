@@ -360,7 +360,7 @@ class Detector3DTemplate(nn.Module):
             if box_preds.shape[0] > 0:
                 iou3d_rcnn = iou3d_nms_utils.boxes_iou3d_gpu(box_preds.cuda()[:, 0:7], cur_gt.cuda()[:, 0:7]).to(device)
             else:
-                iou3d_rcnn = torch.zeros((0, cur_gt.shape[0]))
+                iou3d_rcnn = torch.zeros((0, cur_gt.shape[0]),device=device)
 
             if rois is not None:
                 iou3d_roi = iou3d_nms_utils.boxes_iou3d_gpu(rois.cuda()[:, 0:7], cur_gt.cuda()[:, 0:7]).to(device)

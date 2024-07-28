@@ -966,7 +966,7 @@ class DENet5Head(RoIHeadTemplate):
             key_roi_mask = (src_idx!=0).sum(0)<28
             # np.save(key_roi_root/('%04d.npy' % batch_dict['sample_idx'][0]),torch.concat([roi_boxes[key_roi_mask],roi_scores[key_roi_mask,None],roi_labels[key_roi_mask,None].float()],dim=1).cpu().numpy())
             np.save(key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]), torch.concat([query_points_shrink,points_pre],dim=0).cpu().numpy())
-            print(self.voxel_sampler_cur.num_recall_points,'/',self.voxel_sampler_cur.num_recall_new, '/', self.voxel_sampler_cur.num_gt_points ,'/' ,self.voxel_sampler_cur.num_recall_points/max(self.voxel_sampler_cur.num_gt_points,1),'/',self.voxel_sampler_cur.num_recall_new/max(self.voxel_sampler_cur.num_gt_points,1),'/',self.voxel_sampler_cur.num_points/self.voxel_sampler_cur.iteration)
+            # print(self.voxel_sampler_cur.num_recall_points,'/',self.voxel_sampler_cur.num_recall_new, '/', self.voxel_sampler_cur.num_gt_points ,'/' ,self.voxel_sampler_cur.num_recall_points/max(self.voxel_sampler_cur.num_gt_points,1),'/',self.voxel_sampler_cur.num_recall_new/max(self.voxel_sampler_cur.num_gt_points,1),'/',self.voxel_sampler_cur.num_points/self.voxel_sampler_cur.iteration)
             if self.signal=='train':
                 return batch_dict
         src_pre = self.voxel_sampler(batch_size,trajectory_rois,num_sample//4,batch_dict)
