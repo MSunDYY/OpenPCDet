@@ -7,7 +7,7 @@ import time
 from ...utils import common_utils
 from ..model_utils import model_nms_utils
 from pcdet.datasets.augmentor import augmentor_utils, database_sampler
-
+from pcdet import device
 
 class MSF(Detector3DTemplate):
     def __init__(self, model_cfg, num_class, dataset):
@@ -169,7 +169,21 @@ class MSF(Detector3DTemplate):
                 recall_dict=recall_dict, batch_index=index, data_dict=batch_dict,
                 thresh_list=post_process_cfg.RECALL_THRESH_LIST
             )
-            
+            cur_gt = batch_dict['gt_boxes'][0]
+            if cur_gt.shape[0]>0:
+                iou3d_rcnn = iou3d_nms_utils.boxes_iou3d_gpu(box_preds[:, 0:7], cur_gt[:, 0:7]).to(device)
+                recall_gt_threshold = torch.full((cur_gt.shape[0],), fill_value=0.7, device=device)
+                recall_gt_threshold[cur_gt[:, -1] > 1] = 0.5
+                max_overlaps, gt_assignment = torch.max(iou3d_rcnn, dim=-1)
+                fg_roi = (max_overlaps >= recall_gt_threshold[gt_assignment])
+                # final_scores = cls_preds
+                # print((-torch.log(final_scores[fg_roi])).max().item(),'  ' ,(-torch.log(1-final_scores[~fg_roi])).max().item())
+                loss_cls = ((1 - cls_preds[fg_roi]).sum() + (cls_preds[~fg_roi]).sum()).item()
+
+            else:
+                loss_cls = cls_preds.sum().item()
+            recall_dict['loss_cls'] += loss_cls
+            recall_dict['pred'] += box_preds.shape[0]
 
             record_dict = {
                 'pred_boxes': final_boxes[:,:7],

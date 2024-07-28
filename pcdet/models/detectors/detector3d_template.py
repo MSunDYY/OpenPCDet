@@ -375,14 +375,15 @@ class Detector3DTemplate(nn.Module):
                 if rois is not None:
                     roi_recalled = (iou3d_roi.max(dim=0)[0] > cur_thresh).sum().item()
                     recall_dict['roi_%s' % str(cur_thresh)] += roi_recalled
-            recall_gt_threshold = torch.full((cur_gt.shape[0],), fill_value=0.7, device=device)
-            recall_gt_threshold[cur_gt[:, -1] > 1] = 0.5
-            max_overlaps, gt_assignment = torch.max(iou3d_rcnn, dim=-1)
-            fg_roi = (max_overlaps >= recall_gt_threshold[gt_assignment])
-            final_scores = data_dict['final_scores']
-            loss_cls = (-torch.log(final_scores[fg_roi]).sum()-torch.log(1-final_scores[~fg_roi]).sum()).item()
-            recall_dict['pred'] +=box_preds.shape[0]
-            recall_dict['loss_cls'] +=loss_cls
+            # recall_gt_threshold = torch.full((cur_gt.shape[0],), fill_value=0.7, device=device)
+            # recall_gt_threshold[cur_gt[:, -1] > 1] = 0.5
+            # max_overlaps, gt_assignment = torch.max(iou3d_rcnn, dim=-1)
+            # fg_roi = (max_overlaps >= recall_gt_threshold[gt_assignment])
+            # final_scores = data_dict['final_scores']
+            # # print((-torch.log(final_scores[fg_roi])).max().item(),'  ' ,(-torch.log(1-final_scores[~fg_roi])).max().item())
+            # loss_cls = ((1-final_scores[fg_roi]).sum()+(final_scores[~fg_roi]).sum()).item()
+            # recall_dict['pred'] +=box_preds.shape[0]
+            # recall_dict['loss_cls'] +=loss_cls
             recall_dict['gt'] += cur_gt.shape[0]
         else:
             gt_iou = box_preds.new_zeros(box_preds.shape[0])

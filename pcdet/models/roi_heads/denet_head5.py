@@ -356,6 +356,8 @@ class KPTransformer(nn.Module):
         self.fc_ce2 = nn.Linear(256, 3, bias=False)
         self.fc_hr1 = nn.Linear(256, 256)
         self.fc_hr2 = nn.Linear(256, 1, bias=False)
+        self.fc_cls1 = nn.Linear(256,256)
+        self.fc_cls2 = nn.Linear(256,1,bias=False)
 
     def forward(self, src,token,src_cur):
         # src = src.permute(2,1,0,3).flatten(1,2)
@@ -392,7 +394,8 @@ class KPTransformer(nn.Module):
         centers = self.fc_ce2(F.relu(self.fc_ce1(feat)))
         sizes = self.fc_s2(F.relu(self.fc_s1(feat)))
         headings = self.fc_hr2(F.relu(self.fc_hr1(feat)))
-        return token_list,torch.concat([centers,sizes,headings],-1),feat
+        cls = self.fc_cls2(F.relu(self.fc_cls1(feat)))
+        return token_list,torch.concat([centers,sizes,headings],-1),cls,feat
 
 class Pointnet(nn.Module):
     def __init__(self,channels):
@@ -981,11 +984,8 @@ class DENet5Head(RoIHeadTemplate):
         # src_pre_transform = src_pre_transform.reshape(src_pre.shape[0],-1,1,src_pre_transform.shape[-1])
         # src_pre = src_pre+ src_pre_transform.repeat(1,1,src_pre.shape[1]//src_pre_transform.shape[1],1).reshape(src_pre.shape)
 
-        tokens2,box_reg,feat_box = self.transformer2st(src_pre,tokens[-1],src_cur)
-
-
+        tokens2,box_reg,box_cls,feat_box = self.transformer2st(src_pre,tokens[-1],src_cur)
         # box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
-
         point_cls_list = []
         point_reg_list = []
 
@@ -996,8 +996,7 @@ class DENet5Head(RoIHeadTemplate):
 
         for j in range(self.num_enc_layer):
             point_reg_list.append(self.bbox_embed[0](tokens[j][0]))
-        point_reg_list.append(self.bbox_embed_final(tokens2[0][0]))
-
+        # point_reg_list.append(self.bbox_embed_final(tokens2[0][0]))
 
         point_cls = torch.cat(point_cls_list,0)
 
@@ -1005,9 +1004,9 @@ class DENet5Head(RoIHeadTemplate):
         hs = hs.permute(1,0,2).reshape(hs.shape[1],-1)
 
         joint_reg = self.jointembed(torch.cat([tokens2[-1][0],feat_box],-1))
-        # joint_cls = self.jointclsembed(torch.cat([points_features,tokens[-1][0]],dim=-1))
+        # joint_cls = self.jointclsembed(torch.cat([tokens2[-1][0],feat_box],dim=-1))
         rcnn_cls = point_cls
-        rcnn_reg = joint_reg
+        rcnn_reg = self.bbox_embed_final(tokens2[0][0])
 
         if not self.training:
             rcnn_cls = rcnn_cls[-tokens2[-1].shape[1]:]

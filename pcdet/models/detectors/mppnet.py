@@ -200,12 +200,12 @@ class MPPNet(Detector3DTemplate):
             pred_dicts.append(record_dict)
         batch_dict['final_box_dicts'] = pred_dicts
 
-        for index in range(batch_size):
-            pred_boxes = pred_dicts[index]['pred_boxes']
-            recall_dict = self.generate_recall_record(
-                box_preds=pred_boxes,
-                recall_dict=recall_dict, batch_index=index, data_dict=batch_dict,
-                thresh_list=post_process_cfg.RECALL_THRESH_LIST
-            )
+        batch_dict['final_scores'] = final_scores
+        pred_boxes = pred_dicts[index]['pred_boxes']
+        recall_dict = self.generate_recall_record(
+            box_preds=pred_boxes,
+            recall_dict=recall_dict, batch_index=index, data_dict=batch_dict,
+            thresh_list=post_process_cfg.RECALL_THRESH_LIST
+        )
 
         return pred_dicts, recall_dict
