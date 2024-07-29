@@ -1003,8 +1003,10 @@ class DENet5Head(RoIHeadTemplate):
         point_reg = torch.cat(point_reg_list,0)
         hs = hs.permute(1,0,2).reshape(hs.shape[1],-1)
 
-        joint_reg = self.jointembed(torch.cat([tokens2[-1][0],feat_box],-1))
+        # joint_reg = self.jointembed(torch.cat([tokens2[-1][0],feat_box],-1))
         # joint_cls = self.jointclsembed(torch.cat([tokens2[-1][0],feat_box],dim=-1))
+
+
         rcnn_cls = point_cls
         rcnn_reg = self.bbox_embed_final(tokens2[0][0])
 
