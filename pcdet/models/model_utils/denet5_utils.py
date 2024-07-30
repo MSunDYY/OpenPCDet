@@ -149,12 +149,49 @@ class SpatialMixerBlockCompress(nn.Module):
 
         src0d = self.norm_channel(src0d+self.ffn(src0d))
         return src0d
+
+class Attention(nn.Module):
+    def __init__(self, dim_Q, dim_K, dim_LIN, num_heads, ln=False):
+        super(Attention, self).__init__()
+        self.dim_LIN = dim_LIN
+        self.num_heads = num_heads
+        self.fc_q = nn.Linear(dim_Q, dim_LIN)
+        self.fc_k = nn.Linear(dim_K, dim_LIN)
+        self.fc_v = nn.Linear(dim_K, dim_LIN)
+        if ln:
+            self.ln0 = nn.LayerNorm(dim_LIN)
+            self.ln1 = nn.LayerNorm(dim_LIN)
+        self.fc_o = nn.Linear(dim_LIN, dim_LIN)
+
+    def forward(self, Q, K):
+        Q = self.fc_q(Q)
+        K, V = self.fc_k(K), self.fc_v(K)
+        dim_split = self.dim_LIN // self.num_heads
+        Q_ = torch.cat(Q.split(dim_split, 2), 0)
+        K_ = torch.cat(K.split(dim_split, 2), 0)
+        V_ = torch.cat(V.split(dim_split, 2), 0)
+        A = torch.softmax(Q_.bmm(K_.transpose(1,2)) / math.sqrt(self.dim_LIN), 2)
+        temp = (Q_ + A.bmm(V_)).split(Q.size(0), 0)
+        O = torch.cat(temp, 2)
+        O = O if getattr(self, 'ln0', None) is None else self.ln0(O)
+        O = O + F.relu(self.fc_o(O))
+        O = O if getattr(self, 'ln1', None) is None else self.ln1(O)
+        if self.num_heads >= 2:
+            A = A.split(Q.size(0),dim=0)
+            A = torch.stack([tensor_ for tensor_ in A], dim=0)
+            A = torch.mean(A, dim=0)
+
+        return O
+
+
+
 class SpatialMixerBlock(nn.Module):
 
     def __init__(self, channels,config=None, dropout=0.0,batch_first=False):
         super().__init__()
 
         self.mixer = nn.MultiheadAttention(channels, 8, dropout=dropout,batch_first=batch_first)
+        # self.mixer = Attention(channels,channels,channels,8,)
         
         self.dropout = nn.Dropout(dropout)
         self.norm = nn.LayerNorm(channels)
@@ -168,7 +205,7 @@ class SpatialMixerBlock(nn.Module):
                                )
     def forward(self, src,return_weight=False):
        
-        src2,weight = self.mixer(src, src, src)
+        src2,weight = self.mixer(src, src,src)
         
         src = src + self.dropout(src2)
         src_mixer = self.norm(src)

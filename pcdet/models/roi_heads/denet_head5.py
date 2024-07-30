@@ -661,7 +661,7 @@ class DENet5Head(RoIHeadTemplate):
         num_points_single_frame = proxy_point.shape[1]//num_frames
         for i in range(num_frames):
             point_time_padding[:, i * num_points_single_frame : (i+1) * num_points_single_frame, -1] = i * 0.1
-
+            point_time_padding[:,i*num_points_single_frame:(i+1)*num_points_single_frame,:2] = trajectory_rois[:,i:(i+1),-2:]*i
         corner_points, _ = self.get_corner_points_of_roi(trajectory_rois[:, 0, :].contiguous())
 
         corner_points = corner_points.view(num_rois, -1)
@@ -672,6 +672,9 @@ class DENet5Head(RoIHeadTemplate):
 
         lwh = trajectory_rois[:, 0, :].reshape(num_rois, -1)[:, 3:6].unsqueeze(1).repeat(1,proxy_point.shape[1], 1)
         diag_dist = (lwh[:, :, 0] ** 2 + lwh[:, :, 1] ** 2 + lwh[:, :, 2] ** 2) ** 0.5
+        point_time_padding_dis = (point_time_padding[...,0]**2+point_time_padding[...,1]**2)**0.5/diag_dist
+        point_time_padding_theta = torch.arctan(point_time_padding[...,0]/(point_time_padding[...,1]+1e-5))
+        point_time_padding = torch.stack([point_time_padding_dis,point_time_padding_theta,point_time_padding[...,-1]],dim=-1)
         proposal_aware_feat = self.spherical_coordinate(proposal_aware_feat, diag_dist=diag_dist.unsqueeze(-1))
 
         proposal_aware_feat = torch.cat([proposal_aware_feat, point_time_padding], -1)
