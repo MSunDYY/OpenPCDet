@@ -11,7 +11,7 @@ from pcdet.models.flow.flow import FlowNet
 import torch
 import torch.nn as nn
 from tensorboardX import SummaryWriter
-
+import copy
 from pcdet.config import cfg, cfg_from_list, cfg_from_yaml_file, log_config_to_file
 from pcdet.datasets import build_dataloader
 from pcdet.models import build_network, model_fn_decorator
@@ -199,7 +199,7 @@ def main(args, cfgs):
 
     if cfg.MODEL.NAME=='DENet':
         from easydict import EasyDict
-        data_config = EasyDict(cfg.DATA_CONFIG.copy())
+        data_config = copy.deepcopy(cfg.DATA_CONFIG)
         data_config.DATA_SPLIT.test = 'train'
         data_config.SAMPLED_INTERVAL.test=1
         data_config.ROI_BOXES_PATH.test = data_config.ROI_BOXES_PATH.test.replace('/val','/train')
