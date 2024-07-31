@@ -7,7 +7,7 @@ import tqdm
 
 from pcdet.models import load_data_to_gpu
 from pcdet.utils import common_utils
-
+from pcdet import device
 
 def statistics_info(cfg, ret_dict, metric, disp_dict):
     for cur_thresh in cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST:
@@ -16,22 +16,24 @@ def statistics_info(cfg, ret_dict, metric, disp_dict):
 
 
 
-    metric['gt_num'] += ret_dict.get('gt', 0)
-    metric['pred_num'][0] +=ret_dict['pred'][0] if ret_dict.get('pred',False) else 0
-    metric['pred_num'][1] +=ret_dict['pred'][1] if ret_dict.get('pred',False) else 0
-
-    metric['loss_cls'][0] +=ret_dict['loss_cls'][0] if ret_dict.get('loss_cls',False) else 0.
-    metric['loss_cls'][1] +=ret_dict['loss_cls'][1] if ret_dict.get('loss_cls',False) else 0.
+    # metric['gt_num'] += ret_dict.get('gt', 0)
+    # metric['pred_num'][0] +=ret_dict['pred'][0] if ret_dict.get('pred',False) else 0
+    # metric['pred_num'][1] +=ret_dict['pred'][1] if ret_dict.get('pred',False) else 0
+    # metric['pred_scores'] = torch.concat(metric['pred_scores'],)
+    # metric['loss_cls'][0] +=ret_dict['loss_cls'][0] if ret_dict.get('loss_cls',False) else 0.
+    # metric['loss_cls'][1] +=ret_dict['loss_cls'][1] if ret_dict.get('loss_cls',False) else 0.
 
     min_thresh = cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST[0]
     thresh = cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST
 
     disp_dict['recall_%s_%s_%s ' % (str(min_thresh),str(thresh[1]),str(thresh[2]))] = \
-            '(%d,%d) (%d,%d) (%d,%d ) / %d /(cls %.8s %.8s)' % (
+            '(%d,%d) (%d,%d) (%d,%d ) / %d /(cls %.8s )' % (
                 metric['recall_roi_%s' % str(min_thresh)], metric['recall_rcnn_%s' % str(min_thresh)],
                 metric['recall_roi_%s' % str(thresh[1])], metric['recall_rcnn_%s' % str(thresh[1])],
                 metric['recall_roi_%s' % str(thresh[2])], metric['recall_rcnn_%s' % str(thresh[2])],
-                metric['gt_num'],metric['loss_cls'][0]/metric['pred_num'][0] ,metric['loss_cls'][1]/metric['pred_num'][1])
+                metric['gt_num'],
+                # metric['loss_cls'][0]/metric['pred_num'][0] ,metric['loss_cls'][1]/metric['pred_num'][1],
+            torch.var(metric['pred_scores']).item())
 
 
 def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=False, result_dir=None):
@@ -43,8 +45,8 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
 
     metric = {
         'gt_num': 0,
-        'pred_num':[0,0],
-        'loss_cls':[0.,0.],
+        'pred_scores':torch.tensor([],device=device),
+
     }
     for cur_thresh in cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST:
         metric['recall_roi_%s' % str(cur_thresh)] = 0
@@ -93,6 +95,7 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
             # use ms to measure inference time
             disp_dict['infer_time'] = f'{infer_time_meter.val:.2f}({infer_time_meter.avg:.2f})'
         time.sleep(delay_time)
+        metric['pred_scores'] = torch.concat([metric['pred_scores'],pred_dicts[0]['pred_scores']],dim=-1)
         statistics_info(cfg, ret_dict, metric, disp_dict)
         annos = dataset.generate_prediction_dicts(
             batch_dict, pred_dicts, class_names,
@@ -140,7 +143,7 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
 
     logger.info('Average predicted number of objects(%d samples): %.3f'
                 % (len(det_annos), total_pred_objects / max(1, len(det_annos))))
-    logger.info('Average loss cls : %.8f  %.8f' % (metric['loss_cls'][0]/metric['pred_num'][0],metric['loss_cls'][1]/metric['pred_num'][1]))
+    logger.info('Average loss cls : %.8f  ' % (torch.var(metric['pred_scores']).item()))
     if getattr(args, 'infer_time', False):
         logger.info('Average infer time %.4f/frame'%(infer_time_meter.avg))
     if args.output_pkl:
