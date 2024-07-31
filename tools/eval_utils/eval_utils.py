@@ -16,7 +16,7 @@ def statistics_info(cfg, ret_dict, metric, disp_dict):
 
 
 
-    # metric['gt_num'] += ret_dict.get('gt', 0)
+    metric['gt_num'] += ret_dict.get('gt', 0)
     # metric['pred_num'][0] +=ret_dict['pred'][0] if ret_dict.get('pred',False) else 0
     # metric['pred_num'][1] +=ret_dict['pred'][1] if ret_dict.get('pred',False) else 0
     # metric['pred_scores'] = torch.concat(metric['pred_scores'],)

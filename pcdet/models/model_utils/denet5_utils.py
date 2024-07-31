@@ -335,7 +335,7 @@ class Transformer(nn.Module):
         token_list = [self.token[i:(i+1)].repeat(BS,1,1) for i in range(self.num_groups)]
 
         # src = [torch.cat([torch.gather(token_list[i],1,batch_dict['roi_labels'].view(-1,1,1).repeat(1,1,self.d_model)-1,),src[:,i*self.num_lidar_points:(i+1)*self.num_lidar_points]],dim=1) for i in range(self.num_groups)]
-        src = [src[:,i*self.num_lidar_points:(i+1)*self.num_lidar_points] for i in range(self.num_groups)]
+        src = [torch.concat([token_list[i],src[:,i*self.num_lidar_points:(i+1)*self.num_lidar_points]],dim=1) for i in range(self.num_groups)]
         src = torch.cat(src,dim=0)
 
         # src = src.permute(1, 0, 2)
