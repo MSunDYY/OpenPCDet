@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from pcdet.ops.iou3d_nms import iou3d_nms_utils
 from ...utils import common_utils, loss_utils
 from .roi_head_template import RoIHeadTemplate
-from ..model_utils.denet5_utils import build_transformer,unflatten,SpatialMixerBlockCompress,CrossMixerBlock,SpatialMixerBlock
+from ..model_utils.denet5_utils import build_transformer,unflatten,SpatialMixerBlockCompress,CrossMixerBlock,SpatialMixerBlock,SpatialDropBlock
 from ..model_utils.denet5_utils import build_voxel_sampler,PointNet,MLP
 from .msf_head import ProposalTargetLayerMPPNet
 from .target_assigner.proposal_target_layer import ProposalTargetLayer
@@ -326,13 +326,13 @@ class KPTransformer(nn.Module):
         self.channels = model_cfg.hidden_dim
         self.num_frames = model_cfg.num_frames
         self.num_groups = model_cfg.num_groups
-        self.Attention = SpatialMixerBlock(self.channels,dropout=0.1,batch_first=True)
-        self.Attention2 = SpatialMixerBlock(self.channels,dropout=0.1,batch_first=True)
+        self.Attention = SpatialDropBlock(self.channels,dropout=0.1,batch_first=True)
+        self.Attention2 = SpatialDropBlock(self.channels,dropout=0.1,batch_first=True)
         self.Attention3 = SpatialMixerBlock(self.channels,dropout=0.1,batch_first=True)
 
         self.decoder_layer1 = CrossMixerBlock(self.channels,dropout=0.1)
         self.decoder_layer2 = CrossMixerBlock(self.channels,dropout=0.1)
-        self.decoder_layer3 = CrossMixerBlock(self.channels,dropout=0.1)
+        self.decoder_layer3 = CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
         self.pointnet = nn.Sequential(
             nn.Conv1d(self.channels,self.channels*2,1),
             nn.BatchNorm1d(self.channels*2),
@@ -364,26 +364,26 @@ class KPTransformer(nn.Module):
         token_list = list()
         src = src.reshape(src.shape[0]*self.num_frames,-1,src.shape[-1])
         num_frames_single_group = self.num_frames // self.num_groups
-        src,weight = self.Attention(src,return_weight=True)
+        src,weight,sampled_inds = self.Attention(src,return_weight=True)
         # token = self.decoder_layer1(token, torch.max(src.unflatten(0,(-1,self.num_frames)), 1).values.transpose(0, 1))
         # token_list.append(token)
-        sampled_inds = torch.topk(weight.sum(1),k=weight.shape[-1]//2,dim=-1)[1]
-        src_new = torch.gather(src,1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))
-        src_new = src_new.unflatten(0,(-1,self.num_frames))
+        # sampled_inds = torch.topk(weight.sum(1),k=weight.shape[-1]//2,dim=-1)[1]
+        # src_new = torch.gather(src,1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))
+        src_new = src.unflatten(0,(-1,self.num_frames))
 
 
         src_list = [src_new[:,torch.arange(num_frames_single_group)*self.num_groups+i] for i in range(self.num_groups)]
         src = torch.stack([src_.flatten(1,2) for src_ in src_list],dim=1)
 
         src = src.flatten(0,1)
-        src,weight = self.Attention2(src,return_weight=True)
-        sampled_inds = torch.topk(weight.sum(1),k=weight.shape[-1]//2,dim=-1)[1]
+        src_new,weight,sampled_inds = self.Attention2(src,return_weight=True)
+        # sampled_inds = torch.topk(weight.sum(1),k=weight.shape[-1]//2,dim=-1)[1]
         # token = self.decoder_layer2(token,torch.max(src.unflatten(0,(-1,self.num_groups)),1).values.transpose(0,1))
         # token_list.append(token)
-        src_new = torch.gather(src,1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))
+        # src_new = torch.gather(src,1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))
         src_new = src_new.reshape(-1,self.num_groups*src_new.shape[1],src_new.shape[-1])
         src_new = self.Attention3(src_new)
-        token = self.decoder_layer3(token,src_new.transpose(0,1))
+        token = self.decoder_layer3(token,src_new)
         token_list.append(token)
         src_new = self.pointnet(src_new.permute(0,2,1))
         x = torch.max(src_new,dim=-1).values
@@ -955,7 +955,7 @@ class DENet5Head(RoIHeadTemplate):
         num_rois = torch.cumsum(torch.tensor([0]+[batch_dict['roi_boxes'][i].shape[0] for i in range(batch_size)],device=device),dim=0)
 
         src_cur,src_idx,query_points,points_pre = self.voxel_sampler_cur(batch_size,trajectory_rois[:,0,...].flatten(0,1),num_sample,batch_dict,start_idx=0,num_rois=num_rois)
-        batch_dict['src_idx'] = src_idx.transpose(0,1)
+        batch_dict['src_idx'] = src_idx
         batch_dict['query_points'] = query_points
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK', None):
             src_cur[empty_mask.view(-1)] = 0
@@ -982,7 +982,7 @@ class DENet5Head(RoIHeadTemplate):
         # src_pre_transform = self.pointLK(src_pre_transform.flatten(0,1).transpose(-1,-2),src_pre_transform[:,:1,:,:].repeat(1,num_frames,1,1).flatten(0,1).transpose(-1,-2))
         trajectory_rois = trajectory_rois.transpose(1,2).flatten(0,1)
         src_pre = src_pre.flatten(0,1)
-        src_pre[:,:num_sample//4] = torch.gather(query_points,0,batch_dict['src_idx'].view(-1,1).repeat(1,query_points.shape[-1])).unflatten(0,batch_dict['src_idx'].shape).transpose(0,1)
+        src_pre[:,:num_sample//4] = torch.gather(query_points,0,batch_dict['src_idx'].view(-1,1).repeat(1,query_points.shape[-1])).unflatten(0,batch_dict['src_idx'].shape)
         src_pre = self.get_proposal_aware_motion_feature(src_pre, trajectory_rois)
         # src_pre_transform = src_pre_transform.reshape(src_pre.shape[0],-1,1,src_pre_transform.shape[-1])
         # src_pre = src_pre+ src_pre_transform.repeat(1,1,src_pre.shape[1]//src_pre_transform.shape[1],1).reshape(src_pre.shape)
@@ -993,12 +993,12 @@ class DENet5Head(RoIHeadTemplate):
         point_reg_list = []
 
         for i in range(self.num_enc_layer):
-            point_cls_list.append(self.class_embed[0](tokens[i][0]))
-        point_cls_list.append(self.class_embed_final(tokens2[0][0]))
+            point_cls_list.append(self.class_embed[0](tokens[i][:,0]))
+        point_cls_list.append(self.class_embed_final(tokens2[0][:,0]))
 
 
         for j in range(self.num_enc_layer):
-            point_reg_list.append(self.bbox_embed[0](tokens[j][0]))
+            point_reg_list.append(self.bbox_embed[0](tokens[j][:,0]))
         # point_reg_list.append(self.bbox_embed_final(tokens2[0][0]))
 
         point_cls = torch.cat(point_cls_list,0)
@@ -1011,7 +1011,7 @@ class DENet5Head(RoIHeadTemplate):
 
 
         rcnn_cls = point_cls
-        rcnn_reg = self.bbox_embed_final(tokens2[0][0])
+        rcnn_reg = self.bbox_embed_final(tokens2[0][:,0])
 
         if not self.training:
             rcnn_cls = rcnn_cls[-tokens2[-1].shape[1]:]

@@ -17,17 +17,21 @@ def statistics_info(cfg, ret_dict, metric, disp_dict):
 
 
     metric['gt_num'] += ret_dict.get('gt', 0)
-    metric['pred_num'] +=ret_dict.get('pred' ,0)
-    metric['loss_cls'] +=ret_dict.get('loss_cls',0.)
+    metric['pred_num'][0] +=ret_dict['pred'][0] if ret_dict.get('pred',False) else 0
+    metric['pred_num'][1] +=ret_dict['pred'][1] if ret_dict.get('pred',False) else 0
+
+    metric['loss_cls'][0] +=ret_dict['loss_cls'][0] if ret_dict.get('loss_cls',False) else 0.
+    metric['loss_cls'][1] +=ret_dict['loss_cls'][1] if ret_dict.get('loss_cls',False) else 0.
+
     min_thresh = cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST[0]
     thresh = cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST
 
     disp_dict['recall_%s_%s_%s ' % (str(min_thresh),str(thresh[1]),str(thresh[2]))] = \
-            '(%d,%d) (%d,%d) (%d,%d ) / %d /(cls %.8s)' % (
+            '(%d,%d) (%d,%d) (%d,%d ) / %d /(cls %.8s %.8s)' % (
                 metric['recall_roi_%s' % str(min_thresh)], metric['recall_rcnn_%s' % str(min_thresh)],
                 metric['recall_roi_%s' % str(thresh[1])], metric['recall_rcnn_%s' % str(thresh[1])],
                 metric['recall_roi_%s' % str(thresh[2])], metric['recall_rcnn_%s' % str(thresh[2])],
-                metric['gt_num'],metric['loss_cls']/metric['pred_num'])
+                metric['gt_num'],metric['loss_cls'][0]/metric['pred_num'][0] ,metric['loss_cls'][1]/metric['pred_num'][1])
 
 
 def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=False, result_dir=None):
@@ -39,8 +43,8 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
 
     metric = {
         'gt_num': 0,
-        'pred_num':0,
-        'loss_cls':0,
+        'pred_num':[0,0],
+        'loss_cls':[0.,0.],
     }
     for cur_thresh in cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST:
         metric['recall_roi_%s' % str(cur_thresh)] = 0
@@ -136,7 +140,7 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
 
     logger.info('Average predicted number of objects(%d samples): %.3f'
                 % (len(det_annos), total_pred_objects / max(1, len(det_annos))))
-    logger.info('Average loss cls : %.6f' % (metric['loss_cls']/metric['pred_num']))
+    logger.info('Average loss cls : %.8f  %.8f' % (metric['loss_cls'][0]/metric['pred_num'][0],metric['loss_cls'][1]/metric['pred_num'][1]))
     if getattr(args, 'infer_time', False):
         logger.info('Average infer time %.4f/frame'%(infer_time_meter.avg))
     if args.output_pkl:

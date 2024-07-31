@@ -175,15 +175,27 @@ class MSF(Detector3DTemplate):
                 recall_gt_threshold = torch.full((cur_gt.shape[0],), fill_value=0.7, device=device)
                 recall_gt_threshold[cur_gt[:, -1] > 1] = 0.5
                 max_overlaps, gt_assignment = torch.max(iou3d_rcnn, dim=-1)
-                fg_roi = (max_overlaps >= recall_gt_threshold[gt_assignment])
+                fg_roi = (max_overlaps >= recall_gt_threshold[gt_assignment]).nonzero().view(-1)
+                unique,indice = torch.unique(gt_assignment[fg_roi],return_inverse=True)
+                mask = torch.zeros_like(fg_roi,dtype=torch.bool)
+                for i in unique:
+                    mask[(gt_assignment[fg_roi]==i).nonzero()[0]]=True
+                fg_roi_ind = fg_roi[mask]
+                fg_roi = torch.zeros(box_preds.shape[0],dtype=torch.bool,device=device)
+                fg_roi[fg_roi_ind] = True
                 # final_scores = cls_preds
                 # print((-torch.log(final_scores[fg_roi])).max().item(),'  ' ,(-torch.log(1-final_scores[~fg_roi])).max().item())
-                loss_cls = ((1 - cls_preds[fg_roi]).sum() + (cls_preds[~fg_roi]).sum()).item()
-
+                loss_pos_cls = (1 - cls_preds[fg_roi]).sum().item()
+                loss_neg_cls = cls_preds[~fg_roi].sum().item()
+                recall_dict['pred'][0] += fg_roi.sum().item()
+                recall_dict['pred'][1] += (~fg_roi).sum().item()
             else:
-                loss_cls = cls_preds.sum().item()
-            recall_dict['loss_cls'] += loss_cls
-            recall_dict['pred'] += box_preds.shape[0]
+                loss_pos_cls = 0
+                loss_neg_cls = cls_preds.sum().item()
+                recall_dict['pred'][0] +=0
+                recall_dict['pred'][1]+= cls_preds.shape[0]
+            recall_dict['loss_cls'][0] += loss_pos_cls
+            recall_dict['loss_cls'][1] += loss_neg_cls
 
             record_dict = {
                 'pred_boxes': final_boxes[:,:7],

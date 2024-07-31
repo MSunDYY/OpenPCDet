@@ -10,6 +10,7 @@ from spconv.pytorch.utils import PointToVoxel
 from pcdet.ops.pointnet2.pointnet2_stack.pointnet2_modules import StackSAModuleMSG
 from pcdet.ops.pointnet2.pointnet2_batch.pointnet2_modules import PointnetSAModuleMSG
 from pcdet import device
+import math
 # from torch.utils.cpp_extension import load
 # scatter = load(name='scatter', sources=['../cuda/scatter.cpp', '../cuda/scatter.cu'])
 def unflatten(tensor,dim,sizes):
@@ -164,6 +165,7 @@ class Attention(nn.Module):
         self.fc_o = nn.Linear(dim_LIN, dim_LIN)
 
     def forward(self, Q, K):
+        B = Q.shape[0]
         Q = self.fc_q(Q)
         K, V = self.fc_k(K), self.fc_v(K)
         dim_split = self.dim_LIN // self.num_heads
@@ -171,17 +173,16 @@ class Attention(nn.Module):
         K_ = torch.cat(K.split(dim_split, 2), 0)
         V_ = torch.cat(V.split(dim_split, 2), 0)
         A = torch.softmax(Q_.bmm(K_.transpose(1,2)) / math.sqrt(self.dim_LIN), 2)
-        temp = (Q_ + A.bmm(V_)).split(Q.size(0), 0)
-        O = torch.cat(temp, 2)
-        O = O if getattr(self, 'ln0', None) is None else self.ln0(O)
-        O = O + F.relu(self.fc_o(O))
-        O = O if getattr(self, 'ln1', None) is None else self.ln1(O)
         if self.num_heads >= 2:
-            A = A.split(Q.size(0),dim=0)
-            A = torch.stack([tensor_ for tensor_ in A], dim=0)
-            A = torch.mean(A, dim=0)
+            temp = A.split(Q.size(0),dim=0)
+            temp = torch.stack([tensor_ for tensor_ in temp], dim=0)
+            weight = torch.mean(temp, dim=0)
 
-        return O
+        sampled_inds = torch.topk(weight.sum(1),A.shape[-1]//2,1)[1]
+
+        O = torch.concat([(torch.gather(A[torch.arange(B)*self.num_heads+i],1,sampled_inds[:,:,None].repeat(1,1,A.shape[-1])).bmm(V_[torch.arange(B)*self.num_heads+i])) for i in range(self.num_heads)],dim=-1)
+
+        return O,weight,sampled_inds
 
 
 
@@ -191,8 +192,7 @@ class SpatialMixerBlock(nn.Module):
         super().__init__()
 
         self.mixer = nn.MultiheadAttention(channels, 8, dropout=dropout,batch_first=batch_first)
-        # self.mixer = Attention(channels,channels,channels,8,)
-        
+
         self.dropout = nn.Dropout(dropout)
         self.norm = nn.LayerNorm(channels)
 
@@ -218,12 +218,45 @@ class SpatialMixerBlock(nn.Module):
             return src_mixer
 
 
-class CrossMixerBlock(nn.Module):
+class SpatialDropBlock(nn.Module):
 
-    def __init__(self, channels, config=None, dropout=0.0):
+    def __init__(self, channels, config=None, dropout=0.0, batch_first=False):
         super().__init__()
 
-        self.mixer = nn.MultiheadAttention(channels, 8, dropout=dropout)
+        self.mixer = Attention(channels,channels,channels, 8,)
+
+        self.dropout = nn.Dropout(dropout)
+        self.norm = nn.LayerNorm(channels)
+
+        self.norm_channel = nn.LayerNorm(channels)
+        self.ffn = nn.Sequential(
+            nn.Linear(channels, 2 * channels),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(2 * channels, channels),
+        )
+
+    def forward(self, src, return_weight=False):
+
+        src2, weight,sampled_inds = self.mixer(src, src)
+
+        src =torch.gather(src,1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))  + self.dropout(src2)
+        src_mixer = self.norm(src)
+
+        src_mixer = src_mixer + self.ffn(src_mixer)
+        src_mixer = self.norm_channel(src_mixer)
+        if return_weight:
+            return src_mixer, weight,sampled_inds
+        else:
+            return src_mixer
+
+
+class CrossMixerBlock(nn.Module):
+
+    def __init__(self, channels, config=None, dropout=0.0,batch_first = False):
+        super().__init__()
+
+        self.mixer = nn.MultiheadAttention(channels, 8, dropout=dropout,batch_first=batch_first)
 
         self.dropout = nn.Dropout(dropout)
         self.norm = nn.LayerNorm(channels)
@@ -305,11 +338,11 @@ class Transformer(nn.Module):
         # src = [src[:,i*self.num_lidar_points:(i+1)*self.num_lidar_points] for i in range(self.num_groups)]
         src = torch.cat(src,dim=0)
 
-        src = src.permute(1, 0, 2)
+        # src = src.permute(1, 0, 2)
         memory,tokens = self.encoder(src,batch_dict,pos=pos)
 
         # memory = torch.cat(memory[0:1].chunk(self.num_groups,dim=1),0)
-        return memory[:1], tokens,memory[1:]
+        return memory[:,:1], tokens,memory[:,1:]
     
 
 class TransformerEncoder(nn.Module):
@@ -378,7 +411,7 @@ class TransformerEncoderLayer(nn.Module):
         self.num_point = num_points
         self.num_groups= num_groups
         self.point_feature = 96
-        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout,batch_first=True)
         # self.self_attn = vector_attention(d_model, nhead=4)
         self.linear1 = nn.Linear(d_model, dim_feedforward)
         self.dropout = nn.Dropout(dropout)
@@ -398,7 +431,7 @@ class TransformerEncoderLayer(nn.Module):
         self.activation = _get_activation_fn(activation)
         self.normalize_before = normalize_before
 
-        self.mlp_mixer_3d = SpatialMixerBlock(
+        self.mlp_mixer_3d = SpatialDropBlock(
                         self.config.hidden_dim, 
                         self.config.use_mlp_mixer
         )
@@ -419,10 +452,10 @@ class TransformerEncoderLayer(nn.Module):
                      pos: Optional[Tensor] = None):
 
 
-        src_intra_group_fusion,weight = self.mlp_mixer_3d(src[1:],return_weight=True)
+        src_intra_group_fusion,weight,sampled_inds = self.mlp_mixer_3d(src[:,1:],return_weight=True)
 
 
-        token = src[:1]
+        token = src[:,:1]
 
         if not pos is None:
             key = self.with_pos_embed(src_intra_group_fusion, pos[1:])
@@ -436,40 +469,40 @@ class TransformerEncoderLayer(nn.Module):
         src_summary = self.linear2(self.dropout(self.activation(self.linear1(token))))
         token = token + self.dropout2(src_summary)
         token = self.norm2(token)
-        src = torch.cat([token,src[1:]],0)
+        src = torch.cat([token,src[:,1:]],1)
 
 
         if self.layer_count <= self.config.enc_layers-1:
 
-            num_points = src.shape[0]-1
-            src_all_groups = src_intra_group_fusion.view((src_intra_group_fusion.shape[0])*self.num_groups,-1,src_intra_group_fusion.shape[-1])
-            # src_groups_list = src_all_groups.chunk(self.num_groups,0)
-            # src_groups_list = [src_all_groups[torch.arange(sampled_inds.shape[0])*self.num_groups+i] for i in range(self.num_groups)]
-
-            src_all_groups = src_all_groups.unsqueeze(0)
-            src_max_groups = torch.max(src_all_groups, 1, keepdim=True).values
-            src_past_groups =  torch.cat([src_all_groups,\
-                 src_max_groups.repeat(1, src_intra_group_fusion.shape[0], 1, 1)], -1)
-            src_all_groups = self.cross_norm_1(self.cross_conv_1(src_past_groups) + src_all_groups)
-
-
-
-            src_inter_group_fusion = src_all_groups.permute(1, 0, 2, 3).contiguous().flatten(1,2)
-
-            weight = weight.sum(1)
-            # src = torch.cat([src[:1],src_intra_group_fusion],0)
-            sampled_inds = torch.topk(weight, dim=1, k=weight.shape[1] // 2)[1].transpose(0, 1)
-
-            src_inter_group_fusion = torch.gather(src_inter_group_fusion, 0, sampled_inds[:, :, None].repeat(1, 1,
-                                                                                                             src_inter_group_fusion.shape[
-                                                                                                                 -1]))
+            # num_points = src.shape[0]-1
+            # src_all_groups = src_intra_group_fusion.view((src_intra_group_fusion.shape[0])*self.num_groups,-1,src_intra_group_fusion.shape[-1])
+            # # src_groups_list = src_all_groups.chunk(self.num_groups,0)
+            # # src_groups_list = [src_all_groups[torch.arange(sampled_inds.shape[0])*self.num_groups+i] for i in range(self.num_groups)]
+            #
+            # src_all_groups = src_all_groups.unsqueeze(0)
+            # src_max_groups = torch.max(src_all_groups, 1, keepdim=True).values
+            # src_past_groups =  torch.cat([src_all_groups,\
+            #      src_max_groups.repeat(1, src_intra_group_fusion.shape[0], 1, 1)], -1)
+            # src_all_groups = self.cross_norm_1(self.cross_conv_1(src_past_groups) + src_all_groups)
+            #
+            #
+            #
+            # src_inter_group_fusion = src_all_groups.permute(1, 0, 2, 3).contiguous().flatten(1,2)
+            #
+            # weight = weight.sum(1)
+            # # src = torch.cat([src[:1],src_intra_group_fusion],0)
+            # sampled_inds = torch.topk(weight, dim=1, k=weight.shape[1] // 2)[1].transpose(0, 1)
+            #
+            # src_inter_group_fusion = torch.gather(src_inter_group_fusion, 0, sampled_inds[:, :, None].repeat(1, 1,
+            #                                                                                                  src_inter_group_fusion.shape[
+            #                                                                                                      -1]))
             
-            batch_dict['src_idx'] = torch.gather(batch_dict['src_idx'],0,sampled_inds)
+            batch_dict['src_idx'] = torch.gather(batch_dict['src_idx'],1,sampled_inds)
 
-            src = torch.cat([src[:1],src_inter_group_fusion],0)
+            src = torch.cat([src[:,:1],src_intra_group_fusion],1)
 
 
-        return src, torch.cat(src[:1].chunk(self.num_groups,1),0)
+        return src, torch.cat(src[:,:1].chunk(self.num_groups,0),1)
 
     def forward_pre(self, src,
                     pos: Optional[Tensor] = None):

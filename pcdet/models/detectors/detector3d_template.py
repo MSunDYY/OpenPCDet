@@ -344,7 +344,7 @@ class Detector3DTemplate(nn.Module):
         gt_boxes = data_dict['gt_boxes'][batch_index]
 
         if recall_dict.__len__() == 0:
-            recall_dict = {'gt': 0,'pred':0,'loss_cls':0.}
+            recall_dict = {'gt': 0,'pred':[0,0],'loss_cls':[0,0]}
 
             for cur_thresh in thresh_list:
                 recall_dict['roi_%s' % (str(cur_thresh))] = 0
