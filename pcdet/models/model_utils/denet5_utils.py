@@ -453,7 +453,7 @@ class TransformerEncoderLayer(nn.Module):
                      pos: Optional[Tensor] = None):
 
 
-        src_intra_group_fusion,weight,sampled_inds = self.mlp_mixer_3d(src[:,1:],return_weight=True,drop = self.layer_count<=self.config.enc_layers-1)
+        src_intra_group_fusion,weight,sampled_inds = self.mlp_mixer_3d(src[:,1:],return_weight=True,drop = self.layer_count>0)
 
 
         token = src[:,:1]
