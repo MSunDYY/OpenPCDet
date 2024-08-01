@@ -300,7 +300,7 @@ class TransformerEncoderLayer(nn.Module):
         if self.layer_count <= self.config.enc_layers - 1:
             src_all_groups = src[1:].view((src.shape[0] - 1) * self.num_groups, -1, src.shape[-1])
             src_groups_list = src_all_groups.chunk(self.num_groups, 0)
-
+            src_groups_list = [src_all_groups[torch.arange(src_all_groups.shape[0]//self.num_groups) * self.num_groups+i] for i in range(self.num_groups)]
             src_all_groups = torch.stack(src_groups_list, 0)
 
             src_max_groups = torch.max(src_all_groups, 1, keepdim=True).values

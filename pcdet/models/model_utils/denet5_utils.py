@@ -164,7 +164,7 @@ class Attention(nn.Module):
             self.ln1 = nn.LayerNorm(dim_LIN)
         self.fc_o = nn.Linear(dim_LIN, dim_LIN)
 
-    def forward(self, Q, K):
+    def forward(self, Q, K,drop=False):
         B = Q.shape[0]
         Q = self.fc_q(Q)
         K, V = self.fc_k(K), self.fc_v(K)
@@ -177,9 +177,10 @@ class Attention(nn.Module):
             temp = A.split(Q.size(0),dim=0)
             temp = torch.stack([tensor_ for tensor_ in temp], dim=0)
             weight = torch.mean(temp, dim=0)
-
-        sampled_inds = torch.topk(weight.sum(1),A.shape[-1]//2,1)[1]
-
+        if drop:
+            sampled_inds = torch.topk(weight.sum(1),A.shape[-1]//2,1)[1]
+        else:
+            sampled_inds = torch.topk(weight.sum(1),A.shape[-1],1)[1]
         O = torch.concat([(torch.gather(A[torch.arange(B)+B*i],1,sampled_inds[:,:,None].repeat(1,1,A.shape[-1])).bmm(V_[torch.arange(B)+B*i])) for i in range(self.num_heads)],dim=-1)
 
         return O,weight,sampled_inds
@@ -223,7 +224,7 @@ class SpatialDropBlock(nn.Module):
     def __init__(self, channels, config=None, dropout=0.0, batch_first=False):
         super().__init__()
 
-        self.mixer = Attention(channels,channels,channels, 8,)
+        self.mixer = Attention(channels,channels,channels, 8)
 
         self.dropout = nn.Dropout(dropout)
         self.norm = nn.LayerNorm(channels)
@@ -236,9 +237,9 @@ class SpatialDropBlock(nn.Module):
             nn.Linear(2 * channels, channels),
         )
 
-    def forward(self, src, return_weight=False):
+    def forward(self, src, return_weight=False,drop=False):
 
-        src2, weight,sampled_inds = self.mixer(src, src)
+        src2, weight,sampled_inds = self.mixer(src, src,drop=drop)
 
         src =torch.gather(src,1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))  + self.dropout(src2)
         src_mixer = self.norm(src)
@@ -432,7 +433,7 @@ class TransformerEncoderLayer(nn.Module):
         self.normalize_before = normalize_before
 
         self.mlp_mixer_3d = SpatialDropBlock(
-                        self.config.hidden_dim, 
+                        self.config.hidden_dim,
                         self.config.use_mlp_mixer
         )
 
@@ -452,7 +453,7 @@ class TransformerEncoderLayer(nn.Module):
                      pos: Optional[Tensor] = None):
 
 
-        src_intra_group_fusion,weight,sampled_inds = self.mlp_mixer_3d(src[:,1:],return_weight=True)
+        src_intra_group_fusion,weight,sampled_inds = self.mlp_mixer_3d(src[:,1:],return_weight=True,drop = self.layer_count<=self.config.enc_layers-1)
 
 
         token = src[:,:1]
