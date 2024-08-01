@@ -164,7 +164,7 @@ class Attention(nn.Module):
             self.ln1 = nn.LayerNorm(dim_LIN)
         self.fc_o = nn.Linear(dim_LIN, dim_LIN)
 
-    def forward(self, Q, K,drop=False):
+    def forward(self, Q, K,drop=True):
         B = Q.shape[0]
         Q = self.fc_q(Q)
         K, V = self.fc_k(K), self.fc_v(K)
@@ -237,7 +237,7 @@ class SpatialDropBlock(nn.Module):
             nn.Linear(2 * channels, channels),
         )
 
-    def forward(self, src, return_weight=False,drop=False):
+    def forward(self, src, return_weight=False,drop=True):
 
         src2, weight,sampled_inds = self.mixer(src, src,drop=drop)
 
