@@ -180,7 +180,7 @@ class Attention(nn.Module):
 
         sampled_inds = torch.topk(weight.sum(1),A.shape[-1]//2,1)[1]
 
-        O = torch.concat([(torch.gather(A[torch.arange(B)*self.num_heads+i],1,sampled_inds[:,:,None].repeat(1,1,A.shape[-1])).bmm(V_[torch.arange(B)*self.num_heads+i])) for i in range(self.num_heads)],dim=-1)
+        O = torch.concat([(torch.gather(A[torch.arange(B)+B*i],1,sampled_inds[:,:,None].repeat(1,1,A.shape[-1])).bmm(V_[torch.arange(B)+B*i])) for i in range(self.num_heads)],dim=-1)
 
         return O,weight,sampled_inds
 
