@@ -152,13 +152,12 @@ class SpatialMixerBlockCompress(nn.Module):
         return src0d
 
 class Attention(nn.Module):
-    def __init__(self, dim_Q, dim_K, dim_LIN, num_heads, ln=False):
+    def __init__(self, dim, dim_K, dim_LIN, num_heads, ln=False):
         super(Attention, self).__init__()
         self.dim_LIN = dim_LIN
         self.num_heads = num_heads
-        self.fc_q = nn.Linear(dim_Q, dim_LIN)
-        self.fc_k = nn.Linear(dim_K, dim_LIN)
-        self.fc_v = nn.Linear(dim_K, dim_LIN)
+        self.fc = nn.Linear(dim,dim*3)
+
         if ln:
             self.ln0 = nn.LayerNorm(dim_LIN)
             self.ln1 = nn.LayerNorm(dim_LIN)
@@ -166,8 +165,8 @@ class Attention(nn.Module):
 
     def forward(self, Q, K,drop=True):
         B = Q.shape[0]
-        Q = self.fc_q(Q)
-        K, V = self.fc_k(K), self.fc_v(K)
+
+        Q , K, V = self.fc(Q).chunk(3,-1)
         dim_split = self.dim_LIN // self.num_heads
         Q_ = torch.cat(Q.split(dim_split, 2), 0)
         K_ = torch.cat(K.split(dim_split, 2), 0)
@@ -179,11 +178,14 @@ class Attention(nn.Module):
             weight = torch.mean(temp, dim=0)
         if drop:
             sampled_inds = torch.topk(weight.sum(1),A.shape[-1]//2,1)[1]
+            O = torch.concat([(torch.gather(A[torch.arange(B) + B * i], 1,
+                                            sampled_inds[:, :, None].repeat(1, 1, A.shape[-1])).bmm(
+                V_[torch.arange(B) + B * i])) for i in range(self.num_heads)], dim=-1)
+            return self.fc(O), weight, sampled_inds
         else:
-            sampled_inds = torch.topk(weight.sum(1),A.shape[-1],1)[1]
-        O = torch.concat([(torch.gather(A[torch.arange(B)+B*i],1,sampled_inds[:,:,None].repeat(1,1,A.shape[-1])).bmm(V_[torch.arange(B)+B*i])) for i in range(self.num_heads)],dim=-1)
+            O =torch.concat( A.bmm(V_).chunk(self.num_heads,0),dim=-1)
+            return self.fc(O),None,None
 
-        return O,weight,sampled_inds
 
 
 
@@ -240,8 +242,9 @@ class SpatialDropBlock(nn.Module):
     def forward(self, src, return_weight=False,drop=True):
 
         src2, weight,sampled_inds = self.mixer(src, src,drop=drop)
-
-        src =torch.gather(src,1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))  + self.dropout(src2)
+        if drop:
+            src =torch.gather(src,1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))
+        src = src+self.dropout(src2)
         src_mixer = self.norm(src)
 
         src_mixer = src_mixer + self.ffn(src_mixer)
@@ -437,9 +440,9 @@ class TransformerEncoderLayer(nn.Module):
                         self.config.use_mlp_mixer
         )
 
-        self.point_attention = CrossMixerBlock(
-            channels=96
-        )
+        # self.point_attention = CrossMixerBlock(
+        #     channels=96
+        # )
 
         if self.layer_count<=self.config.enc_layers-1 and config.get('sampler',False) is not False:
             from pcdet.ops.pointnet2.pointnet2_batch import pointnet2_utils
@@ -453,7 +456,7 @@ class TransformerEncoderLayer(nn.Module):
                      pos: Optional[Tensor] = None):
 
 
-        src_intra_group_fusion,weight,sampled_inds = self.mlp_mixer_3d(src[:,1:],return_weight=True,drop = self.layer_count>0)
+        src_intra_group_fusion,weight,sampled_inds = self.mlp_mixer_3d(src[:,1:],return_weight=True,drop = self.layer_count>1)
 
 
         token = src[:,:1]
@@ -472,8 +475,8 @@ class TransformerEncoderLayer(nn.Module):
         token = self.norm2(token)
         src = torch.cat([token,src[:,1:]],1)
 
-
-        if self.layer_count <= self.config.enc_layers-1:
+        src = torch.cat([src[:, :1], src_intra_group_fusion], 1)
+        if self.layer_count > 1:
 
             # num_points = src.shape[0]-1
             # src_all_groups = src_intra_group_fusion.view((src_intra_group_fusion.shape[0])*self.num_groups,-1,src_intra_group_fusion.shape[-1])
@@ -499,9 +502,6 @@ class TransformerEncoderLayer(nn.Module):
             #                                                                                                      -1]))
             
             batch_dict['src_idx'] = torch.gather(batch_dict['src_idx'],1,sampled_inds)
-
-            src = torch.cat([src[:,:1],src_intra_group_fusion],1)
-
 
         return src, torch.cat(src[:,:1].chunk(self.num_groups,0),1)
 
