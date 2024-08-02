@@ -460,6 +460,7 @@ class TransformerEncoderLayer(nn.Module):
             # # src = torch.cat([src[:1],src_intra_group_fusion],0)
             sampled_inds = torch.topk(weight.sum(1), dim=1, k=weight.shape[1] // 2)[1].transpose(0, 1)
             #
+
             src_intra_group_fusion = torch.gather(src_intra_group_fusion, 0, sampled_inds[:, :, None].repeat(1, 1,
                                                                                                              src_intra_group_fusion.shape[
                                                                                                                  -1]))
