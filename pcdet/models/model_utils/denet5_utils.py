@@ -176,11 +176,15 @@ class Attention(nn.Module):
             temp = A.split(Q.size(0),dim=0)
             temp = torch.stack([tensor_ for tensor_ in temp], dim=0)
             weight = torch.mean(temp, dim=0)
+
         if drop:
             sampled_inds = torch.topk(weight.sum(1),A.shape[-1]//2,1)[1]
-            O = torch.concat([(torch.gather(A[torch.arange(B) + B * i], 1,
-                                            sampled_inds[:, :, None].repeat(1, 1, A.shape[-1])).bmm(
-                V_[torch.arange(B) + B * i])) for i in range(self.num_heads)], dim=-1)
+            sampled_inds_ = torch.concat([sampled_inds for i in range(self.num_heads)],dim=0)
+
+            O = torch.gather(A, 1,
+                                            sampled_inds_[:,:,None].repeat(1, 1,A.shape[-1])).bmm(
+                V_)
+            O = torch.concat(O.chunk(self.num_heads,0),-1)
             return self.fc_o(O), weight, sampled_inds
         else:
             O =torch.concat( A.bmm(V_).chunk(self.num_heads,0),dim=-1)
