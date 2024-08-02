@@ -171,7 +171,8 @@ class Attention(nn.Module):
         Q_ = torch.cat(Q.split(dim_split, 2), 0)
         K_ = torch.cat(K.split(dim_split, 2), 0)
         V_ = torch.cat(V.split(dim_split, 2), 0)
-        A = torch.softmax(Q_.bmm(K_.transpose(1,2)) / math.sqrt(dim_split), 2)
+        Q_ = Q_/math.sqrt(dim_split)
+        A = torch.softmax(Q_.bmm(K_.transpose(1,2)), 2)
         if self.num_heads >= 2:
             temp = A.split(Q.size(0),dim=0)
             temp = torch.stack([tensor_ for tensor_ in temp], dim=0)
@@ -179,16 +180,14 @@ class Attention(nn.Module):
 
         if drop:
             sampled_inds = torch.topk(weight.sum(1),A.shape[-1]//2,1)[1]
-            sampled_inds_ = torch.concat([sampled_inds for i in range(self.num_heads)],dim=0)
+            sampled_inds_ = sampled_inds.repeat(self.num_heads,1)
 
-            O = torch.gather(A, 1,
-                                            sampled_inds_[:,:,None].repeat(1, 1,A.shape[-1])).bmm(
-                V_)
+            O = torch.gather(A, 1,sampled_inds_[:,:,None].repeat(1, 1,A.shape[-1])).bmm(V_)
             O = torch.concat(O.chunk(self.num_heads,0),-1)
             return self.fc_o(O), weight, sampled_inds
         else:
             O =torch.concat( A.bmm(V_).chunk(self.num_heads,0),dim=-1)
-            return self.fc_o(O),None,None
+            return self.fc_o(O),weight,None
 
 
 
@@ -245,11 +244,11 @@ class SpatialDropBlock(nn.Module):
 
     def forward(self, src, return_weight=False,drop=True):
 
-        src2,weight,sampled_inds = self.mixer(src,drop=drop)
+        src2,weight,sampled_inds = self.mixer(src,drop=False)
         if drop:
-            # sampled_inds = torch.topk(weight.sum(1),weight.shape[-1]//2,1)[1]
+            sampled_inds = torch.topk(weight.sum(1),weight.shape[-1]//2,1)[1]
             src =torch.gather(src,1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))
-            # src2 = torch.gather(src2,1,sampled_inds[:,:,None].repeat(1,1,src2.shape[-1]))
+            src2 = torch.gather(src2,1,sampled_inds[:,:,None].repeat(1,1,src2.shape[-1]))
         else:
             sampled_inds = None
         src = src+self.dropout(src2)
