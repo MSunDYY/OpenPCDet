@@ -181,10 +181,10 @@ class Attention(nn.Module):
             O = torch.concat([(torch.gather(A[torch.arange(B) + B * i], 1,
                                             sampled_inds[:, :, None].repeat(1, 1, A.shape[-1])).bmm(
                 V_[torch.arange(B) + B * i])) for i in range(self.num_heads)], dim=-1)
-            return self.fc(O), weight, sampled_inds
+            return self.fc_o(O), weight, sampled_inds
         else:
             O =torch.concat( A.bmm(V_).chunk(self.num_heads,0),dim=-1)
-            return self.fc(O),None,None
+            return self.fc_o(O),None,None
 
 
 
@@ -226,7 +226,7 @@ class SpatialDropBlock(nn.Module):
     def __init__(self, channels, config=None, dropout=0.0, batch_first=False):
         super().__init__()
 
-        self.mixer = Attention(channels,channels,channels, 8)
+        self.mixer = nn.MultiheadAttention(channels,8,dropout,batch_first= True)
 
         self.dropout = nn.Dropout(dropout)
         self.norm = nn.LayerNorm(channels)
@@ -241,9 +241,13 @@ class SpatialDropBlock(nn.Module):
 
     def forward(self, src, return_weight=False,drop=True):
 
-        src2, weight,sampled_inds = self.mixer(src, src,drop=drop)
+        src2,weight = self.mixer(src, src,src)
         if drop:
+            sampled_inds = torch.topk(weight.sum(1),weight.shape[-1]//2,1)[1]
             src =torch.gather(src,1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))
+            src2 = torch.gather(src2,1,sampled_inds[:,:,None].repeat(1,1,src2.shape[-1]))
+        else:
+            sampled_inds = None
         src = src+self.dropout(src2)
         src_mixer = self.norm(src)
 
@@ -437,7 +441,8 @@ class TransformerEncoderLayer(nn.Module):
 
         self.mlp_mixer_3d = SpatialDropBlock(
                         self.config.hidden_dim,
-                        self.config.use_mlp_mixer
+                        self.config.use_mlp_mixer,
+
         )
 
         # self.point_attention = CrossMixerBlock(
