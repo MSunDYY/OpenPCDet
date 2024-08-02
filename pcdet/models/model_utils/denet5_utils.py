@@ -446,7 +446,7 @@ class TransformerEncoderLayer(nn.Module):
         self.mlp_mixer_3d = SpatialDropBlock(
                         self.config.hidden_dim,
                         self.config.use_mlp_mixer,
-
+                        dropout=dropout,
         )
 
         # self.point_attention = CrossMixerBlock(
