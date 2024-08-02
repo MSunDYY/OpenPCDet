@@ -152,18 +152,18 @@ class SpatialMixerBlockCompress(nn.Module):
         return src0d
 
 class Attention(nn.Module):
-    def __init__(self, dim, dim_K, dim_LIN, num_heads, ln=False):
+    def __init__(self, dim, num_heads, ln=False):
         super(Attention, self).__init__()
-        self.dim_LIN = dim_LIN
+        self.dim_LIN = dim
         self.num_heads = num_heads
         self.fc = nn.Linear(dim,dim*3)
 
         if ln:
-            self.ln0 = nn.LayerNorm(dim_LIN)
-            self.ln1 = nn.LayerNorm(dim_LIN)
-        self.fc_o = nn.Linear(dim_LIN, dim_LIN)
+            self.ln0 = nn.LayerNorm(dim)
+            self.ln1 = nn.LayerNorm(dim)
+        self.fc_o = nn.Linear(dim, dim)
 
-    def forward(self, Q, K,drop=True):
+    def forward(self, Q, drop=True):
         B = Q.shape[0]
 
         Q , K, V = self.fc(Q).chunk(3,-1)
@@ -171,7 +171,7 @@ class Attention(nn.Module):
         Q_ = torch.cat(Q.split(dim_split, 2), 0)
         K_ = torch.cat(K.split(dim_split, 2), 0)
         V_ = torch.cat(V.split(dim_split, 2), 0)
-        A = torch.softmax(Q_.bmm(K_.transpose(1,2)) / math.sqrt(self.dim_LIN), 2)
+        A = torch.softmax(Q_.bmm(K_.transpose(1,2)) / math.sqrt(dim_split), 2)
         if self.num_heads >= 2:
             temp = A.split(Q.size(0),dim=0)
             temp = torch.stack([tensor_ for tensor_ in temp], dim=0)
@@ -226,8 +226,8 @@ class SpatialDropBlock(nn.Module):
     def __init__(self, channels, config=None, dropout=0.0, batch_first=False):
         super().__init__()
 
-        self.mixer = nn.MultiheadAttention(channels,8,dropout,batch_first= True)
-
+        # self.mixer = nn.MultiheadAttention(channels,8,dropout,batch_first= True)
+        self.mixer = Attention(channels, 8, )
         self.dropout = nn.Dropout(dropout)
         self.norm = nn.LayerNorm(channels)
 
@@ -241,11 +241,11 @@ class SpatialDropBlock(nn.Module):
 
     def forward(self, src, return_weight=False,drop=True):
 
-        src2,weight = self.mixer(src, src,src)
+        src2,weight,sampled_inds = self.mixer(src,drop=drop)
         if drop:
-            sampled_inds = torch.topk(weight.sum(1),weight.shape[-1]//2,1)[1]
+            # sampled_inds = torch.topk(weight.sum(1),weight.shape[-1]//2,1)[1]
             src =torch.gather(src,1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))
-            src2 = torch.gather(src2,1,sampled_inds[:,:,None].repeat(1,1,src2.shape[-1]))
+            # src2 = torch.gather(src2,1,sampled_inds[:,:,None].repeat(1,1,src2.shape[-1]))
         else:
             sampled_inds = None
         src = src+self.dropout(src2)
