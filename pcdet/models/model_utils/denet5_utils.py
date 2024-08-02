@@ -152,12 +152,12 @@ class SpatialMixerBlockCompress(nn.Module):
         return src0d
 
 class Attention(nn.Module):
-    def __init__(self, dim, num_heads, ln=False):
+    def __init__(self, dim, num_heads,dropout = 0.0, ln=False):
         super(Attention, self).__init__()
         self.dim_LIN = dim
         self.num_heads = num_heads
         self.fc = nn.Linear(dim,dim*3)
-
+        self.dropout = nn.Dropout(dropout)
         if ln:
             self.ln0 = nn.LayerNorm(dim)
             self.ln1 = nn.LayerNorm(dim)
@@ -173,6 +173,7 @@ class Attention(nn.Module):
         V_ = torch.cat(V.split(dim_split, 2), 0)
         Q_ = Q_/math.sqrt(dim_split)
         A = torch.softmax(Q_.bmm(K_.transpose(1,2)), 2)
+        A=self.dropout(A)
         if self.num_heads >= 2:
             temp = A.split(Q.size(0),dim=0)
             temp = torch.stack([tensor_ for tensor_ in temp], dim=0)
@@ -230,7 +231,7 @@ class SpatialDropBlock(nn.Module):
         super().__init__()
 
         # self.mixer = nn.MultiheadAttention(channels,8,dropout,batch_first= True)
-        self.mixer = Attention(channels, 8, )
+        self.mixer = Attention(channels, 8,dropout=dropout )
         self.dropout = nn.Dropout(dropout)
         self.norm = nn.LayerNorm(channels)
 
