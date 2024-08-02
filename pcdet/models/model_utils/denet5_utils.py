@@ -481,6 +481,7 @@ class TransformerEncoderLayer(nn.Module):
         src = torch.cat([token,src[:,1:]],1)
 
         src = torch.cat([src[:, :1], src_intra_group_fusion], 1)
+
         if self.layer_count > 1:
 
             # num_points = src.shape[0]-1
