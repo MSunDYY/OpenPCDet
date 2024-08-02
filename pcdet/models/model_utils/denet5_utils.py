@@ -441,32 +441,32 @@ class TransformerEncoderLayer(nn.Module):
 
         if self.layer_count <= self.config.enc_layers-1:
 
-            num_points = src.shape[0]-1
-            src_all_groups = src_intra_group_fusion.view((src_intra_group_fusion.shape[0])*self.num_groups,-1,src_intra_group_fusion.shape[-1])
-            # src_groups_list = src_all_groups.chunk(self.num_groups,0)
-            # src_groups_list = [src_all_groups[torch.arange(sampled_inds.shape[0])*self.num_groups+i] for i in range(self.num_groups)]
-
-            src_all_groups = src_all_groups.unsqueeze(0)
-            src_max_groups = torch.max(src_all_groups, 1, keepdim=True).values
-            src_past_groups =  torch.cat([src_all_groups,\
-                 src_max_groups.repeat(1, src_intra_group_fusion.shape[0], 1, 1)], -1)
-            src_all_groups = self.cross_norm_1(self.cross_conv_1(src_past_groups) + src_all_groups)
-
-
-
-            src_inter_group_fusion = src_all_groups.permute(1, 0, 2, 3).contiguous().flatten(1,2)
-
-            weight = weight.sum(1)
-            # src = torch.cat([src[:1],src_intra_group_fusion],0)
-            sampled_inds = torch.topk(weight, dim=1, k=weight.shape[1] // 2)[1].transpose(0, 1)
-
-            src_inter_group_fusion = torch.gather(src_inter_group_fusion, 0, sampled_inds[:, :, None].repeat(1, 1,
-                                                                                                             src_inter_group_fusion.shape[
+            # num_points = src.shape[0]-1
+            # src_all_groups = src_intra_group_fusion.view((src_intra_group_fusion.shape[0])*self.num_groups,-1,src_intra_group_fusion.shape[-1])
+            # # src_groups_list = src_all_groups.chunk(self.num_groups,0)
+            # # src_groups_list = [src_all_groups[torch.arange(sampled_inds.shape[0])*self.num_groups+i] for i in range(self.num_groups)]
+            #
+            # src_all_groups = src_all_groups.unsqueeze(0)
+            # src_max_groups = torch.max(src_all_groups, 1, keepdim=True).values
+            # src_past_groups =  torch.cat([src_all_groups,\
+            #      src_max_groups.repeat(1, src_intra_group_fusion.shape[0], 1, 1)], -1)
+            # src_all_groups = self.cross_norm_1(self.cross_conv_1(src_past_groups) + src_all_groups)
+            #
+            #
+            #
+            # src_inter_group_fusion = src_all_groups.permute(1, 0, 2, 3).contiguous().flatten(1,2)
+            #
+            # weight = weight.sum(1)
+            # # src = torch.cat([src[:1],src_intra_group_fusion],0)
+            sampled_inds = torch.topk(weight.sum(1), dim=1, k=weight.shape[1] // 2)[1].transpose(0, 1)
+            #
+            src_intra_group_fusion = torch.gather(src_intra_group_fusion, 0, sampled_inds[:, :, None].repeat(1, 1,
+                                                                                                             src_intra_group_fusion.shape[
                                                                                                                  -1]))
             
             batch_dict['src_idx'] = torch.gather(batch_dict['src_idx'],0,sampled_inds)
 
-            src = torch.cat([src[:1],src_inter_group_fusion],0)
+            src = torch.cat([src[:1],src_intra_group_fusion],0)
 
 
         return src, torch.cat(src[:1].chunk(self.num_groups,1),0)
