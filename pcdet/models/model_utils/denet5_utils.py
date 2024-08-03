@@ -755,7 +755,7 @@ class VoxelPointsSampler(nn.Module):
                 point_mask_pre = torch.arange(self.k,device=device)[None,:].repeat(len(key_points_pre),1)
                 point_mask_pre = point_mask_pre<num_points_pre[:,None]
                 key_points_pre = key_points_pre[point_mask_pre]
-
+                points_pre_list.append(key_points_pre)
             num_points = num_points[voxel_mask]
             key_points = voxel[voxel_mask, :]
 
@@ -776,7 +776,7 @@ class VoxelPointsSampler(nn.Module):
             src.append(key_points)
             src_idx_list.append(src_idx)
             query_points_list.append(query_points)
-            points_pre_list.append(key_points_pre)
+
 
             if not self.training:
                 from pcdet.ops.roiaware_pool3d import roiaware_pool3d_utils
@@ -799,7 +799,7 @@ class VoxelPointsSampler(nn.Module):
                 #     print('sdf')
 
             # src.append(torch.stack(src_points))
-        return torch.concat(src, dim=0),torch.concat(src_idx_list,dim=0),torch.concat(query_points_list,dim=0),torch.concat(points_pre_list,dim=0)
+        return torch.concat(src, dim=0),torch.concat(src_idx_list,dim=0),torch.concat(query_points_list,dim=0),torch.concat(points_pre_list,dim=0) if not self.training else None
 
     def forward1(self, batch_size, trajectory_rois, num_sample, batch_dict, start_idx=0, num_rois=None):
         src = list()
