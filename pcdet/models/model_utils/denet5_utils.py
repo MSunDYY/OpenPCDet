@@ -230,8 +230,8 @@ class SpatialDropBlock(nn.Module):
     def __init__(self, channels, config=None, dropout=0.0, batch_first=False):
         super().__init__()
 
-        # self.mixer = nn.MultiheadAttention(channels,8,dropout,batch_first= True)
-        self.mixer = Attention(channels, 8,dropout=dropout )
+        self.mixer = nn.MultiheadAttention(channels,8,dropout,batch_first= True)
+        # self.mixer = Attention(channels, 8,dropout=dropout )
         self.dropout = nn.Dropout(dropout)
         self.norm = nn.LayerNorm(channels)
 
@@ -245,7 +245,7 @@ class SpatialDropBlock(nn.Module):
 
     def forward(self, src, return_weight=False,drop=True):
 
-        src2,weight,sampled_inds = self.mixer(src,drop=False)
+        src2,weight = self.mixer(src,src,src)
         if drop:
             sampled_inds = torch.topk(weight.sum(1),weight.shape[-1]//2,1)[1]
             src =torch.gather(src,1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))
@@ -742,7 +742,7 @@ class VoxelPointsSampler(nn.Module):
             if not self.training:
                 pre_roi = batch_dict['roi_list'][bs_idx,1:6]
                 pre_roi[:,:,:2]-=pre_roi[:,:,7:]*torch.clamp(torch.arange(1,6,device=device),max=batch_dict['sample_idx'][0].item()+3)[:,None,None]
-                pre_roi[:,:,3:5]*=1.5
+                pre_roi[:,:,3:5]*=1.0
                 pre_roi = pre_roi.flatten(0,1)
                 pre_roi = pre_roi[pre_roi[:,2]!=0]
                 query_coords_pre = (pre_roi[:,:2] - self.pc_start) / self.voxel_size
@@ -776,7 +776,7 @@ class VoxelPointsSampler(nn.Module):
             src.append(key_points)
             src_idx_list.append(src_idx)
             query_points_list.append(query_points)
-            points_pre_list.append(torch.concat([key_points_pre,points_pre],dim=0) if not self.training else points_pre)
+            points_pre_list.append(key_points_pre)
 
             if not self.training:
                 from pcdet.ops.roiaware_pool3d import roiaware_pool3d_utils
