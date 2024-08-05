@@ -198,7 +198,7 @@ class MultiheadAttention(nn.Module):
         self.fc = nn.Linear(dim,dim*3)
         self.dropout = nn.Dropout(dropout)
         self.fc_o = nn.Linear(dim, dim)
-
+        self._reset_parameters()
     def _reset_parameters(self):
         nn.init.xavier_uniform_(self.fc.weight)
         nn.init.constant_(self.fc.bias,0)
