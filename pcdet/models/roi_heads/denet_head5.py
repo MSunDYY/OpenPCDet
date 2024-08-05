@@ -925,12 +925,10 @@ class DENet5Head(RoIHeadTemplate):
 
         batch_dict['cur_frame_idx'] = 0
         proposals_list = batch_dict['proposals_list']
-        trajectory_rois = self.generate_trajectory_msf(cur_batch_boxes, batch_dict)
-
-        # batch_dict['traj_memory'] = trajectory_rois
+        trajectory_rois = batch_dict['trajectory_rois']
         batch_dict['has_class_labels'] = True
-        # batch_dict['trajectory_rois'] = trajectory_rois
-        batch_dict['trajectory_rois'] = trajectory_rois
+
+
         if self.training :
             if not self.model_cfg.get('PRE_AUG', False):
                 targets_dict = self.assign_targets(batch_dict)

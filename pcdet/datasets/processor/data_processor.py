@@ -600,7 +600,7 @@ class DataProcessor(object):
             gt_of_rois[:,  6] = heading_label
             targets_dict['gt_of_rois'] = gt_of_rois
             data_dict['targets_dict'] = targets_dict
-            poped_key = ['trajectory_rois','num_frames','valid_length']
+            poped_key = ['num_frames','valid_length']
             for key in poped_key:
                 data_dict.pop(key)
             return data_dict
