@@ -195,13 +195,15 @@ class MultiheadAttention(nn.Module):
         super(MultiheadAttention, self).__init__()
         self.dim_LIN = dim
         self.num_heads = num_heads
-        self.fc = nn.Linear(dim,dim*3)
+        self.fc_q = nn.Linear(dim,dim)
+        self.fc_k = nn.Linear(dim,dim)
+        self.fc_v = nn.Linear(dim,dim)
         self.dropout = nn.Dropout(dropout)
         self.fc_o = nn.Linear(dim, dim)
 
     def forward(self, Q,K,V, drop=True):
         B,T,D = Q.shape
-        Q,K, V = self.fc(Q).chunk(3,-1)
+        Q,K, V = self.fc_q(Q),self.fc_k(K) ,self.fc_v(V)
         dim_split = self.dim_LIN // self.num_heads
         Q = Q.view(B,T,self.num_heads,dim_split).transpose(1,2).contiguous().view(B*self.num_heads,T,dim_split)
         K = K.view(B,T,self.num_heads,dim_split).transpose(1,2).contiguous().view(B*self.num_heads,T,dim_split)
