@@ -1,6 +1,7 @@
 from os import getgrouplist
 import torch.nn as nn
 import torch
+from torch.nn.parameter import Parameter
 import numpy as np
 import torch.nn.functional as F
 from typing import Optional, List
@@ -11,6 +12,8 @@ from pcdet.ops.pointnet2.pointnet2_stack.pointnet2_modules import StackSAModuleM
 from pcdet.ops.pointnet2.pointnet2_batch.pointnet2_modules import PointnetSAModuleMSG
 from pcdet import device
 import math
+from torch.nn.functional import linear
+from torch.nn.modules.linear import NonDynamicallyQuantizableLinear
 # from torch.utils.cpp_extension import load
 # scatter = load(name='scatter', sources=['../cuda/scatter.cpp', '../cuda/scatter.cu'])
 def unflatten(tensor,dim,sizes):
@@ -195,19 +198,23 @@ class MultiheadAttention(nn.Module):
         super(MultiheadAttention, self).__init__()
         self.dim_LIN = dim
         self.num_heads = num_heads
-        self.fc = nn.Linear(dim,dim*3)
+        self.in_proj_weight = Parameter(torch.empty((3 * dim, dim)))
+        self.in_proj_bias = Parameter(torch.empty(3 * dim))
         self.dropout = nn.Dropout(dropout)
+
+        self.out_proj = NonDynamicallyQuantizableLinear(dim, dim, bias=True)
+
         self.fc_o = nn.Linear(dim, dim)
         self._reset_parameters()
     def _reset_parameters(self):
-        nn.init.xavier_uniform_(self.fc.weight)
-        nn.init.constant_(self.fc.bias,0)
-        nn.init.xavier_uniform_(self.fc_o.weight)
-        nn.init.constant_(self.fc_o.bias,0)
+        nn.init.xavier_uniform_(self.in_proj_weight)
+        nn.init.constant_(self.in_proj_bias,0)
+
+        nn.init.constant_(self.out_proj.bias,0)
 
     def forward(self, Q,K,V, drop=True):
         B,T,D = Q.shape
-        Q,K, V = self.fc(Q).chunk(3,-1)
+        Q,K, V = linear(Q,self.in_proj_weight,self.in_proj_bias).chunk(3,-1)
         dim_split = self.dim_LIN // self.num_heads
         Q = Q.view(B,T,self.num_heads,dim_split).transpose(1,2).contiguous().view(B*self.num_heads,T,dim_split)
         K = K.view(B,T,self.num_heads,dim_split).transpose(1,2).contiguous().view(B*self.num_heads,T,dim_split)
@@ -218,7 +225,7 @@ class MultiheadAttention(nn.Module):
 
         O = torch.bmm(A,V)
         O = O.view(B,self.num_heads,T,dim_split).transpose(1,2).contiguous().view(B,T,self.dim_LIN)
-        O = self.fc_o(O)
+        O = linear(O,self.out_proj.weight,self.out_proj.bias)
         weight = A.view(B,self.num_heads,T,T).mean(dim=1)
         return O,weight
 
@@ -260,7 +267,7 @@ class SpatialDropBlock(nn.Module):
     def __init__(self, channels, config=None, dropout=0.0, batch_first=False):
         super().__init__()
 
-        self.mixer = nn.MultiheadAttention(channels,8,dropout,batch_first= True)
+        self.mixer = MultiheadAttention(channels,8,dropout,batch_first= True)
         # self.mixer = Attention(channels, 8,dropout=dropout )
         self.dropout = nn.Dropout(dropout)
         self.norm = nn.LayerNorm(channels)
