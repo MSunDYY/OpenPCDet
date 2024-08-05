@@ -601,6 +601,8 @@ class DataProcessor(object):
             targets_dict['gt_of_rois'] = gt_of_rois
             data_dict['targets_dict'] = targets_dict
             poped_key = ['num_frames','valid_length']
+            if self.training:
+                poped_key.append('trajectory_rois')
             for key in poped_key:
                 data_dict.pop(key)
             return data_dict

@@ -925,7 +925,7 @@ class DENet5Head(RoIHeadTemplate):
 
         batch_dict['cur_frame_idx'] = 0
         proposals_list = batch_dict['proposals_list']
-        trajectory_rois = batch_dict['trajectory_rois']
+
         batch_dict['has_class_labels'] = True
 
 
@@ -943,6 +943,7 @@ class DENet5Head(RoIHeadTemplate):
             empty_mask = batch_dict['roi_boxes'][:,:,:6].sum(-1)==0
             valid_length = targets_dict['valid_length']
         else:
+            trajectory_rois = batch_dict['trajectory_rois']
             empty_mask = batch_dict['roi_boxes'][:,:,:6].sum(-1)==0
             batch_dict['valid_traj_mask'] = ~empty_mask
             batch_dict['roi_boxes'] = trajectory_rois[:,0]
