@@ -128,8 +128,8 @@ class DataProcessor(object):
             """
 
             if config.REG_AUG_METHOD == 'single':
-                pos_shift = (torch.rand(3, device=box3d.device) - 0.5)  # [-0.5 ~ 0.5]
-                hwl_scale = (torch.rand(3, device=box3d.device) - 0.5) / (0.5 / 0.15) + 1.0  #
+                pos_shift = (torch.rand(3, device=box3d.device) - 0.5)*0.8  # [-0.5 ~ 0.5]
+                hwl_scale = (torch.rand(3, device=box3d.device) - 0.5) / (0.5 / 0.12) + 1.0  #
                 angle_rot = (torch.rand(1, device=box3d.device) - 0.5) / (0.5 / (np.pi / 12))  # [-pi/12 ~ pi/12]
                 aug_box3d = torch.cat(
                     [box3d[0:3] + pos_shift, box3d[3:6] * hwl_scale, box3d[6:7] + angle_rot, box3d[7:]], dim=0)
@@ -244,14 +244,20 @@ class DataProcessor(object):
             # trajectory_rois[:, 0, :, :] = cur_batch_boxes
             batch_dict['valid_length'] = torch.ones(num_frames, trajectory_rois.shape[1])
             # batch_dict['roi_scores'] = batch_dict['roi_scores'][:, :, None].repeat(1, 1, num_frames)
+            roi_list = batch_dict.get('roi_list' , None)
 
             # simply propagate proposal based on velocity
             for i in range(1, num_frames):
-                frame = torch.zeros_like(cur_batch_boxes)
-                frame[:, 0:2] = cur_batch_boxes[:, 0:2] + (i * cur_batch_boxes[:, 7:9] if batch_dict['sample_idx']-i>=0 else 0)
-                frame[:, 2:] = cur_batch_boxes[:, 2:]
+                frame = trajectory_rois[i-1].clone()
+                frame[:, 0:2] = frame[:, 0:2] + (frame[:, 7:9] if batch_dict['sample_idx']-i>=0 else 0)
 
+                if i%2==0 and roi_list is not None:
+                    iou3d = iou3d_nms_utils.boxes_iou3d_cpu(frame[:,:7],roi_list[i,:,:7])
+                    max_overlaps,gt_assignment = iou3d.max(-1)
+                    fg_inds = (max_overlaps>0.5).nonzero()
+                    frame[fg_inds] = roi_list[i,gt_assignment[fg_inds]]
                 trajectory_rois[i, :, :] = frame
+
 
             return trajectory_rois
 
@@ -407,11 +413,6 @@ class DataProcessor(object):
             num_rois = max_overlaps.shape[0]
             sampled_inds, fg_inds, bg_inds = subsample_rois(
                 max_overlaps=max_overlaps[torch.arange(num_rois)],config=config)
-
-
-
-
-            
 
             sampled_inds = torch.concat([fg_inds, bg_inds], dim=0)
             if config.get('USE_OVERLAP_ROI',False):

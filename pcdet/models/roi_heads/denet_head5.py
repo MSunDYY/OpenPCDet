@@ -329,11 +329,11 @@ class KPTransformer(nn.Module):
         self.Attention = SpatialDropBlock(self.channels,dropout=0.1,batch_first=True)
         self.Attention2 = SpatialDropBlock(self.channels,dropout=0.1,batch_first=True)
         self.Attention3 = SpatialMixerBlock(self.channels,dropout=0.1,batch_first=True)
-        self.Crossatten1= CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
-        self.Crossatten2 = CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
+        # self.Crossatten1= CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
+        # self.Crossatten2 = CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
 
-        self.decoder_layer1 = CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
-        self.decoder_layer2 = CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
+        # self.decoder_layer1 = CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
+        # self.decoder_layer2 = CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
         self.decoder_layer3 = CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
         self.pointnet = nn.Sequential(
             nn.Conv1d(self.channels,self.channels*2,1),
@@ -386,10 +386,10 @@ class KPTransformer(nn.Module):
         # token_list.append(token)
         # src_new = torch.gather(src,1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))
         src_new = src_new.reshape(-1,self.num_groups*src_new.shape[1],src_new.shape[-1])
-        src_new = self.Attention3(src_new)
+        src_new = self.Attention3(src_new,return_weight = False)
 
-        src_cur = self.Crossatten2(src_cur,src_new)
-        token = self.decoder_layer3(token,src_cur)
+        # src_cur = self.Crossatten2(src_cur,src_new)
+        token = self.decoder_layer3(token,src_new)
         token_list.append(token)
         # src_new = self.pointnet(src_new.permute(0,2,1))
         src_new = src_new.permute(0,2,1)
@@ -660,36 +660,36 @@ class DENet5Head(RoIHeadTemplate):
 
     def get_proposal_aware_motion_feature(self, proxy_point,  trajectory_rois):
         num_rois = proxy_point.shape[0]
-        time_stamp = torch.ones([proxy_point.shape[0], proxy_point.shape[1], 1]).cuda()
-        padding_zero = torch.zeros([proxy_point.shape[0], proxy_point.shape[1], 2]).cuda()
+
+        time_stamp = torch.ones([proxy_point.shape[0], proxy_point.shape[1], 1],device = device)
+        padding_zero = torch.zeros([proxy_point.shape[0], proxy_point.shape[1], 2],device = device)
         point_time_padding = torch.cat([padding_zero, time_stamp], -1)
 
         num_frames = trajectory_rois.shape[1]
         num_points_single_frame = proxy_point.shape[1]//num_frames
         for i in range(num_frames):
             point_time_padding[:, i * num_points_single_frame : (i+1) * num_points_single_frame, -1] = i * 0.1
-            point_time_padding[:,i*num_points_single_frame:(i+1)*num_points_single_frame,:2] = trajectory_rois[:,i:(i+1),-2:]*i
-        corner_points, _ = self.get_corner_points_of_roi(trajectory_rois[:, 0, :].contiguous())
+        corner_points, _ = self.get_corner_points_of_roi(trajectory_rois.contiguous())
 
-        corner_points = corner_points.view(num_rois, -1)
-        trajectory_roi_center = trajectory_rois[:, 0, :,].reshape(num_rois, -1)[:, :3]
+        corner_points = corner_points.flatten(-2,-1)
+        trajectory_roi_center = trajectory_rois.flatten(0,1)[:, :3]
         corner_add_center_points = torch.cat([corner_points, trajectory_roi_center], dim=-1)
 
-        proposal_aware_feat = proxy_point[:, :, :3].repeat(1, 1, 9) - corner_add_center_points.unsqueeze(1)
-
-        lwh = trajectory_rois[:, 0, :].reshape(num_rois, -1)[:, 3:6].unsqueeze(1).repeat(1,proxy_point.shape[1], 1)
+        lwh = trajectory_rois.flatten(0,1)[:, 3:6].unsqueeze(1)
         diag_dist = (lwh[:, :, 0] ** 2 + lwh[:, :, 1] ** 2 + lwh[:, :, 2] ** 2) ** 0.5
-        point_time_padding_dis = (point_time_padding[...,0]**2+point_time_padding[...,1]**2)**0.5/diag_dist
-        point_time_padding_theta = torch.arctan(point_time_padding[...,0]/(point_time_padding[...,1]+1e-5))
-        point_time_padding = torch.stack([point_time_padding_dis,point_time_padding_theta,point_time_padding[...,-1]],dim=-1)
-        proposal_aware_feat = self.spherical_coordinate(proposal_aware_feat, diag_dist=diag_dist.unsqueeze(-1))
 
-        proposal_aware_feat = torch.cat([proposal_aware_feat, point_time_padding], -1)
-        proxy_point_motion_feat = self.up_dimension_motion(proposal_aware_feat)
 
-        return proxy_point_motion_feat
+        motion_aware_feat = proxy_point[:,:,:3].repeat(1,1,9)-corner_add_center_points.unflatten(0,(num_rois,-1))[:,0:1]
+        geometry_aware_feat = proxy_point.reshape(num_rois*num_frames,num_points_single_frame,-1)[:, :, :3].repeat(1, 1, 9) - corner_add_center_points.unsqueeze(1)
+        motion_aware_feat = self.spherical_coordinate(motion_aware_feat, diag_dist=diag_dist.unflatten(0,(num_rois,-1))[:,:1,:])
+        geometry_aware_feat = self.spherical_coordinate(geometry_aware_feat,diag_dist=diag_dist[:,:,None])
 
-    def get_proposal_aware_geometry_feature(self, src, batch_size, trajectory_rois):
+        motion_aware_feat = self.up_dimension_motion(torch.cat([motion_aware_feat, point_time_padding], -1))
+        geometry_aware_feat = self.up_dimension_geometry(torch.concat([geometry_aware_feat.reshape(num_rois,num_frames*num_points_single_frame,-1),proxy_point[:,:,3:]],-1))
+
+        return motion_aware_feat + geometry_aware_feat
+
+    def get_proposal_aware_geometry_feature(self, src, trajectory_rois):
 
         proposal_aware_feat_list = []
         num_rois = trajectory_rois.shape[0]
@@ -966,7 +966,7 @@ class DENet5Head(RoIHeadTemplate):
         batch_dict['query_points'] = query_points
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK', None):
             src_cur[empty_mask.view(-1)] = 0
-        src_cur = self.get_proposal_aware_geometry_feature(src_cur,batch_size,trajectory_rois[:,0,...].flatten(0,1))
+        src_cur = self.get_proposal_aware_geometry_feature(src_cur,trajectory_rois[:,0,...].flatten(0,1))
 
         hs, tokens,src_cur = self.transformer(src_cur, batch_dict, pos=None)
         if not self.training:
@@ -979,7 +979,7 @@ class DENet5Head(RoIHeadTemplate):
             key_roi_mask = (src_idx!=0).sum(0)<28
             # np.save(key_roi_root/('%04d.npy' % batch_dict['sample_idx'][0]),torch.concat([roi_boxes[key_roi_mask],roi_scores[key_roi_mask,None],roi_labels[key_roi_mask,None].float()],dim=1).cpu().numpy())
             np.save(key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]), torch.concat([query_points_shrink,points_pre],dim=0).cpu().numpy())
-            print(self.voxel_sampler_cur.num_points/self.voxel_sampler_cur.iteration)
+            # print(self.voxel_sampler_cur.num_points/self.voxel_sampler_cur.iteration)
             if self.signal=='train':
                 return batch_dict
         src_pre = self.voxel_sampler(batch_size,trajectory_rois,num_sample//4,batch_dict)
@@ -990,7 +990,10 @@ class DENet5Head(RoIHeadTemplate):
         trajectory_rois = trajectory_rois.transpose(1,2).flatten(0,1)
         src_pre = src_pre.flatten(0,1)
         src_pre[:,:num_sample//4] = torch.gather(query_points,0,batch_dict['src_idx'].view(-1,1).repeat(1,query_points.shape[-1])).unflatten(0,batch_dict['src_idx'].shape)
+
+        # src_pre_geometry = self.get_proposal_aware_geometry_feature(src_pre.reshape(src_pre.shape[0]*num_frames,-1,src_pre.shape[-1]),trajectory_rois.flatten(0,1))
         src_pre = self.get_proposal_aware_motion_feature(src_pre, trajectory_rois)
+
         # src_pre_transform = src_pre_transform.reshape(src_pre.shape[0],-1,1,src_pre_transform.shape[-1])
         # src_pre = src_pre+ src_pre_transform.repeat(1,1,src_pre.shape[1]//src_pre_transform.shape[1],1).reshape(src_pre.shape)
 
@@ -1006,7 +1009,7 @@ class DENet5Head(RoIHeadTemplate):
 
         for j in range(self.num_enc_layer):
             point_reg_list.append(self.bbox_embed[0](tokens[j][:,0]))
-        point_reg_list.append(self.bbox_embed_final(tokens2[0][0]))
+        point_reg_list.append(self.bbox_embed_final(tokens2[0][:,0]))
 
         point_cls = torch.cat(point_cls_list,0)
 

@@ -60,7 +60,7 @@ DATA_CONFIG:
           USE_ROI_AUG: True
           USE_BG_ROI_AUG: False
           USE_TRAJ_AUG:
-              ENABLED: False
+              ENABLED: True
               THRESHOD: 0.8
           USE_ROI_LIST:
               ENABLED: False

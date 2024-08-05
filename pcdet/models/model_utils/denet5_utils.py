@@ -190,39 +190,39 @@ class Attention(nn.Module):
             O =torch.concat( A.bmm(V_).chunk(self.num_heads,0),dim=-1)
             return self.fc_o(O),weight,None
 
-class Multiheadattention(nn.Module):
-    def __init__(self, dim, num_heads,dropout = 0.0, ln=False):
-        super(Attention, self).__init__()
+class MultiheadAttention(nn.Module):
+    def __init__(self, dim, num_heads,dropout = 0.0, ln=False,batch_first = True):
+        super(MultiheadAttention, self).__init__()
         self.dim_LIN = dim
         self.num_heads = num_heads
         self.fc = nn.Linear(dim,dim*3)
         self.dropout = nn.Dropout(dropout)
         self.fc_o = nn.Linear(dim, dim)
 
-    def forward(self, Q, drop=True):
-        B = Q.shape[0]
+    def forward(self, Q,K,V, drop=True):
+        B,T,D = Q.shape
         Q,K, V = self.fc(Q).chunk(3,-1)
         dim_split = self.dim_LIN // self.num_heads
-        Q_ = torch.cat(Q.split(dim_split, 2), 0)
-        K_ = torch.cat(K.split(dim_split, 2), 0)
-        V_ = torch.cat(V.split(dim_split, 2), 0)
-        Q_ = Q_/math.sqrt(dim_split)
-        A = torch.softmax(Q_.bmm(K_.transpose(1,2)), 2)
+        Q = Q.view(B,T,self.num_heads,dim_split).transpose(1,2).contiguous().view(B*self.num_heads,T,dim_split)
+        K = K.view(B,T,self.num_heads,dim_split).transpose(1,2).contiguous().view(B*self.num_heads,T,dim_split)
+        V = V.view(B,T,self.num_heads,dim_split).transpose(1,2).contiguous().view(B*self.num_heads,T,dim_split)
+        Q = Q / math.sqrt(dim_split)
+        A = torch.softmax(torch.bmm(Q,K.transpose(1,2)), 2)
         A = self.dropout(A)
-        if self.num_heads >= 2:
-            temp = A.split(Q.size(0),dim=0)
-            temp = torch.stack([tensor_ for tensor_ in temp], dim=0)
-            weight = torch.mean(temp, dim=0)
-        O = torch.concat( A.bmm(V_).chunk(self.num_heads,0),dim=-1)
-        return self.fc_o(O),weight
+
+        O = torch.bmm(A,V)
+        O = O.view(B,self.num_heads,T,dim_split).transpose(1,2).contiguous().view(B,T,self.dim_LIN)
+        O = self.fc_o(O)
+        weight = A.view(B,self.num_heads,T,T).mean(dim=1)
+        return O,weight
 
 
 class SpatialMixerBlock(nn.Module):
 
-    def __init__(self, channels,config=None, dropout=0.0,batch_first=False):
+    def __init__(self, channels,num_heads=8, dropout=0.0,batch_first=False):
         super().__init__()
 
-        self.mixer = nn.MultiheadAttention(channels, 8, dropout=dropout,batch_first=batch_first)
+        self.mixer = nn.MultiheadAttention(channels, num_heads, dropout=dropout,batch_first=batch_first)
 
         self.dropout = nn.Dropout(dropout)
         self.norm = nn.LayerNorm(channels)
@@ -234,7 +234,7 @@ class SpatialMixerBlock(nn.Module):
                                nn.Dropout(dropout),
                                nn.Linear(2*channels, channels),
                                )
-    def forward(self, src,return_weight=False):
+    def forward(self, src,return_weight=True):
        
         src2,weight = self.mixer(src, src,src)
         
@@ -254,7 +254,7 @@ class SpatialDropBlock(nn.Module):
     def __init__(self, channels, config=None, dropout=0.0, batch_first=False):
         super().__init__()
 
-        self.mixer = nn.MultiheadAttention(channels,8,dropout,batch_first= True)
+        self.mixer = MultiheadAttention(channels,8,dropout,batch_first= True)
         # self.mixer = Attention(channels, 8,dropout=dropout )
         self.dropout = nn.Dropout(dropout)
         self.norm = nn.LayerNorm(channels)
