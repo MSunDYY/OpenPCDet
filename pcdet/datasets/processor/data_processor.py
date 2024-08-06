@@ -253,7 +253,10 @@ class DataProcessor(object):
 
                 if i%2==0 and roi_list is not None:
                     iou3d = iou3d_nms_utils.boxes_iou3d_cpu(frame[:,:7],roi_list[i,:,:7])
-                    max_overlaps,gt_assignment = iou3d.max(-1)
+                    try:
+                        max_overlaps,gt_assignment = iou3d.max(-1)
+                    except:
+                        print('sdf')
                     fg_inds = (max_overlaps>0.5).nonzero()
                     frame[fg_inds] = roi_list[i,gt_assignment[fg_inds]]
                 trajectory_rois[i, :, :] = frame
@@ -522,20 +525,22 @@ class DataProcessor(object):
 
         with torch.no_grad():
             data_dict['roi_boxes'] = torch.from_numpy(data_dict['roi_boxes'])
+            data_dict['roi_labels'] = torch.from_numpy(data_dict['roi_labels'])
+            data_dict['roi_scores'] = torch.from_numpy(data_dict['roi_scores'])
             if data_dict['roi_boxes'].shape[0]>1:
 
                 data_dict['roi_list'] = data_dict['roi_boxes'].clone()
                 mask = data_dict['roi_boxes'][0,:,0]!=0
 
                 data_dict['roi_boxes'] = data_dict['roi_boxes'][0:1,mask]
+
                 data_dict['roi_scores'] = data_dict['roi_scores'][0:1,mask]
                 data_dict['roi_labels'] = data_dict['roi_labels'][0:1,mask]
 
 
-
             data_dict['num_frames'] = config.NUM_FRAMES
 
-            data_dict['roi_labels'] = torch.from_numpy(data_dict['roi_labels'])
+
 
             trajectory_rois = generate_trajectory_msf(data_dict['roi_boxes'].reshape(-1, data_dict['roi_boxes'].shape[-1]),
                                                     data_dict)

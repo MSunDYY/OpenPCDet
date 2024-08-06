@@ -602,61 +602,7 @@ class DENet5Head(RoIHeadTemplate):
         sampled_points = torch.concat(sampled_points_list, 0)
         sampled_points_features = torch.concat(sampled_points_features_list,0)
         return sampled_points.transpose(0,1),sampled_points_features.transpose(0,1)
-    def get_proposal_aware_trajectory_feature(self, src, batch_size, trajectory_rois, num_rois,valid_length):
-        proposal_aware_feat_list = []
-        
-        for i in range(trajectory_rois.shape[1]):
-            
-            corner_points, _ = self.get_corner_points_of_roi(trajectory_rois[:,i,:,:].contiguous()) 
-            
-            corner_points = corner_points.view(batch_size, num_rois, -1, corner_points.shape[-1]) 
-            corner_points = corner_points.view(batch_size * num_rois, -1)
-            trajectory_roi_center = trajectory_rois[:,i,:,:].contiguous().reshape(batch_size * num_rois, -1)[:,:3]
-            corner_add_center_points = torch.cat([corner_points, trajectory_roi_center], dim = -1)
-            proposal_aware_feat = src[:,i*self.num_lidar_points:(i+1)*self.num_lidar_points,:3].repeat(1,1,9) - \
-                                  corner_add_center_points.unsqueeze(1).repeat(1,self.num_lidar_points,1) 
-           
-            lwh = trajectory_rois[:,i,:,:].reshape(batch_size * num_rois, -1)[:,3:6].unsqueeze(1).repeat(1,proposal_aware_feat.shape[1],1)
-            diag_dist = (lwh[:,:,0]**2 + lwh[:,:,1]**2 + lwh[:,:,2]**2) ** 0.5
-            proposal_aware_feat = self.spherical_coordinate(proposal_aware_feat, diag_dist = diag_dist.unsqueeze(-1))
-            proposal_aware_feat_list.append(proposal_aware_feat)
 
-        proposal_aware_feat = torch.cat(proposal_aware_feat_list,dim=1)
-        proposal_aware_feat = torch.cat([proposal_aware_feat, src[:,:,3:]], dim = -1)
-
-        src_gemoetry = self.up_dimension_traj(proposal_aware_feat)
-        
-        return src_gemoetry
-
-    def get_proposal_aware_trajectory_motion(self, proxy_point, batch_size, trajectory_rois, num_rois):
-
-        time_stamp = torch.ones([proxy_point.shape[0], proxy_point.shape[1], 1]).cuda()
-        padding_zero = torch.zeros([proxy_point.shape[0], proxy_point.shape[1], 2]).cuda()
-        point_time_padding = torch.cat([padding_zero, time_stamp], -1)
-
-        num_frames = trajectory_rois.shape[1]
-
-        for i in range(num_frames):
-            point_time_padding[:, i * self.num_lidar_points:(i + 1) * self.num_lidar_points, -1] = i * 0.1
-
-        corner_points, _ = self.get_corner_points_of_roi(trajectory_rois[:, 0, :, :].contiguous())
-        corner_points = corner_points.view(batch_size, num_rois, -1, corner_points.shape[-1])
-        corner_points = corner_points.view(batch_size * num_rois, -1)
-        trajectory_roi_center = trajectory_rois[:, 0, :, :].reshape(batch_size * num_rois, -1)[:, :3]
-        corner_add_center_points = torch.cat([corner_points, trajectory_roi_center], dim=-1)
-
-        proposal_aware_feat = proxy_point[:, :, :3].repeat(1, 1, 9) - corner_add_center_points.unsqueeze(1)
-
-        lwh = trajectory_rois[:, 0, :, :].reshape(batch_size * num_rois, -1)[:, 3:6].unsqueeze(1).repeat(1,
-                                                                                                         proxy_point.shape[
-                                                                                                             1], 1)
-        diag_dist = (lwh[:, :, 0] ** 2 + lwh[:, :, 1] ** 2 + lwh[:, :, 2] ** 2) ** 0.5
-        proposal_aware_feat = self.spherical_coordinate(proposal_aware_feat, diag_dist=diag_dist.unsqueeze(-1))
-
-        proposal_aware_feat = torch.cat([proposal_aware_feat, point_time_padding], -1)
-        proxy_point_motion_feat = self.up_dimension_traj_motion(proposal_aware_feat)
-
-        return proxy_point_motion_feat
 
     def get_proposal_aware_motion_feature(self, proxy_point,  trajectory_rois):
         num_rois = proxy_point.shape[0]

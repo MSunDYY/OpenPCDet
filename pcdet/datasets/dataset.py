@@ -206,7 +206,11 @@ class DatasetTemplate(torch_data.Dataset):
             data_dict['gt_names'] = data_dict['gt_names'][selected]
             # data_dict['num_points_in_gt']=data_dict['num_points_in_gt'][selected]
             gt_classes = np.array([self.class_names.index(n) + 1 for n in data_dict['gt_names']], dtype=np.int32)
-            gt_boxes = np.concatenate((data_dict['gt_boxes'], gt_classes.reshape(-1, 1).astype(np.float32)), axis=1)
+            try:
+                gt_boxes = np.concatenate((data_dict['gt_boxes'], gt_classes.reshape(-1, 1).astype(np.float32)), axis=1)
+            except:
+                gt_boxes = np.concatenate((data_dict['gt_boxes'].reshape(0,9), gt_classes.reshape(-1, 1).astype(np.float32)), axis=1)
+
             data_dict['gt_boxes'] = gt_boxes
 
             if data_dict.get('gt_boxes2d', None) is not None:

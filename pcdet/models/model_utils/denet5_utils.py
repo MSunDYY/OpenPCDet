@@ -814,7 +814,7 @@ class VoxelPointsSampler(nn.Module):
             src_idx_list.append(src_idx)
             query_points_list.append(query_points)
 
-            if not self.training:
+            if False:
 
                 idx = torch.arange(voxel.shape[1],device=device)[None,:].repeat(voxel.shape[0],1)
                 idx = idx<num_voxel[:,None]

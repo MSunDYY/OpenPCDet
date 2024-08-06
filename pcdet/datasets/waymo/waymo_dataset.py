@@ -504,15 +504,6 @@ class WaymoDataset(DatasetTemplate):
             sample_idx_list = [index] + [index + idx - sample_idx for idx in sample_idx_pre_list]
         else:
             sample_idx_list = [index]
-        data_dicts = {}
-        data_dicts['sample_idx'] = pc_info['sample_idx']
-        data_dicts['frame_id'] = info['frame_id']
-        data_dicts['points'] = []
-        data_dicts['gt_boxes'] = []
-        data_dicts['num_points_in_gt'] = []
-        data_dicts['voxels'] = []
-        data_dicts['voxel_coords'] = []
-        data_dicts['voxel_num_points'] = []
         info = copy.deepcopy(self.infos[index])
         pc_info = info['point_cloud']
         sequence_name = pc_info['lidar_sequence']
@@ -579,11 +570,22 @@ class WaymoDataset(DatasetTemplate):
                 gt_boxes_lidar = gt_boxes_lidar[mask]
                 annos['num_points_in_gt'] = annos['num_points_in_gt'][mask]
 
-            # if True:
-            #     mask = (annos['num_points_in_gt']<10)
-            #     annos['name'] = annos['name'][mask]
-            #     gt_boxes_lidar = gt_boxes_lidar[mask]
-            #     annos['num_points_in_gt'] = annos['num_points_in_gt'][mask]
+            if True:
+                mask = (annos['name']=='Cyclist')
+                annos['name'] = annos['name'][mask]
+                gt_boxes_lidar = gt_boxes_lidar[mask]
+                annos['num_points_in_gt'] = annos['num_points_in_gt'][mask]
+
+                mask = (input_dict['roi_labels'][0]==3).nonzero()[0]
+                if mask.shape[0]!=0:
+
+                    input_dict['roi_labels'] = input_dict['roi_labels'][:,mask]
+                    input_dict['roi_scores'] = input_dict['roi_scores'][:,mask]
+                    input_dict['roi_boxes'] = input_dict['roi_boxes'][:,mask]
+                else:
+                    input_dict['roi_labels'] = input_dict['roi_labels'][:, :1]
+                    input_dict['roi_scores'] = input_dict['roi_scores'][:, :1]
+                    input_dict['roi_boxes'] = input_dict['roi_boxes'][:, :1]
 
             input_dict.update({
                 'gt_names': annos['name'],
