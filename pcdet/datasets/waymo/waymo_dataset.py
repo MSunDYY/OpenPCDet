@@ -424,7 +424,7 @@ class WaymoDataset(DatasetTemplate):
 
                 points_pre = np.hstack([points_pre,0.1*(len(sample_idx_pre_list)-idx)*np.ones((points_pre.shape[0],1)).astype(points_pre.dtype)])
                 pose_pre = sequence_info[sample_idx_pre]['pose'].reshape(4,4)
-                pred_boxes = load_pred_boxes_from_dict(sequence_name, sample_idx_pre)
+
                 pose_pre2cur = np.dot(pose_pre.T,np.linalg.inv(pose_cur.T))
                 points_pre[:,:3] = np.dot(np.concatenate([points_pre[:,:3],np.ones((points_pre.shape[0],1))],axis=1),pose_pre2cur[:,:3])
 
