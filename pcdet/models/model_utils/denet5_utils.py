@@ -980,7 +980,7 @@ class VoxelPointsSampler(nn.Module):
         idx = idx * sampled_mask + idx_checkpoint
 
         points_pre = cur_points[~point_mask.sum(0).bool()]
-
+        sampled_points = sampled_points * sampled_mask[:,:,None]
         return sampled_points, idx,query_points,points_pre
 def build_voxel_sampler(device, return_point_feature=False):
     if not return_point_feature:

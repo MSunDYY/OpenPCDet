@@ -542,9 +542,7 @@ class WaymoDataset(DatasetTemplate):
                     load_pred_boxes=self.dataset_cfg.get('USE_PREDBOX', False),
                     transformed_points=self.dataset_cfg.get('TRANSFORMED_POINTS',False),
                 )
-            if self.dataset_cfg.get('USE_ANCHOR',False):
-                pred_anchors = self.load_pred_anchors_from_dict(sequence_name, sample_idx)
-                input_dict['anchors'] = pred_anchors
+
             input_dict['num_points_all'] = num_points_all
             input_dict['poses'] = poses
 
