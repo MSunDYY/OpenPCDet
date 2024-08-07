@@ -663,34 +663,35 @@ class VoxelSampler(nn.Module):
             src_points = list()
 
             for idx in range(trajectory_rois.shape[1]):
-                gamma = torch.clamp((self.GAMMA *(1+speed[bs_idx,idx])) **(idx/5),max=2.5)# ** (idx+1)
 
                 time_mask = (cur_points[:, -1] - idx * 0.1).abs() < 1e-3
                 cur_time_points = cur_points[time_mask, :5].contiguous()
+                gamma = torch.clamp((self.GAMMA * (1 + speed[bs_idx, idx])) ** (idx / 5), max=2.5)  # ** (idx+1)
 
                 cur_frame_boxes = cur_batch_boxes[idx]
+                if idx==0:
+                    voxel, coords, num_points = self.gen(cur_time_points)
+                    coords = coords[:, [2, 1]].contiguous()
 
-                voxel, coords, num_points = self.gen(cur_time_points)
-                coords = coords[:, [2, 1]].contiguous()
+                    query_coords = (cur_frame_boxes[:, :2] - self.pc_start) // self.voxel_size
 
-                query_coords = (cur_frame_boxes[:, :2] - self.pc_start) // self.voxel_size
-
-                radiis = torch.ceil(
+                    radiis = torch.ceil(
                     torch.norm(cur_frame_boxes[:, 3:5] / 2, dim=-1) * gamma  / self.voxel_size)
 
-                dist = torch.abs(query_coords[:, None, :2] - coords[None, :, :])
+                    dist = torch.abs(query_coords[:, None, :2] - coords[None, :, :])
 
-                voxel_mask = torch.all(dist < radiis[:, None, None], dim=-1).any(0)
+                    voxel_mask = torch.all(dist < radiis[:, None, None], dim=-1).any(0)
 
-                num_points = num_points[voxel_mask]
-                key_points = voxel[voxel_mask, :]
+                    num_points = num_points[voxel_mask]
+                    key_points = voxel[voxel_mask, :]
 
-                point_mask = torch.arange(self.k)[None, :].repeat(len(key_points), 1).type_as(num_points)
+                    point_mask = torch.arange(self.k)[None, :].repeat(len(key_points), 1).type_as(num_points)
 
-                point_mask = num_points[:, None] > point_mask
-                key_points = key_points[point_mask]
-                key_points = key_points[torch.randperm(len(key_points)), :]
-
+                    point_mask = num_points[:, None] > point_mask
+                    key_points = key_points[point_mask]
+                    key_points = key_points[torch.randperm(len(key_points)), :]
+                else:
+                    key_points = cur_time_points
                 key_points = self.cylindrical_pool(key_points, cur_frame_boxes, num_sample, gamma)
 
                 src_points.append(key_points)

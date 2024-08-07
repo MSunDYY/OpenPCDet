@@ -570,7 +570,7 @@ class WaymoDataset(DatasetTemplate):
                 gt_boxes_lidar = gt_boxes_lidar[mask]
                 annos['num_points_in_gt'] = annos['num_points_in_gt'][mask]
 
-            if True:
+            if False:
                 mask = (annos['name']=='Cyclist')
                 annos['name'] = annos['name'][mask]
                 gt_boxes_lidar = gt_boxes_lidar[mask]

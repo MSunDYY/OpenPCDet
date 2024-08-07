@@ -518,9 +518,6 @@ class DataProcessor(object):
                 max_num_rois = max([roi.shape[0] for roi in roi_list])
                 data_dict['roi_list'] = torch.stack(
                     [F.pad(roi, [0, 0, 0, max_num_rois - roi.shape[0]], value=0) for roi in roi_list])
-
-
-
             return batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_labels, batch_trajectory_rois, batch_valid_length
 
         with torch.no_grad():

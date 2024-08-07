@@ -930,17 +930,13 @@ class DENet5Head(RoIHeadTemplate):
         src_pre = self.voxel_sampler(batch_size,trajectory_rois,num_sample//4,batch_dict)
 
 
-        # src_pre_transform = src_pre.clone().reshape(-1,num_frames,num_sample//4,src_pre.shape[-1])
-        # src_pre_transform = self.pointLK(src_pre_transform.flatten(0,1).transpose(-1,-2),src_pre_transform[:,:1,:,:].repeat(1,num_frames,1,1).flatten(0,1).transpose(-1,-2))
+
         trajectory_rois = trajectory_rois.transpose(1,2).flatten(0,1)
         src_pre = src_pre.flatten(0,1)
         src_pre[:,:num_sample//4] = torch.gather(query_points,0,batch_dict['src_idx'].view(-1,1).repeat(1,query_points.shape[-1])).unflatten(0,batch_dict['src_idx'].shape)
 
-        # src_pre_geometry = self.get_proposal_aware_geometry_feature(src_pre.reshape(src_pre.shape[0]*num_frames,-1,src_pre.shape[-1]),trajectory_rois.flatten(0,1))
         src_pre = self.get_proposal_aware_motion_feature(src_pre, trajectory_rois)
 
-        # src_pre_transform = src_pre_transform.reshape(src_pre.shape[0],-1,1,src_pre_transform.shape[-1])
-        # src_pre = src_pre+ src_pre_transform.repeat(1,1,src_pre.shape[1]//src_pre_transform.shape[1],1).reshape(src_pre.shape)
 
         tokens2,box_reg,box_cls,feat_box = self.transformer2st(src_pre,tokens[-1],src_cur)
         # box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
