@@ -921,9 +921,9 @@ class DENet5Head(RoIHeadTemplate):
             query_points_shrink = query_points[torch.unique(src_idx)]
             os.makedirs(key_points_root,exist_ok=True)
             os.makedirs(key_roi_root,exist_ok=True)
-            key_roi_mask = (src_idx!=0).sum(0)<28
+            key_roi_mask = (src_idx!=0).sum(1)<28
             # np.save(key_roi_root/('%04d.npy' % batch_dict['sample_idx'][0]),torch.concat([roi_boxes[key_roi_mask],roi_scores[key_roi_mask,None],roi_labels[key_roi_mask,None].float()],dim=1).cpu().numpy())
-            np.save(key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]), torch.concat([query_points_shrink,points_pre],dim=0).cpu().numpy())
+            # np.save(key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]), torch.concat([query_points_shrink,points_pre],dim=0).cpu().numpy())
             # print(self.voxel_sampler_cur.num_points/self.voxel_sampler_cur.iteration)
             if self.signal=='train':
                 return batch_dict

@@ -239,12 +239,39 @@ class DataProcessor(object):
             return max_overlaps, gt_assignment
 
         def generate_trajectory_msf(cur_batch_boxes, batch_dict):
+
+            if True:
+                mask = batch_dict['gt_names']=='Cyclist'
+
+                batch_dict['gt_names'] = batch_dict['gt_names'][mask]
+
+                batch_dict['gt_boxes'] = batch_dict['gt_boxes'][mask]
+
+                mask = (batch_dict['roi_labels'][0]==3).nonzero().view(-1)
+                if len(batch_dict['gt_boxes'].shape) ==3:
+                    batch_dict['gt_boxes'] = batch_dict['gt_boxes'].reshape(-1,10)
+                if mask.shape[0]!=0:
+
+                    batch_dict['roi_labels'] = batch_dict['roi_labels'][:,mask]
+                    batch_dict['roi_scores'] = batch_dict['roi_scores'][:,mask]
+                    batch_dict['roi_boxes'] = batch_dict['roi_boxes'][:,mask]
+                    cur_batch_boxes = cur_batch_boxes[mask]
+                else:
+                    batch_dict['roi_labels'] = batch_dict['roi_labels'][:, :1]
+                    batch_dict['roi_scores'] = batch_dict['roi_scores'][:, :1]
+                    batch_dict['roi_boxes'] = batch_dict['roi_boxes'][:, :1]
+                    cur_batch_boxes = cur_batch_boxes[:1]
+
+
             num_frames = batch_dict['num_frames']
             trajectory_rois = cur_batch_boxes[None, :, :].repeat(num_frames,1,1)
             # trajectory_rois[:, 0, :, :] = cur_batch_boxes
             batch_dict['valid_length'] = torch.ones(num_frames, trajectory_rois.shape[1])
             # batch_dict['roi_scores'] = batch_dict['roi_scores'][:, :, None].repeat(1, 1, num_frames)
             roi_list = batch_dict.get('roi_list' , None)
+
+
+
 
             # simply propagate proposal based on velocity
             for i in range(1, num_frames):
@@ -253,10 +280,10 @@ class DataProcessor(object):
 
                 if i%2==0 and roi_list is not None:
                     iou3d = iou3d_nms_utils.boxes_iou3d_cpu(frame[:,:7],roi_list[i,:,:7])
-                    try:
-                        max_overlaps,gt_assignment = iou3d.max(-1)
-                    except:
-                        print('sdf')
+
+                    max_overlaps,gt_assignment = iou3d.max(-1)
+
+
                     fg_inds = (max_overlaps>0.5).nonzero()
                     frame[fg_inds] = roi_list[i,gt_assignment[fg_inds]]
                 trajectory_rois[i, :, :] = frame
@@ -372,8 +399,6 @@ class DataProcessor(object):
 
         def sample_rois_for_mppnet(batch_dict, config):
 
-            
-            
             cur_frame_idx = 0
 
             rois = batch_dict['trajectory_rois'][cur_frame_idx, :, :]
@@ -475,13 +500,7 @@ class DataProcessor(object):
                                                               aug_times=config.ROI_FG_AUG_TIMES,
                                                               pos_thresh=config.USE_TRAJ_AUG.THRESHOD,config=config)
                     bg_backs = cur_trajectory_rois[idx, bg_inds]
-                    # fg_trajs,_ = self.aug_roi_by_noise_torch(cur_trajectory_rois[idx,fg_inds],
-                    #                                          cur_trajectory_rois[idx,fg_inds][:,:8],
-                    #                                          max_overlaps[fg_inds],
-                    #                                          aug_times=config.ROI_FG_AUG_TIMES,
-                    #                                          pos_thresh=config.USE_TRAJ_AUG.THRESHOD
-                    #                                          )
-                    # bg_trajs = cur_trajectory_rois[idx,bg_inds]
+
 
                     batch_trajectory_rois_list.append(torch.cat([fg_backs, bg_backs], 0)[None, :, :])
 
@@ -537,14 +556,15 @@ class DataProcessor(object):
 
             data_dict['num_frames'] = config.NUM_FRAMES
 
-
-
             trajectory_rois = generate_trajectory_msf(data_dict['roi_boxes'].reshape(-1, data_dict['roi_boxes'].shape[-1]),
                                                     data_dict)
             data_dict['trajectory_rois'] = trajectory_rois
 
 
             data_dict['has_class_labels'] = True
+            if not self.training:
+                return data_dict
+
             batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_labels, batch_trajectory_rois, batch_valid_length = sample_rois_for_mppnet(
                 batch_dict=data_dict, config=config)
             reg_valid_mask = (batch_roi_ious > config.REG_FG_THRESH).long()
@@ -602,9 +622,8 @@ class DataProcessor(object):
             gt_of_rois[:,  6] = heading_label
             targets_dict['gt_of_rois'] = gt_of_rois
             data_dict['targets_dict'] = targets_dict
-            poped_key = ['num_frames','valid_length']
-            if self.training:
-                poped_key.append('trajectory_rois')
+            poped_key = ['num_frames','valid_length','trajectory_rois']
+
             for key in poped_key:
                 data_dict.pop(key)
             return data_dict

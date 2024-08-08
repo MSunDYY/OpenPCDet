@@ -439,26 +439,20 @@ class WaymoDataset(DatasetTemplate):
 
         if sequence_cfg.get('USE_PRE_PREDBOX',True):
             for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
-                if load_pred_boxes:
-                    if pred_boxes_all[0].shape[-1] == 11:
-    
-                        pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
-                        pred_boxes = load_pred_boxes_from_dict(sequence_name, sample_idx_pre)
 
-                        if sequence_cfg.get('USE_KEY_BOX',False):
-                            roi_path = Path('../../data/waymo/key_rois')/sequence_name/('%04d.npy' % sample_idx_pre)
-                            if os.path.exists(roi_path):
-                                try:
-                                    pred_boxes = np.load(roi_path)
-                                except:
-                                    time.sleep(0.1)
-                                    pred_boxes = np.load(roi_path)
-                                pred_boxes[:, 7:9] = -0.1 * pred_boxes[:,7:9]  # transfer speed to negtive motion from t to t-1
+                if pred_boxes_all[0].shape[-1] == 11:
 
-                        pred_boxes = self.transform_prebox_to_current(pred_boxes, pose_pre, pose_cur)
-                        pred_boxes_all.append(pred_boxes)
-                    else:
-                        pred_boxes_all.append(pred_boxes_all[0][pred_boxes_all[0][:, -3] == idx + 1])
+                    pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
+                    pred_boxes = load_pred_boxes_from_dict(sequence_name, sample_idx_pre)
+
+                     # transfer speed to negtive motion from t to t-1
+
+                    pred_boxes = self.transform_prebox_to_current(pred_boxes, pose_pre, pose_cur)
+                    pred_boxes_all.append(pred_boxes)
+                else:
+                    pred_boxes_all.append(pred_boxes_all[0][pred_boxes_all[0][:, -3] == idx + 1])
+
+
 
         if load_pred_boxes:
 
@@ -570,22 +564,7 @@ class WaymoDataset(DatasetTemplate):
                 gt_boxes_lidar = gt_boxes_lidar[mask]
                 annos['num_points_in_gt'] = annos['num_points_in_gt'][mask]
 
-            if False:
-                mask = (annos['name']=='Cyclist')
-                annos['name'] = annos['name'][mask]
-                gt_boxes_lidar = gt_boxes_lidar[mask]
-                annos['num_points_in_gt'] = annos['num_points_in_gt'][mask]
 
-                mask = (input_dict['roi_labels'][0]==3).nonzero()[0]
-                if mask.shape[0]!=0:
-
-                    input_dict['roi_labels'] = input_dict['roi_labels'][:,mask]
-                    input_dict['roi_scores'] = input_dict['roi_scores'][:,mask]
-                    input_dict['roi_boxes'] = input_dict['roi_boxes'][:,mask]
-                else:
-                    input_dict['roi_labels'] = input_dict['roi_labels'][:, :1]
-                    input_dict['roi_scores'] = input_dict['roi_scores'][:, :1]
-                    input_dict['roi_boxes'] = input_dict['roi_boxes'][:, :1]
 
             input_dict.update({
                 'gt_names': annos['name'],
@@ -598,6 +577,22 @@ class WaymoDataset(DatasetTemplate):
         data_dict['metadata'] = info.get('metasdata', info['frame_id'])
         data_dict.pop('num_points_in_gt', None)
 
+        if self.dataset_cfg.SEQUENCE_CONFIG.get('USE_KEY_BOX', False) and not self.training:
+            sequence_info = self.seq_name_to_infos[sequence_name]
+            pose_cur = sequence_info[sample_idx]['pose'].reshape(4,4)
+            pred_key_boxes = list()
+            for idx in range(-3, 3):
+                if idx==0:
+                    continue
+                sample_idx_pre = min(max(sample_idx + idx, 0), len(sequence_info) - 1)
+                pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
+                roi_path = Path('../../data/waymo/key_rois') / sequence_name / ('%04d.npy' % (sample_idx))
+                pred_boxes = np.load(roi_path)[:,:9]
+                pred_boxes = self.transform_prebox_to_current(pred_boxes, pose_pre, pose_cur)
+                pred_boxes[:, :2] += 0.1 * (sample_idx - sample_idx_pre) * pred_boxes[:, 7:9]
+                pred_key_boxes.append(pred_boxes)
+            pred_key_boxes = self.reorder_rois_for_refining(pred_key_boxes)
+            data_dict['pred_key_boxes'] = pred_key_boxes
         return data_dict
 
 

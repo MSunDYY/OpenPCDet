@@ -779,9 +779,8 @@ class VoxelPointsSampler(nn.Module):
             voxel_mask = (dist < radiis[:, None]).any(0)
 
             if not self.training:
-                pre_roi = batch_dict['roi_list'][bs_idx,1:6]
-                pre_roi[:,:,:2]-=pre_roi[:,:,7:]*torch.clamp(torch.arange(1,6,device=device),max=batch_dict['sample_idx'][0].item()+3)[:,None,None]
-                pre_roi[:,:,3:5]*=1.0
+                pre_roi = batch_dict['pred_key_boxes'][bs_idx]
+
                 pre_roi = pre_roi.flatten(0,1)
                 pre_roi = pre_roi[pre_roi[:,2]!=0]
                 query_coords_pre = (pre_roi[:,:2] - self.pc_start) / self.voxel_size
@@ -806,7 +805,7 @@ class VoxelPointsSampler(nn.Module):
 
             key_points_raw = key_points
 
-            key_points, src_idx ,query_points,points_pre = self.cylindrical_pool(key_points, cur_batch_boxes,
+            key_points, src_idx ,query_points = self.cylindrical_pool(key_points, cur_batch_boxes,
                                                         num_sample, gamma,
                                                         idx_checkpoint,pre_roi=None if self.training else pre_roi)
             idx_checkpoint+=query_points.shape[0]
@@ -913,9 +912,9 @@ class VoxelPointsSampler(nn.Module):
         sampled_points = torch.gather(cur_points, 0, sampled_idx).view(len(sampled_mask), num_sample, -1)
         idx = idx * sampled_mask + idx_checkpoint
 
-        points_pre = cur_points[~point_mask.sum(0).bool()]
+        # points_pre = cur_points[~point_mask.sum(0).bool()]
         sampled_points = sampled_points * sampled_mask[:,:,None]
-        return sampled_points, idx,query_points,points_pre
+        return sampled_points, idx,query_points
 def build_voxel_sampler(device, return_point_feature=False):
     if not return_point_feature:
         return VoxelSampler(
