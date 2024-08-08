@@ -380,7 +380,7 @@ class KPTransformer(nn.Module):
         src = src.flatten(0,1)
         # src_cur = self.Crossatten2(src_cur.repeat(self.num_groups,1,1),src).unflatten(0,(-1,self.num_groups)).max(1)[0]
         # token = self.decoder_layer1(token,src_new)
-        src_new,weight,sampled_inds = self.Attention2(src,return_weight=True)
+        src_new,weight,sampled_inds = self.Attention2(src,return_weight=True,drop=0.8)
         # sampled_inds = torch.topk(weight.sum(1),k=weight.shape[-1]//2,dim=-1)[1]
         # token = self.decoder_layer2(token,torch.max(src.unflatten(0,(-1,self.num_groups)),1).values.transpose(0,1))
         # token_list.append(token)

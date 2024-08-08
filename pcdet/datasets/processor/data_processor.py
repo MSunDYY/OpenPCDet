@@ -240,7 +240,7 @@ class DataProcessor(object):
 
         def generate_trajectory_msf(cur_batch_boxes, batch_dict):
 
-            if True:
+            if False:
                 mask = batch_dict['gt_names']=='Cyclist'
 
                 batch_dict['gt_names'] = batch_dict['gt_names'][mask]

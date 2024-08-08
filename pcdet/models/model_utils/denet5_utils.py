@@ -281,11 +281,11 @@ class SpatialDropBlock(nn.Module):
             nn.Linear(2 * channels, channels),
         )
 
-    def forward(self, src, return_weight=False,drop=True):
+    def forward(self, src, return_weight=False,drop=0.5):
 
         src2,weight = self.mixer(src,src,src)
-        if drop:
-            sampled_inds = torch.topk(weight.sum(1),weight.shape[-1]//2,1)[1]
+        if drop!=1:
+            sampled_inds = torch.topk(weight.sum(1),int(weight.shape[-1]*drop),1)[1]
             src =torch.gather(src,1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))
             src2 = torch.gather(src2,1,sampled_inds[:,:,None].repeat(1,1,src2.shape[-1]))
         else:
@@ -503,7 +503,7 @@ class TransformerEncoderLayer(nn.Module):
                      pos: Optional[Tensor] = None):
 
 
-        src_intra_group_fusion,weight,sampled_inds = self.mlp_mixer_3d(src[:,1:],return_weight=True,drop = self.layer_count>1)
+        src_intra_group_fusion,weight,sampled_inds = self.mlp_mixer_3d(src[:,1:],return_weight=True,drop = 0.5 if self.layer_count>1 else 1.0)
 
 
         token = src[:,:1]
