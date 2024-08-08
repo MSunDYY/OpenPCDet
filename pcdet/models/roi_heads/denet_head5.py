@@ -380,7 +380,7 @@ class KPTransformer(nn.Module):
         src = src.flatten(0,1)
         # src_cur = self.Crossatten2(src_cur.repeat(self.num_groups,1,1),src).unflatten(0,(-1,self.num_groups)).max(1)[0]
         # token = self.decoder_layer1(token,src_new)
-        src_new,weight,sampled_inds = self.Attention2(src,return_weight=True,drop=0.8)
+        src_new,weight,sampled_inds = self.Attention2(src,return_weight=True,drop=0.5)
         # sampled_inds = torch.topk(weight.sum(1),k=weight.shape[-1]//2,dim=-1)[1]
         # token = self.decoder_layer2(token,torch.max(src.unflatten(0,(-1,self.num_groups)),1).values.transpose(0,1))
         # token_list.append(token)
@@ -933,7 +933,8 @@ class DENet5Head(RoIHeadTemplate):
 
         trajectory_rois = trajectory_rois.transpose(1,2).flatten(0,1)
         src_pre = src_pre.flatten(0,1)
-        src_pre[:,:num_sample//4] = torch.gather(query_points,0,batch_dict['src_idx'].view(-1,1).repeat(1,query_points.shape[-1])).unflatten(0,batch_dict['src_idx'].shape)
+        src_idx = batch_dict['src_idx'][:,:num_sample//4]
+        src_pre[:,:num_sample//4] = torch.gather(query_points,0,src_idx.reshape(-1,1).repeat(1,query_points.shape[-1])).unflatten(0,src_idx.shape)
 
         src_pre = self.get_proposal_aware_motion_feature(src_pre, trajectory_rois)
 
