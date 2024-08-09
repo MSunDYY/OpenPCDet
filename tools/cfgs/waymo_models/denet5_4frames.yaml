@@ -200,12 +200,19 @@ MODEL:
         EVAL_METRIC: waymo
         NOT_APPLY_NMS_FOR_VEL: True
 
+#        NMS_CONFIG:
+#            MULTI_CLASSES_NMS: False
+#            NMS_TYPE: nms_gpu
+#            NMS_THRESH: 0.7
+#            NMS_PRE_MAXSIZE: 4096
+#            NMS_POST_MAXSIZE: 500
+
         NMS_CONFIG:
             MULTI_CLASSES_NMS: False
             NMS_TYPE: nms_gpu
-            NMS_THRESH: 0.7
-            NMS_PRE_MAXSIZE: 4096
-            NMS_POST_MAXSIZE: 500
+            NMS_THRESH: [0.9,0.7,0.7]
+            NMS_PRE_MAXSIZE: [4096,4096,4096]
+            NMS_POST_MAXSIZE: [500,500,500]
 
 
 OPTIMIZATION:

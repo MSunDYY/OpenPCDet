@@ -584,8 +584,8 @@ class DENet5Head(RoIHeadTemplate):
         motion_aware_feat = self.spherical_coordinate(motion_aware_feat, diag_dist=diag_dist.unflatten(0,(num_rois,-1))[:,:1,:])
         geometry_aware_feat = self.spherical_coordinate(geometry_aware_feat,diag_dist=diag_dist[:,:,None])
 
-        motion_aware_feat = self.up_dimension_motion(torch.cat([motion_aware_feat, point_time_padding], -1)*padding_mask)
-        geometry_aware_feat = self.up_dimension_geometry(torch.concat([geometry_aware_feat.reshape(num_rois,num_frames*num_points_single_frame,-1),proxy_point[:,:,3:]],-1)*padding_mask)
+        motion_aware_feat = self.up_dimension_motion(torch.cat([motion_aware_feat, point_time_padding], -1))
+        geometry_aware_feat = self.up_dimension_geometry(torch.concat([geometry_aware_feat.reshape(num_rois,num_frames*num_points_single_frame,-1),proxy_point[:,:,3:]],-1))
 
         return motion_aware_feat + geometry_aware_feat
 
@@ -610,7 +610,7 @@ class DENet5Head(RoIHeadTemplate):
         # time_stamp = torch.concat(time_stamp,1)
         # proposal_aware_feat = torch.cat(proposal_aware_feat_list, dim=1)
         proposal_aware_feat = torch.cat([proposal_aware_feat, src[:, :, 3:]], dim=-1)
-        proposal_aware_feat = proposal_aware_feat*padding_mask
+        # proposal_aware_feat = proposal_aware_feat*padding_mask
         src_gemoetry = self.up_dimension_geometry(proposal_aware_feat)
 
         return src_gemoetry

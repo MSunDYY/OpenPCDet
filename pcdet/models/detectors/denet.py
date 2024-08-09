@@ -132,8 +132,14 @@ class DENet(Detector3DTemplate):
                 else:
                     label_preds = label_preds + 1
                 
-                selected, selected_scores = model_nms_utils.class_agnostic_nms(
-                    box_scores=cls_preds, box_preds=box_preds,
+                # selected, selected_scores = model_nms_utils.class_agnostic_nms(
+                #     box_scores=cls_preds, box_preds=box_preds,
+                #     nms_config=post_process_cfg.NMS_CONFIG,
+                #     score_thresh=post_process_cfg.SCORE_THRESH
+                # )
+
+                selected, selected_scores = model_nms_utils.class_specific_nms(
+                    box_scores=cls_preds, box_preds=box_preds,box_labels=label_preds-1,
                     nms_config=post_process_cfg.NMS_CONFIG,
                     score_thresh=post_process_cfg.SCORE_THRESH
                 )
