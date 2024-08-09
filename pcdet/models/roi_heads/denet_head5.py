@@ -199,52 +199,6 @@ class ProposalTargetLayerMPPNet1(ProposalTargetLayer):
                 batch_trajectory_rois[index] = cur_trajectory_rois[:,sampled_inds]
         return batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_scores, batch_roi_labels, batch_backward_rois,batch_trajectory_rois, batch_valid_length
 
-    def sample_rois_for_mppnet_(self, max_overlaps):
-        # sample fg, easy_bg, hard_bg
-        fg_rois_per_image = int(np.round(self.roi_sampler_cfg.FG_RATIO * self.roi_sampler_cfg.ROI_PER_IMAGE))
-        fg_thresh = min(self.roi_sampler_cfg.REG_FG_THRESH, self.roi_sampler_cfg.CLS_FG_THRESH)
-
-        fg_inds = ((max_overlaps >= fg_thresh)).nonzero().view(-1)
-        easy_bg_inds = ((max_overlaps < self.roi_sampler_cfg.CLS_BG_THRESH_LO)).nonzero().view(-1)
-        hard_bg_inds = ((max_overlaps < self.roi_sampler_cfg.REG_FG_THRESH) &
-                (max_overlaps >= self.roi_sampler_cfg.CLS_BG_THRESH_LO)).nonzero().view(-1)
-
-        fg_num_rois = fg_inds.numel()
-        bg_num_rois = hard_bg_inds.numel() + easy_bg_inds.numel()
-
-        if fg_num_rois > 0 and bg_num_rois > 0:
-            # sampling fg
-            fg_rois_per_this_image = min(fg_rois_per_image, fg_num_rois)
-
-            rand_num = torch.from_numpy(np.random.permutation(fg_num_rois)).type_as(max_overlaps).long()
-            fg_inds = fg_inds[rand_num[:fg_rois_per_this_image]]
-
-            # sampling bg
-            bg_rois_per_this_image = self.roi_sampler_cfg.ROI_PER_IMAGE - fg_rois_per_this_image
-            bg_inds = self.sample_bg_inds(
-                hard_bg_inds, easy_bg_inds, bg_rois_per_this_image, self.roi_sampler_cfg.HARD_BG_RATIO
-            )
-
-        elif fg_num_rois > 0 and bg_num_rois == 0:
-            # sampling fg
-            rand_num = np.floor(np.random.rand(self.roi_sampler_cfg.ROI_PER_IMAGE) * fg_num_rois)
-            rand_num = torch.from_numpy(rand_num).type_as(max_overlaps).long()
-            fg_inds = fg_inds[rand_num]
-            bg_inds = torch.tensor([]).type_as(fg_inds)
-
-        elif bg_num_rois > 0 and fg_num_rois == 0:
-            # sampling bg
-            bg_rois_per_this_image = self.roi_sampler_cfg.ROI_PER_IMAGE
-            bg_inds = self.sample_bg_inds(
-                hard_bg_inds, easy_bg_inds, bg_rois_per_this_image, self.roi_sampler_cfg.HARD_BG_RATIO
-            )
-        else:
-            print('maxoverlaps:(min=%f, max=%f)' % (max_overlaps.min().item(), max_overlaps.max().item()))
-            print('ERROR: FG=%d, BG=%d' % (fg_num_rois, bg_num_rois))
-            raise NotImplementedError
-
-        sampled_inds = torch.cat((fg_inds, bg_inds), dim=0)
-        return sampled_inds.long(), fg_inds.long(), bg_inds.long()
 
     def aug_roi_by_noise_torch(self, roi_boxes3d, gt_boxes3d, iou3d_src, aug_times=10, pos_thresh=None):
         iou_of_rois = torch.zeros(roi_boxes3d.shape[0]).type_as(gt_boxes3d)
@@ -606,7 +560,7 @@ class DENet5Head(RoIHeadTemplate):
 
     def get_proposal_aware_motion_feature(self, proxy_point,  trajectory_rois):
         num_rois = proxy_point.shape[0]
-
+        padding_mask = proxy_point[:,:,0:1]!=0
         time_stamp = torch.ones([proxy_point.shape[0], proxy_point.shape[1], 1],device = device)
         padding_zero = torch.zeros([proxy_point.shape[0], proxy_point.shape[1], 2],device = device)
         point_time_padding = torch.cat([padding_zero, time_stamp], -1)
@@ -630,14 +584,14 @@ class DENet5Head(RoIHeadTemplate):
         motion_aware_feat = self.spherical_coordinate(motion_aware_feat, diag_dist=diag_dist.unflatten(0,(num_rois,-1))[:,:1,:])
         geometry_aware_feat = self.spherical_coordinate(geometry_aware_feat,diag_dist=diag_dist[:,:,None])
 
-        motion_aware_feat = self.up_dimension_motion(torch.cat([motion_aware_feat, point_time_padding], -1))
-        geometry_aware_feat = self.up_dimension_geometry(torch.concat([geometry_aware_feat.reshape(num_rois,num_frames*num_points_single_frame,-1),proxy_point[:,:,3:]],-1))
+        motion_aware_feat = self.up_dimension_motion(torch.cat([motion_aware_feat, point_time_padding], -1)*padding_mask)
+        geometry_aware_feat = self.up_dimension_geometry(torch.concat([geometry_aware_feat.reshape(num_rois,num_frames*num_points_single_frame,-1),proxy_point[:,:,3:]],-1)*padding_mask)
 
         return motion_aware_feat + geometry_aware_feat
 
     def get_proposal_aware_geometry_feature(self, src, trajectory_rois):
+        padding_mask = src[:,:,0:1]!=0
 
-        proposal_aware_feat_list = []
         num_rois = trajectory_rois.shape[0]
 
         corner_points, _ = self.get_corner_points_of_roi(trajectory_rois.contiguous())
@@ -656,7 +610,7 @@ class DENet5Head(RoIHeadTemplate):
         # time_stamp = torch.concat(time_stamp,1)
         # proposal_aware_feat = torch.cat(proposal_aware_feat_list, dim=1)
         proposal_aware_feat = torch.cat([proposal_aware_feat, src[:, :, 3:]], dim=-1)
-
+        proposal_aware_feat = proposal_aware_feat*padding_mask
         src_gemoetry = self.up_dimension_geometry(proposal_aware_feat)
 
         return src_gemoetry
