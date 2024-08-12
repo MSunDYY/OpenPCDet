@@ -361,7 +361,7 @@ class KPTransformer(nn.Module):
             src_max = src.max(2).values
             src_max = src_max.flatten(1,2)
             src_max = self.conv2(src_max.unsqueeze(-1)).squeeze()
-            src = src.flatten(1,2)
+            # src = src.flatten(1,2)
             src_new = [self.linear2[i](torch.concat([src[:,i],src_max[:,None,:].repeat(1,src.shape[2],1)],dim=-1)) for i in range(self.num_groups)]
             src = self.norm2(src + torch.stack(src_new,1)).flatten(1,2)
         else:
