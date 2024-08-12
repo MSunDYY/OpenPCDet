@@ -526,29 +526,6 @@ class TransformerEncoderLayer(nn.Module):
 
         if self.layer_count > 1:
 
-            # num_points = src.shape[0]-1
-            # src_all_groups = src_intra_group_fusion.view((src_intra_group_fusion.shape[0])*self.num_groups,-1,src_intra_group_fusion.shape[-1])
-            # # src_groups_list = src_all_groups.chunk(self.num_groups,0)
-            # # src_groups_list = [src_all_groups[torch.arange(sampled_inds.shape[0])*self.num_groups+i] for i in range(self.num_groups)]
-            #
-            # src_all_groups = src_all_groups.unsqueeze(0)
-            # src_max_groups = torch.max(src_all_groups, 1, keepdim=True).values
-            # src_past_groups =  torch.cat([src_all_groups,\
-            #      src_max_groups.repeat(1, src_intra_group_fusion.shape[0], 1, 1)], -1)
-            # src_all_groups = self.cross_norm_1(self.cross_conv_1(src_past_groups) + src_all_groups)
-            #
-            #
-            #
-            # src_inter_group_fusion = src_all_groups.permute(1, 0, 2, 3).contiguous().flatten(1,2)
-            #
-            # weight = weight.sum(1)
-            # # src = torch.cat([src[:1],src_intra_group_fusion],0)
-            # sampled_inds = torch.topk(weight, dim=1, k=weight.shape[1] // 2)[1].transpose(0, 1)
-            #
-            # src_inter_group_fusion = torch.gather(src_inter_group_fusion, 0, sampled_inds[:, :, None].repeat(1, 1,
-            #                                                                                                  src_inter_group_fusion.shape[
-            #                                                                                                      -1]))
-            
             batch_dict['src_idx'] = torch.gather(batch_dict['src_idx'],1,sampled_inds)
 
         return src, torch.cat(src[:,:1].chunk(self.num_groups,0),1)
@@ -834,56 +811,6 @@ class VoxelPointsSampler(nn.Module):
             # src.append(torch.stack(src_points))
         return torch.concat(src, dim=0),torch.concat(src_idx_list,dim=0),torch.concat(query_points_list,dim=0),torch.concat(points_pre_list,dim=0) if not self.training else None
 
-    def cylindrical_pool_index(self, cur_points, cur_boxes, num_sample, gamma=1.):
-        if len(cur_points) < num_sample:
-            cur_points = F.pad(cur_points, [0, 0, 0, num_sample - len(cur_points)])
-        from pcdet.ops.pointnet2.pointnet2_batch.pointnet2_utils import ball_query
-        cur_radiis = torch.norm(cur_boxes[:, 3:5] / 2, dim=-1) * gamma
-        dis = torch.norm(
-            (cur_points[:, :2].unsqueeze(0) - cur_boxes[:, :2].unsqueeze(1).repeat(1, cur_points.shape[0], 1)), dim=2)
-        point_mask = (dis <= cur_radiis.unsqueeze(-1))
-        # valid_points_mask = (point_mask.sum(0))!=0
-        # cur_points,point_mask = cur_points[valid_points_mask],point_mask[:,valid_points_mask]
-
-        sampled_mask, sampled_idx = torch.topk(point_mask.float(), num_sample, 1)
-
-        sampled, idx = torch.unique(sampled_idx, return_inverse=True)
-        query_points = cur_points[sampled]
-        query_points_features = self.set_abstraction(cur_points[None, :, :3].contiguous(),
-                                                     cur_points[None, :, 3:].transpose(1, 2).contiguous(),
-                                                     query_points[None, :, :3].contiguous())
-        query_points_xyz = query_points_features[0][0]
-        if self.use_absolute_xyz:
-            query_points_features = torch.concat([query_points_xyz, query_points_features[1].transpose(1, 2)[0]],
-                                                 dim=-1)
-            query_points_features = self.point_emb(query_points_features)
-
-        else:
-            query_points_features = torch.concat([query_points_xyz, query_points_features[1].transpose(1, 2).squeeze()],
-                                                 dim=-1)
-        points_features = query_points_features[idx]
-
-        sampled_mask = sampled_mask.bool()
-        sampled_idx_ = (sampled_idx * sampled_mask).view(-1, 1).repeat(1, cur_points.shape[-1])
-        sampled_points = torch.gather(cur_points, 0, sampled_idx_).view(len(sampled_mask), num_sample, -1)
-        # unordered_points = sampled_points.flatten(0,1)
-        # random_col = torch.randperm(unordered_points.shape[0],device=device)
-        # unordered_points = unordered_points[random_col]
-        # index_idx = ball_query(0.8,8,unordered_points[:,:3].contiguous(),torch.tensor([unordered_points.shape[0]],dtype=torch.int,device=device),sampled_points.flatten(0,1)[:,:3].contiguous(),torch.tensor([sampled_points.shape[0]*sampled_points.shape[1]],device=device,dtype=torch.int32))[0]
-        # index_idx = random_col[index_idx.long()]
-        # index_idx = index_idx.unflatten(0,(sampled_points.shape[0],-1))
-
-        # index_idx = index_idx * sampled_mask[:,:,None]+idx_checkpoint
-        sampled_points = sampled_points * sampled_mask[:, :, None]
-        # idx = idx * sampled_mask + idx_checkpoint
-        sampled_points = sampled_points
-        src_idx = idx * sampled_mask
-        points_idx = ball_query(0.0001, 4, src_idx.flatten(0, 1).float()[None, :, None].repeat(1, 1, 3),
-                                torch.arange(query_points.shape[0], device=device).float()[None, :, None].repeat(1, 1,
-                                                                                                                 3)).squeeze()
-
-        points_idx = torch.stack([points_idx // src_idx.shape[1], points_idx % src_idx.shape[1]], -1)
-        return sampled_points, src_idx, points_idx, query_points_features
 
     def cylindrical_pool(self, cur_points, cur_boxes, num_sample, gamma=1., idx_checkpoint=0,pre_roi=None):
         if len(cur_points) < num_sample:

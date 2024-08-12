@@ -299,6 +299,27 @@ class KPTransformer(nn.Module):
         self.box_reg = nn.Sequential(nn.Linear(self.channels,self.channels),
                                      nn.ReLU(),
                                      nn.Linear(self.channels,7))
+        self.conv1 = nn.Sequential(
+            nn.Conv1d(self.channels*4,self.channels*2,1,1),
+            nn.BatchNorm1d(self.channels*2),
+            nn.ReLU(),
+            nn.Conv1d(self.channels*2,self.channels,1,1),
+            nn.BatchNorm1d(self.channels),
+            nn.ReLU()
+        )
+        self.linear1 = nn.Linear(self.channels*2,self.channels)
+        self.norm1 = nn.LayerNorm(self.channels)
+
+        self.conv2 = nn.Sequential(
+            nn.Conv1d(self.channels * 4, self.channels * 2, 1, 1),
+            nn.BatchNorm1d(self.channels * 2),
+            nn.ReLU(),
+            nn.Conv1d(self.channels * 2, self.channels, 1, 1),
+            nn.BatchNorm1d(self.channels),
+            nn.ReLU()
+        )
+        self.linear2 = nn.Linear(self.channels * 2, self.channels)
+        self.norm2 = nn.LayerNorm(self.channels)
 
         self.fc1 = nn.Linear(256, 256)
         self.fc2 = nn.Linear(256, 256)
@@ -315,31 +336,37 @@ class KPTransformer(nn.Module):
         self.fc_cls1 = nn.Linear(256,256)
         self.fc_cls2 = nn.Linear(256,1,bias=False)
 
+
+
     def forward(self, src,token,src_cur):
         # src = src.permute(2,1,0,3).flatten(1,2)
         token_list = list()
         src = src.reshape(src.shape[0]*self.num_frames,-1,src.shape[-1])
         num_frames_single_group = self.num_frames // self.num_groups
         src,weight,sampled_inds = self.Attention(src,return_weight=True)
-        # token = self.decoder_layer1(token, torch.max(src.unflatten(0,(-1,self.num_frames)), 1).values.transpose(0, 1))
-        # token_list.append(token)
-        # sampled_inds = torch.topk(weight.sum(1),k=weight.shape[-1]//2,dim=-1)[1]
-        # src_new = torch.gather(src,1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))
-        src_new = src.unflatten(0,(-1,self.num_frames))
+        src_new = src.unflatten(0, (-1, self.num_frames))
 
-
-        src_list = [src_new[:,torch.arange(num_frames_single_group)*self.num_groups+i] for i in range(self.num_groups)]
-        src = torch.stack([src_.flatten(1,2) for src_ in src_list],dim=1)
-
-        src = src.flatten(0,1)
-        # src_cur = self.Crossatten2(src_cur.repeat(self.num_groups,1,1),src).unflatten(0,(-1,self.num_groups)).max(1)[0]
-        # token = self.decoder_layer1(token,src_new)
+        signal = True
+        if signal:
+            src=src_new.unflatten(1,(-1,self.num_groups)).transpose(1,2).flatten(0,1)
+            src_max = src.max(2).values
+            src_max = src_max.flatten(1,2)
+            src_max = self.conv1(src_max.unsqueeze(-1)).squeeze()
+            src = src.flatten(1,2)
+            src = self.norm1(src + self.linear1(torch.concat([src,src_max[:,None,:].repeat(1,src.shape[1],1)],dim=-1)))
+        else:
+            src = src_new.unflatten(1,(-1,self.num_groups)).transpose(1,2).flatten(0,1).flatten(1,2)
         src_new,weight,sampled_inds = self.Attention2(src,return_weight=True,drop=0.5)
-        # sampled_inds = torch.topk(weight.sum(1),k=weight.shape[-1]//2,dim=-1)[1]
-        # token = self.decoder_layer2(token,torch.max(src.unflatten(0,(-1,self.num_groups)),1).values.transpose(0,1))
-        # token_list.append(token)
-        # src_new = torch.gather(src,1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))
-        src_new = src_new.reshape(-1,self.num_groups*src_new.shape[1],src_new.shape[-1])
+
+        if signal:
+            src_new = src_new.unflatten(0,(-1,self.num_groups))
+            src_max = src_new.max(2).values
+            src_max = src_max.flatten(1,2)
+            src_max = self.conv2(src_max.unsqueeze(-1)).squeeze()
+            src_new = src_new.flatten(1,2)
+            src_new = self.norm2(src_new + self.linear2(torch.concat([src_new,src_max[:,None,:].repeat(1,src_new.shape[1],1)],dim=-1)))
+        else:
+            src_new = src_new.reshape(-1,self.num_groups*src_new.shape[1],src_new.shape[-1])
         src_new = self.Attention3(src_new,return_weight = False)
 
         # src_cur = self.Crossatten2(src_cur,src_new)
