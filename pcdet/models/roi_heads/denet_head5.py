@@ -299,26 +299,23 @@ class KPTransformer(nn.Module):
         self.box_reg = nn.Sequential(nn.Linear(self.channels,self.channels),
                                      nn.ReLU(),
                                      nn.Linear(self.channels,7))
+
         self.conv1 = nn.Sequential(
-            nn.Conv1d(self.channels*4,self.channels*2,1,1),
-            nn.BatchNorm1d(self.channels*2),
-            nn.ReLU(),
-            nn.Conv1d(self.channels*2,self.channels,1,1),
+            nn.Conv1d(self.channels*4,self.channels,1,1),
             nn.BatchNorm1d(self.channels),
-            nn.ReLU()
+            nn.ReLU(),
         )
-        self.linear1 = nn.Linear(self.channels*2,self.channels)
+        self.linear1 = nn.ModuleList([nn.Linear(self.channels*2,self.channels) for _ in range(self.num_groups)])
+
         self.norm1 = nn.LayerNorm(self.channels)
 
         self.conv2 = nn.Sequential(
-            nn.Conv1d(self.channels * 4, self.channels * 2, 1, 1),
-            nn.BatchNorm1d(self.channels * 2),
+            nn.Conv1d(self.channels * 4, self.channels , 1, 1),
+            nn.BatchNorm1d(self.channels ),
             nn.ReLU(),
-            nn.Conv1d(self.channels * 2, self.channels, 1, 1),
-            nn.BatchNorm1d(self.channels),
-            nn.ReLU()
+
         )
-        self.linear2 = nn.Linear(self.channels * 2, self.channels)
+        self.linear2 = nn.ModuleList([nn.Linear(self.channels*2 , self.channels) for _ in range(self.num_groups)])
         self.norm2 = nn.LayerNorm(self.channels)
 
         self.fc1 = nn.Linear(256, 256)
@@ -344,37 +341,39 @@ class KPTransformer(nn.Module):
         src = src.reshape(src.shape[0]*self.num_frames,-1,src.shape[-1])
         num_frames_single_group = self.num_frames // self.num_groups
         src,weight,sampled_inds = self.Attention(src,return_weight=True)
-        src_new = src.unflatten(0, (-1, self.num_frames))
+        src = src.unflatten(0, (-1, self.num_frames))
 
         signal = True
         if signal:
-            src=src_new.unflatten(1,(-1,self.num_groups)).transpose(1,2).flatten(0,1)
+            src=src.unflatten(1,(-1,self.num_groups)).transpose(1,2).flatten(0,1)
             src_max = src.max(2).values
             src_max = src_max.flatten(1,2)
             src_max = self.conv1(src_max.unsqueeze(-1)).squeeze()
-            src = src.flatten(1,2)
-            src = self.norm1(src + self.linear1(torch.concat([src,src_max[:,None,:].repeat(1,src.shape[1],1)],dim=-1)))
+            src_new = [self.linear1[i](torch.concat([src[:,i],src_max[:,None,:].repeat(1,src.shape[2],1)],dim=-1)) for i in range(self.num_groups)]
+
+            src = self.norm1(src + torch.stack(src_new,1)).flatten(1,2)
         else:
-            src = src_new.unflatten(1,(-1,self.num_groups)).transpose(1,2).flatten(0,1).flatten(1,2)
-        src_new,weight,sampled_inds = self.Attention2(src,return_weight=True,drop=0.5)
+            src = src.unflatten(1,(-1,self.num_groups)).transpose(1,2).flatten(0,1).flatten(1,2)
+        src,weight,sampled_inds = self.Attention2(src,return_weight=True,drop=0.5)
 
         if signal:
-            src_new = src_new.unflatten(0,(-1,self.num_groups))
-            src_max = src_new.max(2).values
+            src = src.unflatten(0,(-1,self.num_groups))
+            src_max = src.max(2).values
             src_max = src_max.flatten(1,2)
             src_max = self.conv2(src_max.unsqueeze(-1)).squeeze()
-            src_new = src_new.flatten(1,2)
-            src_new = self.norm2(src_new + self.linear2(torch.concat([src_new,src_max[:,None,:].repeat(1,src_new.shape[1],1)],dim=-1)))
+            src = src.flatten(1,2)
+            src_new = [self.linear2[i](torch.concat([src[:,i],src_max[:,None,:].repeat(1,src.shape[2],1)],dim=-1)) for i in range(self.num_groups)]
+            src = self.norm2(src + torch.stack(src_new,1)).flatten(1,2)
         else:
-            src_new = src_new.reshape(-1,self.num_groups*src_new.shape[1],src_new.shape[-1])
-        src_new = self.Attention3(src_new,return_weight = False)
+            src = src.reshape(-1,self.num_groups*src.shape[1],src.shape[-1])
+        src = self.Attention3(src,return_weight = False)
 
         # src_cur = self.Crossatten2(src_cur,src_new)
-        token = self.decoder_layer3(token,src_new)
+        token = self.decoder_layer3(token,src)
         token_list.append(token)
         # src_new = self.pointnet(src_new.permute(0,2,1))
-        src_new = src_new.permute(0,2,1)
-        x = torch.max(src_new,dim=-1).values
+        src = src.permute(0,2,1)
+        x = torch.max(src,dim=-1).values
 
         x = F.relu(self.x_bn1(self.fc1(x)))
         feat = F.relu(self.x_bn2(self.fc2(x)))
@@ -896,7 +895,7 @@ class DENet5Head(RoIHeadTemplate):
 
         hs, tokens,src_cur = self.transformer(src_cur, batch_dict, pos=None)
         if not self.training:
-            key_points_root = Path('../../data/waymo/key_points_mini') / batch_dict['metadata'][0][:-4]
+            key_points_root = Path('../../data/waymo/key_points_mini_raw') / batch_dict['metadata'][0][:-4]
             key_roi_root = Path('../../data/waymo/key_rois') / batch_dict['metadata'][0][:-4]
             src_idx = batch_dict['src_idx']
             query_points_shrink = query_points[torch.unique(src_idx)]
@@ -904,7 +903,7 @@ class DENet5Head(RoIHeadTemplate):
             os.makedirs(key_roi_root,exist_ok=True)
             key_roi_mask = (src_idx!=0).sum(1)<28
             # np.save(key_roi_root/('%04d.npy' % batch_dict['sample_idx'][0]),torch.concat([roi_boxes[key_roi_mask],roi_scores[key_roi_mask,None],roi_labels[key_roi_mask,None].float()],dim=1).cpu().numpy())
-            # np.save(key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]), torch.concat([query_points_shrink,points_pre],dim=0).cpu().numpy())
+            np.save(key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]), torch.concat([query_points_shrink],dim=0).cpu().numpy())
             # print(self.voxel_sampler_cur.num_points/self.voxel_sampler_cur.iteration)
             if self.signal=='train':
                 return batch_dict

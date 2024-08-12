@@ -213,8 +213,9 @@ class MultiheadAttention(nn.Module):
 
         nn.init.constant_(self.out_proj.bias,0)
 
-    def forward(self, Q,K,V, drop=True):
+    def forward(self, Q,K,V, drop=0.5):
         B,T,D = Q.shape
+        L_out = int(T*drop)
         Q,K, V = linear(Q,self.in_proj_weight,self.in_proj_bias).chunk(3,-1)
         dim_split = self.dim_LIN // self.num_heads
         Q = Q.view(B,T,self.num_heads,dim_split).transpose(1,2).contiguous().view(B*self.num_heads,T,dim_split)
@@ -223,12 +224,16 @@ class MultiheadAttention(nn.Module):
         Q = Q / math.sqrt(dim_split)
         A = torch.softmax(torch.bmm(Q,K.transpose(1,2)), 2)
         A = self.dropout(A)
-
-        O = torch.bmm(A,V)
-        O = O.view(B,self.num_heads,T,dim_split).transpose(1,2).contiguous().view(B,T,self.dim_LIN)
-        O = linear(O,self.out_proj.weight,self.out_proj.bias)
         weight = A.view(B,self.num_heads,T,T).mean(dim=1)
-        return O,weight
+        if drop !=1:
+            sampled_inds = torch.topk(weight.sum(1),int(weight.shape[1]*drop),-1)[1]
+            A = torch.gather(A.unflatten(0,(-1,self.num_heads)),2,sampled_inds[:,None,:,None].repeat(1,self.num_heads,1,T)).flatten(0,1)
+        else:
+            sampled_inds = None
+        O = torch.bmm(A,V)
+        O = O.view(B,self.num_heads,L_out,dim_split).transpose(1,2).contiguous().view(B,L_out,self.dim_LIN)
+        O = linear(O,self.out_proj.weight,self.out_proj.bias)
+        return O,weight,sampled_inds
 
 
 class SpatialMixerBlock(nn.Module):
@@ -283,13 +288,9 @@ class SpatialDropBlock(nn.Module):
 
     def forward(self, src, return_weight=False,drop=0.5):
 
-        src2,weight = self.mixer(src,src,src)
+        src2,weight,sampled_inds = self.mixer(src,src,src,drop=drop)
         if drop!=1:
-            sampled_inds = torch.topk(weight.sum(1),int(weight.shape[-1]*drop),1)[1]
             src =torch.gather(src,1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))
-            src2 = torch.gather(src2,1,sampled_inds[:,:,None].repeat(1,1,src2.shape[-1]))
-        else:
-            sampled_inds = None
         src = src+self.dropout(src2)
         src_mixer = self.norm(src)
 
