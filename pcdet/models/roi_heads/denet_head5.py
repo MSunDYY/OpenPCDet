@@ -372,17 +372,17 @@ class KPTransformer(nn.Module):
         token = self.decoder_layer3(token,src)
         token_list.append(token)
         # src_new = self.pointnet(src_new.permute(0,2,1))
-        src = src.permute(0,2,1)
-        x = torch.max(src,dim=-1).values
-
-        x = F.relu(self.x_bn1(self.fc1(x)))
-        feat = F.relu(self.x_bn2(self.fc2(x)))
-
-        centers = self.fc_ce2(F.relu(self.fc_ce1(feat)))
-        sizes = self.fc_s2(F.relu(self.fc_s1(feat)))
-        headings = self.fc_hr2(F.relu(self.fc_hr1(feat)))
-        cls = self.fc_cls2(F.relu(self.fc_cls1(feat)))
-        return token_list,torch.concat([centers,sizes,headings],-1),cls,feat
+        # src = src.permute(0,2,1)
+        # x = torch.max(src,dim=-1).values
+        #
+        # x = F.relu(self.x_bn1(self.fc1(x)))
+        # feat = F.relu(self.x_bn2(self.fc2(x)))
+        #
+        # centers = self.fc_ce2(F.relu(self.fc_ce1(feat)))
+        # sizes = self.fc_s2(F.relu(self.fc_s1(feat)))
+        # headings = self.fc_hr2(F.relu(self.fc_hr1(feat)))
+        # cls = self.fc_cls2(F.relu(self.fc_cls1(feat)))
+        return token_list
 
 class Pointnet(nn.Module):
     def __init__(self,channels):
@@ -643,28 +643,29 @@ class DENet5Head(RoIHeadTemplate):
 
     def trajectories_auxiliary_branch(self,trajectory_rois):
 
-        time_stamp = torch.ones([trajectory_rois.shape[0],trajectory_rois.shape[1],trajectory_rois.shape[2],1]).cuda()
-        for i in range(time_stamp.shape[1]):
-            time_stamp[:,i,:] = i*0.1 
+        # time_stamp = torch.ones([trajectory_rois.shape[0],trajectory_rois.shape[1],1]).cuda()
+        # for i in range(time_stamp.shape[1]):
+        #     time_stamp[:,i,:] = i*0.1
+        batch_rcnn = trajectory_rois.shape[0]
+        time_stamp = torch.arange(trajectory_rois.shape[1],device=device)[None,:,None].repeat(batch_rcnn,1,1)
 
-        box_seq = torch.cat([trajectory_rois[:,:,:,:7],time_stamp],-1)
+        box_seq = torch.cat([trajectory_rois[:,:,:7],time_stamp],-1)
 
-        box_seq[:, :, :,0:3] = box_seq[:, :, :,0:3] - box_seq[:, 0:1, :, 0:3]
+        box_seq[:, :, 0:3] = box_seq[:, :, 0:3] - box_seq[:, 0:1,  0:3]
 
-        roi_ry = box_seq[:,:,:,6] % (2 * np.pi)
+        roi_ry = box_seq[:,:,6] % (2 * np.pi)
         roi_ry_t0 = roi_ry[:,0] 
-        roi_ry_t0 = roi_ry_t0.repeat(1,box_seq.shape[1])
+        roi_ry_t0 = roi_ry_t0
 
 
         box_seq = common_utils.rotate_points_along_z(
-            points=box_seq.view(-1, 1, box_seq.shape[-1]), angle=-roi_ry_t0.view(-1)
-        ).view(box_seq.shape[0],box_seq.shape[1], -1, box_seq.shape[-1])
+            points=box_seq, angle=-roi_ry_t0.view(-1)
+        ).view(box_seq.shape[0],box_seq.shape[1],  box_seq.shape[-1])
 
-        box_seq[:, :, :, 6]  =  0
+        box_seq[:, :, 6] = (box_seq[:,:,6 ] -box_seq[:,0:1,6])%(2*np.pi)
 
-        batch_rcnn = box_seq.shape[0]*box_seq.shape[2]
 
-        box_reg, box_feat, _ = self.seqboxembed(box_seq.permute(0,2,3,1).contiguous().view(batch_rcnn,box_seq.shape[-1],box_seq.shape[1]))
+        box_reg, box_feat, _ = self.seqboxembed(box_seq.permute(0,2,1).contiguous())
         
         return box_reg, box_feat
 
@@ -919,8 +920,8 @@ class DENet5Head(RoIHeadTemplate):
         src_pre = self.get_proposal_aware_motion_feature(src_pre, trajectory_rois)
 
 
-        tokens2,box_reg,box_cls,feat_box = self.transformer2st(src_pre,tokens[-1],src_cur)
-        # box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
+        tokens2 = self.transformer2st(src_pre,tokens[-1],src_cur)
+        box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
         point_cls_list = []
         point_reg_list = []
 

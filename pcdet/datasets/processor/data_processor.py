@@ -270,9 +270,6 @@ class DataProcessor(object):
             # batch_dict['roi_scores'] = batch_dict['roi_scores'][:, :, None].repeat(1, 1, num_frames)
             roi_list = batch_dict.get('roi_list' , None)
 
-
-
-
             # simply propagate proposal based on velocity
             for i in range(1, num_frames):
                 frame = trajectory_rois[i-1].clone()
