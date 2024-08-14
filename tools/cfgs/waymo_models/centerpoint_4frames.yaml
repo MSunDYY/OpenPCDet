@@ -4,12 +4,13 @@ DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/waymo_dataset_multiframe.yaml
     TRANSFORMED_POINTS: False
     SAMPLED_INTERVAL: {
-        'train': 10,
-        'test': 200
+        'train': 5,
+        'test': 1
     }
-
-
-
+    DATA_SPLIT: {
+        'train': train,
+        'test': test
+    }
 
 MODEL:
     NAME: CenterPoint

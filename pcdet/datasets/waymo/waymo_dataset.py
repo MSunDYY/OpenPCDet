@@ -337,7 +337,7 @@ class WaymoDataset(DatasetTemplate):
         pose_cur = info['pose'].reshape((4, 4))
         num_pts_cur = points.shape[0]
         sample_idx_pre_list = np.clip(
-            sample_idx + np.arange(sequence_cfg.SAMPLE_OFFSET[0], sequence_cfg.SAMPLE_OFFSET[1]), 0, len(self.pred_boxes_dict[sequence_name])-1)
+            sample_idx + np.arange(sequence_cfg.SAMPLE_OFFSET[0], sequence_cfg.SAMPLE_OFFSET[1]), 0, len(self.seq_name_to_infos[sequence_name])-1)
         sample_idx_pre_list = sample_idx_pre_list[::-1]
 
         if not transformed_points:
@@ -437,7 +437,7 @@ class WaymoDataset(DatasetTemplate):
             num_points_all = np.array([num_pts_cur]+num_points_pre).astype(np.int32)
             poses = np.concatenate(pose_all,axis=0).astype(np.float32)
 
-        if sequence_cfg.get('USE_PRE_PREDBOX',True):
+        if sequence_cfg.get('USE_PRE_PREDBOX',False):
             for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
 
                 if pred_boxes_all[0].shape[-1] == 11:

@@ -11,7 +11,7 @@ from ..model_utils.msf_utils import build_transformer, PointNet, MLP, build_voxe
 from .target_assigner.proposal_target_layer import ProposalTargetLayer
 from pcdet.ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_stack_modules
 from pcdet import device
-
+import time
 class ProposalTargetLayerMPPNet(ProposalTargetLayer):
     def __init__(self, roi_sampler_cfg):
         super().__init__(roi_sampler_cfg = roi_sampler_cfg)
@@ -501,7 +501,7 @@ class MSFHead(RoIHeadTemplate):
         :param input_data: input dict
         :return:
         """
-        
+        st = time.time()
         roi_scores = batch_dict['roi_scores'][:,0,:]
         batch_dict['roi_scores'] = roi_scores[:,roi_scores.sum(0)>0]
         batch_dict['roi_boxes'] = batch_dict['roi_boxes'][:,0,:][:,roi_scores.sum(0)>0]

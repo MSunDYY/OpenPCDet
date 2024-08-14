@@ -17,6 +17,7 @@ from pcdet.ops.pointnet2.pointnet2_batch.pointnet2_modules import PointnetSAModu
 from pcdet import device
 from pathlib import Path
 import os
+import time
 class ProposalTargetLayerMPPNet1(ProposalTargetLayer):
     def __init__(self, roi_sampler_cfg):
         super().__init__(roi_sampler_cfg = roi_sampler_cfg)
@@ -838,6 +839,8 @@ class DENet5Head(RoIHeadTemplate):
         :param input_data: input dict
         :return:
         """
+
+
         num_frames = self.model_cfg.Transformer2st.num_frames
         roi_scores = batch_dict['roi_scores'][:, 0, :]
 
@@ -904,7 +907,7 @@ class DENet5Head(RoIHeadTemplate):
             os.makedirs(key_roi_root,exist_ok=True)
             key_roi_mask = (src_idx!=0).sum(1)<28
             # np.save(key_roi_root/('%04d.npy' % batch_dict['sample_idx'][0]),torch.concat([roi_boxes[key_roi_mask],roi_scores[key_roi_mask,None],roi_labels[key_roi_mask,None].float()],dim=1).cpu().numpy())
-            np.save(key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]), torch.concat([query_points_shrink],dim=0).cpu().numpy())
+            # np.save(key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]), torch.concat([query_points_shrink],dim=0).cpu().numpy())
             # print(self.voxel_sampler_cur.num_points/self.voxel_sampler_cur.iteration)
             if self.signal=='train':
                 return batch_dict
@@ -996,7 +999,6 @@ class DENet5Head(RoIHeadTemplate):
             targets_dict['point_reg'] = point_reg
             targets_dict['point_cls'] = point_cls
             self.forward_ret_dict = targets_dict
-
         return batch_dict
 
     def get_loss(self, tb_dict=None):

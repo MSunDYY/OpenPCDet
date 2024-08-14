@@ -275,7 +275,7 @@ class DataProcessor(object):
                 frame = trajectory_rois[i-1].clone()
                 frame[:, 0:2] = frame[:, 0:2] + (frame[:, 7:9] if batch_dict['sample_idx']-i>=0 else 0)
 
-                if i%2==0 and roi_list is not None:
+                if i%1==0 and roi_list is not None:
                     iou3d = iou3d_nms_utils.boxes_iou3d_cpu(frame[:,:7],roi_list[i,:,:7])
 
                     max_overlaps,gt_assignment = iou3d.max(-1)
