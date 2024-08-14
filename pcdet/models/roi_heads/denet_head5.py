@@ -338,11 +338,12 @@ class KPTransformer(nn.Module):
 
     def forward(self, src,token,src_cur):
         # src = src.permute(2,1,0,3).flatten(1,2)
+        B = src_cur.shape[0]
         token_list = list()
         src = src.reshape(src.shape[0]*self.num_frames,-1,src.shape[-1])
         num_frames_single_group = self.num_frames // self.num_groups
         src,weight,sampled_inds = self.Attention(src,return_weight=True)
-        src = src.unflatten(0, (-1, self.num_frames))
+        src = src.reshape(B,16,-1,self.channels)
 
         signal = True
         if signal:

@@ -146,7 +146,7 @@ MODEL:
             dropout: 0.1
             nheads: 4
             pre_norm: False
-            num_frames: 16
+            num_frames: 32
             num_groups: 4
             use_grid_pos:
                 enabled: True
