@@ -925,7 +925,7 @@ class DENet5Head(RoIHeadTemplate):
 
 
         tokens2,box_reg,feat_box, = self.transformer2st(src_pre,tokens[-1],src_cur)
-        # box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
+        box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
         point_cls_list = []
         point_reg_list = []
 
