@@ -342,7 +342,7 @@ class KPTransformer(nn.Module):
         token_list = list()
         src = src.reshape(src.shape[0]*self.num_frames,-1,src.shape[-1])
         num_frames_single_group = self.num_frames // self.num_groups
-        src,weight,sampled_inds = self.Attention(src,return_weight=True)
+        src,weight,sampled_inds = self.Attention(src,return_weight=True,drop=0.5 if self.num_frames==16 else 0.45)
         src = src.reshape(B,16,-1,self.channels)
 
         signal = True
@@ -373,18 +373,18 @@ class KPTransformer(nn.Module):
         # src_cur = self.Crossatten2(src_cur,src_new)
         token = self.decoder_layer3(token,src)
         token_list.append(token)
-        # src_new = self.pointnet(src_new.permute(0,2,1))
+        src = self.pointnet(src.permute(0,2,1))
         # src = src.permute(0,2,1)
-        # x = torch.max(src,dim=-1).values
-        #
-        # x = F.relu(self.x_bn1(self.fc1(x)))
-        # feat = F.relu(self.x_bn2(self.fc2(x)))
-        #
-        # centers = self.fc_ce2(F.relu(self.fc_ce1(feat)))
-        # sizes = self.fc_s2(F.relu(self.fc_s1(feat)))
-        # headings = self.fc_hr2(F.relu(self.fc_hr1(feat)))
-        # cls = self.fc_cls2(F.relu(self.fc_cls1(feat)))
-        return token_list
+        x = torch.max(src,dim=-1).values
+
+        x = F.relu(self.x_bn1(self.fc1(x)))
+        feat = F.relu(self.x_bn2(self.fc2(x)))
+
+        centers = self.fc_ce2(F.relu(self.fc_ce1(feat)))
+        sizes = self.fc_s2(F.relu(self.fc_s1(feat)))
+        headings = self.fc_hr2(F.relu(self.fc_hr1(feat)))
+        cls = self.fc_cls2(F.relu(self.fc_cls1(feat)))
+        return token_list,torch.concat([centers,sizes,headings],-1),feat
 
 class Pointnet(nn.Module):
     def __init__(self,channels):
@@ -924,8 +924,8 @@ class DENet5Head(RoIHeadTemplate):
         src_pre = self.get_proposal_aware_motion_feature(src_pre, trajectory_rois)
 
 
-        tokens2 = self.transformer2st(src_pre,tokens[-1],src_cur)
-        box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
+        tokens2,box_reg,feat_box, = self.transformer2st(src_pre,tokens[-1],src_cur)
+        # box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
         point_cls_list = []
         point_reg_list = []
 
