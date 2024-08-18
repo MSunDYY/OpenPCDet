@@ -241,13 +241,13 @@ class DataProcessor(object):
         def generate_trajectory_msf(cur_batch_boxes, batch_dict):
 
             if False:
-                mask = batch_dict['gt_names']=='Cyclist'
+                mask = batch_dict['gt_names']=='Vehicle'
 
                 batch_dict['gt_names'] = batch_dict['gt_names'][mask]
 
                 batch_dict['gt_boxes'] = batch_dict['gt_boxes'][mask]
 
-                mask = (batch_dict['roi_labels'][0]==3).nonzero().view(-1)
+                mask = (batch_dict['roi_labels'][0]==1).nonzero().view(-1)
                 if len(batch_dict['gt_boxes'].shape) ==3:
                     batch_dict['gt_boxes'] = batch_dict['gt_boxes'].reshape(-1,10)
                 if mask.shape[0]!=0:

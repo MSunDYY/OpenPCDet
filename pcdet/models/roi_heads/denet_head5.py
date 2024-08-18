@@ -302,8 +302,8 @@ class KPTransformer(nn.Module):
                                      nn.Linear(self.channels,7))
 
         self.conv1 = nn.Sequential(
-            nn.Conv1d(self.channels*4,self.channels,1,1),
-            nn.BatchNorm1d(self.channels),
+            nn.Conv1d(self.channels*4,self.channels*4,1,1),
+            nn.BatchNorm1d(self.channels*4),
             nn.ReLU(),
         )
         self.linear1 = nn.ModuleList([nn.Linear(self.channels*2,self.channels) for _ in range(self.num_groups)])
@@ -311,8 +311,8 @@ class KPTransformer(nn.Module):
         self.norm1 = nn.LayerNorm(self.channels)
 
         self.conv2 = nn.Sequential(
-            nn.Conv1d(self.channels * 4, self.channels , 1, 1),
-            nn.BatchNorm1d(self.channels ),
+            nn.Conv1d(self.channels * 4, self.channels*4 , 1, 1),
+            nn.BatchNorm1d(self.channels *4),
             nn.ReLU(),
 
         )
@@ -351,7 +351,7 @@ class KPTransformer(nn.Module):
             src_max = src.max(2).values
             src_max = src_max.flatten(1,2)
             src_max = self.conv1(src_max.unsqueeze(-1)).squeeze()
-            src_new = [self.linear1[i](torch.concat([src[:,i],src_max[:,None,:].repeat(1,src.shape[2],1)],dim=-1)) for i in range(self.num_groups)]
+            src_new = [self.linear1[i](torch.concat([src[:,i],src_max[:,None,self.channels*i:self.channels*(i+1)].repeat(1,src.shape[2],1)],dim=-1)) for i in range(self.num_groups)]
 
             src = self.norm1(src + torch.stack(src_new,1)).flatten(1,2)
         else:
@@ -362,9 +362,11 @@ class KPTransformer(nn.Module):
             src = src.unflatten(0,(-1,self.num_groups))
             src_max = src.max(2).values
             src_max = src_max.flatten(1,2)
-            src_max = self.conv2(src_max.unsqueeze(-1)).squeeze()
+            src_max = self.conv2(src_max.unsqueeze(-1)).squeeze(-1)
             # src = src.flatten(1,2)
-            src_new = [self.linear2[i](torch.concat([src[:,i],src_max[:,None,:].repeat(1,src.shape[2],1)],dim=-1)) for i in range(self.num_groups)]
+
+            src_new = [self.linear2[i](torch.concat([src[:,i],src_max[:,None,self.channels*i:self.channels*(i+1)].repeat(1,src.shape[2],1)],dim=-1)) for i in range(self.num_groups)]
+
             src = self.norm2(src + torch.stack(src_new,1)).flatten(1,2)
         else:
             src = src.reshape(-1,self.num_groups*src.shape[1],src.shape[-1])
@@ -373,18 +375,18 @@ class KPTransformer(nn.Module):
         # src_cur = self.Crossatten2(src_cur,src_new)
         token = self.decoder_layer3(token,src)
         token_list.append(token)
-        src = self.pointnet(src.permute(0,2,1))
-        # src = src.permute(0,2,1)
-        x = torch.max(src,dim=-1).values
-
-        x = F.relu(self.x_bn1(self.fc1(x)))
-        feat = F.relu(self.x_bn2(self.fc2(x)))
-
-        centers = self.fc_ce2(F.relu(self.fc_ce1(feat)))
-        sizes = self.fc_s2(F.relu(self.fc_s1(feat)))
-        headings = self.fc_hr2(F.relu(self.fc_hr1(feat)))
-        cls = self.fc_cls2(F.relu(self.fc_cls1(feat)))
-        return token_list,torch.concat([centers,sizes,headings],-1),feat
+        # src = self.pointnet(src.permute(0,2,1))
+        # # src = src.permute(0,2,1)
+        # x = torch.max(src,dim=-1).values
+        #
+        # x = F.relu(self.x_bn1(self.fc1(x)))
+        # feat = F.relu(self.x_bn2(self.fc2(x)))
+        #
+        # centers = self.fc_ce2(F.relu(self.fc_ce1(feat)))
+        # sizes = self.fc_s2(F.relu(self.fc_s1(feat)))
+        # headings = self.fc_hr2(F.relu(self.fc_hr1(feat)))
+        # cls = self.fc_cls2(F.relu(self.fc_cls1(feat)))
+        return token_list
 
 class Pointnet(nn.Module):
     def __init__(self,channels):
@@ -446,9 +448,10 @@ class DENet5Head(RoIHeadTemplate):
         # self.cross = nn.ModuleList([CrossAttention(3,4,256,None) for i in range(4)])
         self.seqboxembed = PointNet(8,model_cfg=self.model_cfg)
 
-        self.jointembed = MLP(self.hidden_dim+256, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
+        self.jointembed = MLP(self.hidden_dim, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
         self.jointclsembed = MLP(self.hidden_dim+256,256,1,num_layers=2)
         self.up_dimension_geometry = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
+        self.up_dimension_geometry_pre = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
         self.up_dimension_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
         self.points_box_reg = MLP(256,256,7,3)
 
@@ -613,7 +616,7 @@ class DENet5Head(RoIHeadTemplate):
         geometry_aware_feat = self.spherical_coordinate(geometry_aware_feat,diag_dist=diag_dist[:,:,None])
 
         motion_aware_feat = self.up_dimension_motion(torch.cat([motion_aware_feat, point_time_padding], -1))
-        geometry_aware_feat = self.up_dimension_geometry(torch.concat([geometry_aware_feat.reshape(num_rois,num_frames*num_points_single_frame,-1),proxy_point[:,:,3:]],-1))
+        geometry_aware_feat = self.up_dimension_geometry_pre(torch.concat([geometry_aware_feat.reshape(num_rois,num_frames*num_points_single_frame,-1),proxy_point[:,:,3:]],-1))
 
         return motion_aware_feat + geometry_aware_feat
 
@@ -924,8 +927,8 @@ class DENet5Head(RoIHeadTemplate):
         src_pre = self.get_proposal_aware_motion_feature(src_pre, trajectory_rois)
 
 
-        tokens2,box_reg,feat_box, = self.transformer2st(src_pre,tokens[-1],src_cur)
-        box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
+        tokens2 = self.transformer2st(src_pre,tokens[-1],src_cur)
+        # box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
         point_cls_list = []
         point_reg_list = []
 
@@ -936,14 +939,14 @@ class DENet5Head(RoIHeadTemplate):
 
         for j in range(self.num_enc_layer):
             point_reg_list.append(self.bbox_embed[0](tokens[j][:,0]))
-        point_reg_list.append(self.bbox_embed_final(tokens2[0][:,0]))
+        # point_reg_list.append(self.bbox_embed_final(tokens2[0][:,0]))
 
         point_cls = torch.cat(point_cls_list,0)
 
         point_reg = torch.cat(point_reg_list,0)
         hs = hs.permute(1,0,2).reshape(hs.shape[1],-1)
 
-        joint_reg = self.jointembed(torch.cat([tokens2[-1][:,0],feat_box],-1))
+        joint_reg = self.jointembed(torch.cat([tokens2[-1][:,0]],-1))
         # joint_cls = self.jointclsembed(torch.cat([tokens2[-1][0],feat_box],dim=-1))
 
 
@@ -996,7 +999,7 @@ class DENet5Head(RoIHeadTemplate):
             targets_dict['batch_size'] = batch_size
             targets_dict['rcnn_cls'] = rcnn_cls
             targets_dict['rcnn_reg'] = rcnn_reg
-            targets_dict['box_reg'] = box_reg
+            targets_dict['box_reg'] = rcnn_reg
             targets_dict['point_reg'] = point_reg
             targets_dict['point_cls'] = point_cls
             self.forward_ret_dict = targets_dict
