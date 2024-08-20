@@ -55,8 +55,8 @@ def _create_pd_detection(detections, infos, result_path, tracking=False):
         # x,y,z,w,l,h,r2
         # x,y,z,l,w,h,r1
         # r2 = -pi/2 - r1
-        box3d[:, -1] = -box3d[:, -1] - np.pi / 2
-        box3d = box3d[:, [0, 1, 2, 4, 3, 5, -1]]
+        # box3d[:, -1] = -box3d[:, -1] - np.pi / 2
+        # box3d = box3d[:, [0, 1, 2, 4, 3, 5, -1]]
 
         if tracking:
             tracking_ids = detection['tracking_ids']
