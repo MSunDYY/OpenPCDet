@@ -1,6 +1,7 @@
+import copy
 import pickle
 import time
-
+import os
 import numpy as np
 import torch
 import tqdm
@@ -34,6 +35,71 @@ def statistics_info(cfg, ret_dict, metric, disp_dict):
                 metric['gt_num'],
                 # metric['loss_cls'][0]/metric['pred_num'][0] ,metric['loss_cls'][1]/metric['pred_num'][1],
             torch.var(metric['pred_scores']).item())
+
+def _create_pd_detection(detections, infos, result_path, tracking=False):
+    """Creates a prediction objects file."""
+    from waymo_open_dataset import label_pb2
+    from waymo_open_dataset.protos import metrics_pb2
+    LABEL_TO_TYPE = {0:1,1:2,2:4}
+    objects = metrics_pb2.Objects()
+
+    for idx,detection in enumerate(detections):
+        info = infos[idx]
+        # obj = get_obj(info['anno_path'])
+
+        box3d = detection["boxes_lidar"][:,:7]
+        scores = detection["score"]
+        labels = detection["pred_labels"]-1
+
+        # transform back to Waymo coordinate
+        # x,y,z,w,l,h,r2
+        # x,y,z,l,w,h,r1
+        # r2 = -pi/2 - r1
+        box3d[:, -1] = -box3d[:, -1] - np.pi / 2
+        box3d = box3d[:, [0, 1, 2, 4, 3, 5, -1]]
+
+        if tracking:
+            tracking_ids = detection['tracking_ids']
+
+        for i in range(box3d.shape[0]):
+            det  = box3d[i]
+            score = scores[i]
+
+            label = labels[i]
+
+            o = metrics_pb2.Object()
+            o.context_name = info['metadata']['context_name']
+            o.frame_timestamp_micros = info['metadata']['timestamp_micros']
+
+            # Populating box and score.
+            box = label_pb2.Label.Box()
+            box.center_x = det[0]
+            box.center_y = det[1]
+            box.center_z = det[2]
+            box.length = det[3]
+            box.width = det[4]
+            box.height = det[5]
+            box.heading = det[-1]
+            o.object.box.CopyFrom(box)
+            o.score = score
+            # Use correct type.
+            o.object.type = LABEL_TO_TYPE[label]
+
+            if tracking:
+                o.object.id = uuid_gen.get_uuid(int(tracking_ids[i]))
+
+            objects.objects.append(o)
+
+    # Write objects to a file.
+    if tracking:
+        path = os.path.join(result_path, 'tracking_pred.bin')
+    else:
+        path = os.path.join(result_path, 'detection_pred.bin')
+
+    print("results saved to {}".format(path))
+    f = open(path, 'wb')
+    f.write(objects.SerializeToString())
+    f.close()
 
 
 def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=False, result_dir=None):
@@ -158,6 +224,9 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
 
     logger.info(result_str)
     ret_dict.update(result_dict)
+
+    _create_pd_detection(det_annos,dataset.infos,final_output_dir)
+
 
     logger.info('Result is saved to %s' % result_dir)
     logger.info('****************Evaluation done.*****************')
