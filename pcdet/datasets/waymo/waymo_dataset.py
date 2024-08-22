@@ -408,14 +408,15 @@ class WaymoDataset(DatasetTemplate):
             poses = np.concatenate(pose_all, axis=0).astype(np.float32)
             num_points_all = np.array(num_points_all)
         else:
+            key_points_mini_raw = Path('../../data/waymo/key_points_mini_raw')
             key_points_mini_root = Path('../../data/waymo/key_points_mini')
             key_points_root = Path('../../data/waymo/key_points')
 
 
             for idx, sample_idx_pre in enumerate(reversed(sample_idx_pre_list)):
-                key_points_file = key_points_mini_root/sequence_name/('%04d.npy'%sample_idx_pre)
+                key_points_file = key_points_mini_raw/sequence_name/('%04d.npy'%sample_idx_pre)
                 if not os.path.exists(key_points_file):
-                    key_points_file = key_points_root/sequence_name/('%04d.npy'%sample_idx_pre)
+                    key_points_file = key_points_mini_root/sequence_name/('%04d.npy'%sample_idx_pre)
                 try:
                     points_pre = np.load(key_points_file)
                 except:
@@ -586,7 +587,7 @@ class WaymoDataset(DatasetTemplate):
                     continue
                 sample_idx_pre = min(max(sample_idx + idx, 0), len(sequence_info) - 1)
                 pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
-                roi_path = Path('../../data/waymo/key_rois') / sequence_name / ('%04d.npy' % (sample_idx))
+                roi_path = Path('../../data/waymo/key_rois') / sequence_name / ('%04d.npy' % (sample_idx_pre))
                 pred_boxes = np.load(roi_path)[:,:9]
                 pred_boxes = self.transform_prebox_to_current(pred_boxes, pose_pre, pose_cur)
                 pred_boxes[:, :2] += 0.1 * (sample_idx - sample_idx_pre) * pred_boxes[:, 7:9]

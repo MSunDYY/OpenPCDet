@@ -1009,27 +1009,15 @@ class DataProcessor(object):
             )
             b = torch.Tensor([crop[2] - crop[0], crop[3] - crop[1]]) / 2
             b = A.matmul(-b) + b
-            rotation = A.matmul(rotation)
             translation = A.matmul(translation) + b
             transform = torch.eye(4)
             transform[:2, :2] = rotation
             transform[:2, 3] = translation
             transforms.append(transform.numpy())
         data_dict["img_aug_matrix"] = transforms
-        return data_dict
+        return batch_dict
 
-    def forward(self, data_dict):
-        """
-        Args:
-            data_dict:
-                points: (N, 3 + C_in)
-                gt_boxes: optional, (N, 7 + C) [x, y, z, dx, dy, dz, heading, ...]
-                gt_names: optional, (N), string
-                ...
-
-        Returns:
-        """
-
+    def forward(self,data_dict):
         for cur_processor in self.data_processor_queue:
             data_dict = cur_processor(data_dict=data_dict)
         return data_dict

@@ -36,6 +36,72 @@ def statistics_info(cfg, ret_dict, metric, disp_dict):
                 # metric['loss_cls'][0]/metric['pred_num'][0] ,metric['loss_cls'][1]/metric['pred_num'][1],
             torch.var(metric['pred_scores']).item())
 
+
+def _create_gt_detection(infos, final_output_dir):
+    """Creates a gt prediction object file for local evaluation."""
+    from waymo_open_dataset import label_pb2
+    from waymo_open_dataset.protos import metrics_pb2
+
+    objects = metrics_pb2.Objects()
+    CAT_NAME_TO_ID = {
+        'Vehicle': 1,
+        'Pedestrian': 2,
+        'Sign': 3,
+        'Cyclist': 4,
+    }
+    for info in infos:
+        # info = infos[idx]
+
+        obj = info['metadata']
+        annos = info['annos']
+        num_points_in_gt = annos['num_points_in_gt']
+        box3d = annos['gt_boxes_lidar'][:,:7]
+
+        if len(box3d) == 0:
+            continue
+
+        names = annos['name']
+
+        box3d = box3d[:, [0, 1, 2, 3, 4, 5, -1]]
+
+        for i in range(box3d.shape[0]):
+            if num_points_in_gt[i] == 0:
+                continue
+            if names[i] == 'UNKNOWN':
+                continue
+
+            det = box3d[i]
+            score = 1.0
+            label = names[i]
+
+            o = metrics_pb2.Object()
+            o.context_name = obj['context_name']
+            o.frame_timestamp_micros = obj['timestamp_micros']
+
+            # Populating box and score.
+            box = label_pb2.Label.Box()
+            box.center_x = det[0]
+            box.center_y = det[1]
+            box.center_z = det[2]
+            box.length = det[3]
+            box.width = det[4]
+            box.height = det[5]
+            box.heading = det[-1]
+            o.object.box.CopyFrom(box)
+            o.score = score
+            # Use correct type.
+            o.object.type = CAT_NAME_TO_ID[label]
+            o.object.num_lidar_points_in_box = num_points_in_gt[i]
+            o.object.id = annos['obj_ids'][i]
+
+            objects.objects.append(o)
+
+    # Write objects to a file.
+    f = open(os.path.join(final_output_dir, 'gt_preds.bin'), 'wb')
+    f.write(objects.SerializeToString())
+    f.close()
+
+
 def _create_pd_detection(detections, infos, result_path, tracking=False):
     """Creates a prediction objects file."""
     from waymo_open_dataset import label_pb2
@@ -224,9 +290,9 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
 
     logger.info(result_str)
     ret_dict.update(result_dict)
-
-    _create_pd_detection(det_annos,dataset.infos,final_output_dir)
-
+    if args.output_pkl:
+        _create_pd_detection(det_annos,dataset.infos,result_dir)
+        _create_gt_detection(dataset.infos,result_dir)
 
     logger.info('Result is saved to %s' % result_dir)
     logger.info('****************Evaluation done.*****************')

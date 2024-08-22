@@ -302,8 +302,8 @@ class KPTransformer(nn.Module):
                                      nn.Linear(self.channels,7))
 
         self.conv1 = nn.Sequential(
-            nn.Conv1d(self.channels*4,self.channels*4,1,1),
-            nn.BatchNorm1d(self.channels*4),
+            nn.Conv1d(self.channels*4,self.channels,1,1),
+            nn.BatchNorm1d(self.channels),
             nn.ReLU(),
         )
         self.linear1 = nn.ModuleList([nn.Linear(self.channels*2,self.channels) for _ in range(self.num_groups)])
@@ -311,8 +311,8 @@ class KPTransformer(nn.Module):
         self.norm1 = nn.LayerNorm(self.channels)
 
         self.conv2 = nn.Sequential(
-            nn.Conv1d(self.channels * 4, self.channels*4 , 1, 1),
-            nn.BatchNorm1d(self.channels *4),
+            nn.Conv1d(self.channels * 4, self.channels , 1, 1),
+            nn.BatchNorm1d(self.channels ),
             nn.ReLU(),
 
         )
@@ -351,7 +351,7 @@ class KPTransformer(nn.Module):
             src_max = src.max(2).values
             src_max = src_max.flatten(1,2)
             src_max = self.conv1(src_max.unsqueeze(-1)).squeeze()
-            src_new = [self.linear1[i](torch.concat([src[:,i],src_max[:,None,self.channels*i:self.channels*(i+1)].repeat(1,src.shape[2],1)],dim=-1)) for i in range(self.num_groups)]
+            src_new = [self.linear1[i](torch.concat([src[:,i],src_max[:,None,:].repeat(1,src.shape[2],1)],dim=-1)) for i in range(self.num_groups)]
 
             src = self.norm1(src + torch.stack(src_new,1)).flatten(1,2)
         else:
@@ -365,7 +365,7 @@ class KPTransformer(nn.Module):
             src_max = self.conv2(src_max.unsqueeze(-1)).squeeze(-1)
             # src = src.flatten(1,2)
 
-            src_new = [self.linear2[i](torch.concat([src[:,i],src_max[:,None,self.channels*i:self.channels*(i+1)].repeat(1,src.shape[2],1)],dim=-1)) for i in range(self.num_groups)]
+            src_new = [self.linear2[i](torch.concat([src[:,i],src_max[:,None,:].repeat(1,src.shape[2],1)],dim=-1)) for i in range(self.num_groups)]
 
             src = self.norm2(src + torch.stack(src_new,1)).flatten(1,2)
         else:
@@ -616,7 +616,7 @@ class DENet5Head(RoIHeadTemplate):
         geometry_aware_feat = self.spherical_coordinate(geometry_aware_feat,diag_dist=diag_dist[:,:,None])
 
         motion_aware_feat = self.up_dimension_motion(torch.cat([motion_aware_feat, point_time_padding], -1))
-        geometry_aware_feat = self.up_dimension_geometry_pre(torch.concat([geometry_aware_feat.reshape(num_rois,num_frames*num_points_single_frame,-1),proxy_point[:,:,3:]],-1))
+        geometry_aware_feat = self.up_dimension_geometry(torch.concat([geometry_aware_feat.reshape(num_rois,num_frames*num_points_single_frame,-1),proxy_point[:,:,3:]],-1))
 
         return motion_aware_feat + geometry_aware_feat
 
@@ -911,7 +911,7 @@ class DENet5Head(RoIHeadTemplate):
             os.makedirs(key_roi_root,exist_ok=True)
             key_roi_mask = (src_idx!=0).sum(1)<28
             # np.save(key_roi_root/('%04d.npy' % batch_dict['sample_idx'][0]),torch.concat([roi_boxes[key_roi_mask],roi_scores[key_roi_mask,None],roi_labels[key_roi_mask,None].float()],dim=1).cpu().numpy())
-            # np.save(key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]), torch.concat([query_points_shrink],dim=0).cpu().numpy())
+            np.save(key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]), torch.concat([query_points_shrink],dim=0).cpu().numpy())
             # print(self.voxel_sampler_cur.num_points/self.voxel_sampler_cur.iteration)
             if self.signal=='train':
                 return batch_dict
