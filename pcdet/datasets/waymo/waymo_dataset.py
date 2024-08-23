@@ -409,7 +409,7 @@ class WaymoDataset(DatasetTemplate):
             num_points_all = np.array(num_points_all)
         else:
             key_points_mini_raw = Path('../../data/waymo/key_points_mini_raw')
-            key_points_mini_root = Path('../../data/waymo/key_points_mini_new')
+            key_points_mini_root = Path('../../data/waymo/key_points_mini')
             key_points_root = Path('../../data/waymo/key_points')
 
 

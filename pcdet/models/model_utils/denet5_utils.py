@@ -202,10 +202,15 @@ class MultiheadAttention(nn.Module):
         self.in_proj_weight = Parameter(torch.empty((3 * dim, dim)))
         self.in_proj_bias = Parameter(torch.empty(3 * dim))
         self.dropout = nn.Dropout(dropout)
-
         self.out_proj = NonDynamicallyQuantizableLinear(dim, dim, bias=True)
-
         self.fc_o = nn.Linear(dim, dim)
+        self.conv_weight = nn.Sequential(nn.Conv1d(num_heads*2,num_heads*2,1,1),
+                                         nn.BatchNorm1d(num_heads*2),
+                                         nn.ReLU(),
+                                         nn.Conv1d(num_heads*2,1,1,1)
+                                         )
+
+
         self._reset_parameters()
     def _reset_parameters(self):
         nn.init.xavier_uniform_(self.in_proj_weight)
@@ -224,11 +229,17 @@ class MultiheadAttention(nn.Module):
         Q = Q / math.sqrt(dim_split)
         A = torch.softmax(torch.bmm(Q,K.transpose(1,2)), 2)
         A = self.dropout(A)
-        weight = A.view(B,self.num_heads,T,T).mean(dim=1)
+
         if drop !=1:
-            sampled_inds = torch.topk(weight.sum(1),int(weight.shape[1]*drop),-1)[1]
+            weight_mean = A.view(B, self.num_heads, T, T).mean(dim=-2)
+            weight_max = A.view(B,self.num_heads,T,T).max(dim=-2)[0]
+            weight = F.sigmoid(self.conv_weight(torch.concat([weight_mean,weight_max],dim=-2)))
+            V = V.unflatten(0,(B,self.num_heads)) * weight.unsqueeze(-1).flatten(0,1)
+            sampled_inds = torch.topk(weight.squeeze(1),int(weight.shape[-1]*drop),-1)[1]
+
             A = torch.gather(A.unflatten(0,(-1,self.num_heads)),2,sampled_inds[:,None,:,None].repeat(1,self.num_heads,1,T)).flatten(0,1)
         else:
+            weight = None
             sampled_inds = None
         O = torch.bmm(A,V)
         O = O.view(B,self.num_heads,L_out,dim_split).transpose(1,2).contiguous().view(B,L_out,self.dim_LIN)
@@ -792,7 +803,7 @@ class VoxelPointsSampler(nn.Module):
             src_idx_list.append(src_idx)
             query_points_list.append(query_points)
 
-            if True:
+            if False:
 
                 idx = torch.arange(voxel.shape[1],device=device)[None,:].repeat(voxel.shape[0],1)
                 idx = idx<num_voxel[:,None]
