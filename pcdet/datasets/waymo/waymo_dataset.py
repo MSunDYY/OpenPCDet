@@ -409,14 +409,14 @@ class WaymoDataset(DatasetTemplate):
             num_points_all = np.array(num_points_all)
         else:
             key_points_mini_raw = Path('../../data/waymo/key_points_mini_raw')
-            key_points_mini_root = Path('../../data/waymo/key_points_mini')
+            key_points_mini_root = Path('../../data/waymo/key_points_mini_new')
             key_points_root = Path('../../data/waymo/key_points')
 
 
             for idx, sample_idx_pre in enumerate(reversed(sample_idx_pre_list)):
-                key_points_file = key_points_mini_raw/sequence_name/('%04d.npy'%sample_idx_pre)
+                key_points_file = key_points_mini_root/sequence_name/('%04d.npy'%sample_idx_pre)
                 if not os.path.exists(key_points_file):
-                    key_points_file = key_points_mini_root/sequence_name/('%04d.npy'%sample_idx_pre)
+                    key_points_file = key_points_mini_raw/sequence_name/('%04d.npy'%sample_idx_pre)
                 try:
                     points_pre = np.load(key_points_file)
                 except:
@@ -511,6 +511,9 @@ class WaymoDataset(DatasetTemplate):
             data_tag = 'waymo_processed_data_v0_5_0_full' if self.training else 'waymo_processed_data_v0_5_0_full_val'
             file_name = self.root_path/data_tag/sequence_name/('%04d.npy'%sample_idx)
             points = np.load(file_name)
+            if self.dataset_cfg.SEQUENCE_CONFIG.SAMPLE_OFFSET[0]<-3:
+                points = np.concatenate([points,np.load(self.root_path/(data_tag + '_transformed_4frames')/sequence_name/('%04d.npy'%sample_idx))],0)
+
         else:
             if self.use_shared_memory and index < self.shared_memory_file_limit:
                 sa_key = f'{sequence_name}___{sample_idx}'

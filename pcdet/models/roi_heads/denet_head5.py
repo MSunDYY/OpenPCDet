@@ -451,7 +451,7 @@ class DENet5Head(RoIHeadTemplate):
         self.jointembed = MLP(self.hidden_dim, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
         self.jointclsembed = MLP(self.hidden_dim+256,256,1,num_layers=2)
         self.up_dimension_geometry = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
-        self.up_dimension_geometry_pre = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
+        # self.up_dimension_geometry_pre = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
         self.up_dimension_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
         self.points_box_reg = MLP(256,256,7,3)
 
@@ -903,7 +903,7 @@ class DENet5Head(RoIHeadTemplate):
 
         hs, tokens,src_cur = self.transformer(src_cur, batch_dict, pos=None)
         if not self.training:
-            key_points_root = Path('../../data/waymo/key_points_mini_raw') / batch_dict['metadata'][0][:-4]
+            key_points_root = Path('../../data/waymo/key_points_mini_new') / batch_dict['metadata'][0][:-4]
             key_roi_root = Path('../../data/waymo/key_rois') / batch_dict['metadata'][0][:-4]
             src_idx = batch_dict['src_idx']
             query_points_shrink = query_points[torch.unique(src_idx)]
@@ -911,7 +911,7 @@ class DENet5Head(RoIHeadTemplate):
             os.makedirs(key_roi_root,exist_ok=True)
             key_roi_mask = (src_idx!=0).sum(1)<28
             # np.save(key_roi_root/('%04d.npy' % batch_dict['sample_idx'][0]),torch.concat([roi_boxes[key_roi_mask],roi_scores[key_roi_mask,None],roi_labels[key_roi_mask,None].float()],dim=1).cpu().numpy())
-            np.save(key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]), torch.concat([query_points_shrink],dim=0).cpu().numpy())
+            np.save(key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]), torch.concat([query_points_shrink,points_pre],dim=0).cpu().numpy())
             # print(self.voxel_sampler_cur.num_points/self.voxel_sampler_cur.iteration)
             if self.signal=='train':
                 return batch_dict
