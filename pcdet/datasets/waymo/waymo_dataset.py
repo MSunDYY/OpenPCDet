@@ -408,15 +408,16 @@ class WaymoDataset(DatasetTemplate):
             poses = np.concatenate(pose_all, axis=0).astype(np.float32)
             num_points_all = np.array(num_points_all)
         else:
+            key_points_root = Path('../../data/waymo/key_points')
             key_points_mini_raw = Path('../../data/waymo/key_points_mini_raw')
-            key_points_mini_root = Path('../../data/waymo/key_points_mini')
+            key_points_mini_root = Path('../../data/waymo/key_points_new')
             key_points_root = Path('../../data/waymo/key_points')
 
 
             for idx, sample_idx_pre in enumerate(reversed(sample_idx_pre_list)):
                 key_points_file = key_points_mini_root/sequence_name/('%04d.npy'%sample_idx_pre)
                 if not os.path.exists(key_points_file):
-                    key_points_file = key_points_mini_raw/sequence_name/('%04d.npy'%sample_idx_pre)
+                    key_points_file = key_points_root/sequence_name/('%04d.npy'%sample_idx_pre)
                 try:
                     points_pre = np.load(key_points_file)
                 except:
