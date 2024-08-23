@@ -234,7 +234,7 @@ class MultiheadAttention(nn.Module):
             weight_mean = A.view(B, self.num_heads, T, T).mean(dim=-2)
             weight_max = A.view(B,self.num_heads,T,T).max(dim=-2)[0]
             weight = F.sigmoid(self.conv_weight(torch.concat([weight_mean,weight_max],dim=-2)))
-            V = V.unflatten(0,(B,self.num_heads)) * weight.unsqueeze(-1).flatten(0,1)
+            V = (V.unflatten(0,(B,self.num_heads)) * weight.unsqueeze(-1)).flatten(0,1)
             sampled_inds = torch.topk(weight.squeeze(1),int(weight.shape[-1]*drop),-1)[1]
 
             A = torch.gather(A.unflatten(0,(-1,self.num_heads)),2,sampled_inds[:,None,:,None].repeat(1,self.num_heads,1,T)).flatten(0,1)

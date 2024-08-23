@@ -411,7 +411,6 @@ class WaymoDataset(DatasetTemplate):
             key_points_root = Path('../../data/waymo/key_points')
             key_points_mini_raw = Path('../../data/waymo/key_points_mini_raw')
             key_points_mini_root = Path('../../data/waymo/key_points_new')
-            key_points_root = Path('../../data/waymo/key_points')
 
 
             for idx, sample_idx_pre in enumerate(reversed(sample_idx_pre_list)):
