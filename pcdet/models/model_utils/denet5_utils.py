@@ -782,6 +782,11 @@ class VoxelPointsSampler(nn.Module):
                 point_mask_pre = torch.arange(self.k,device=device)[None,:].repeat(len(key_points_pre),1)
                 point_mask_pre = point_mask_pre<num_points_pre[:,None]
                 key_points_pre = key_points_pre[point_mask_pre]
+                if key_points_pre.shape[0]>0:
+                    points_in_boxes_idx = roiaware_pool3d_utils.points_in_boxes_gpu(key_points_pre[None, :, :3],
+                                                                      pre_roi[None,:,:7]).squeeze(0)
+                    key_points_pre = key_points_pre[points_in_boxes_idx>=0]
+
                 points_pre_list.append(key_points_pre)
             num_points = num_points[voxel_mask]
             key_points = voxel[voxel_mask, :]
