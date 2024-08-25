@@ -136,6 +136,7 @@ MODEL:
             use_mlp_mixer:
                 enabled: True
                 hidden_dim: 16
+            drop_rate: [0.6,0.5,1]
 
         Transformer2st:
             num_lidar_points: 64

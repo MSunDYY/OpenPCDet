@@ -204,9 +204,10 @@ class MultiheadAttention(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.out_proj = NonDynamicallyQuantizableLinear(dim, dim, bias=True)
         self.fc_o = nn.Linear(dim, dim)
-        self.conv_weight = nn.Sequential(nn.Conv1d(num_heads*2,num_heads*2,1,1),
-                                         nn.BatchNorm1d(num_heads*2),
-                                         nn.ReLU(),
+        self.conv_weight = nn.Sequential(
+            # nn.Conv1d(num_heads*2,num_heads*2,1,1),
+            #                              nn.BatchNorm1d(num_heads*2),
+            #                              nn.ReLU(),
                                          nn.Conv1d(num_heads*2,1,1,1)
                                          )
 
@@ -231,8 +232,8 @@ class MultiheadAttention(nn.Module):
         A = self.dropout(A)
 
         if drop !=1:
-            weight_mean = A.view(B, self.num_heads, T, T).mean(dim=-2)
-            weight_max = A.view(B,self.num_heads,T,T).max(dim=-2)[0]
+            weight_mean = A.view(B, self.num_heads, T, T).mean(dim=-2).detach()
+            weight_max = A.view(B,self.num_heads,T,T).max(dim=-2)[0].detach()
             weight = F.sigmoid(self.conv_weight(torch.concat([weight_mean,weight_max],dim=-2)))
             V = (V.unflatten(0,(B,self.num_heads)) * weight.unsqueeze(-1)).flatten(0,1)
             sampled_inds = torch.topk(weight.squeeze(1),int(weight.shape[-1]*drop),-1)[1]
@@ -515,7 +516,7 @@ class TransformerEncoderLayer(nn.Module):
                      pos: Optional[Tensor] = None):
 
 
-        src_intra_group_fusion,weight,sampled_inds = self.mlp_mixer_3d(src[:,1:],return_weight=True,drop = 0.5 if self.layer_count>1 else 1.0)
+        src_intra_group_fusion,weight,sampled_inds = self.mlp_mixer_3d(src[:,1:],return_weight=True,drop = self.config.drop_rate[self.layer_count-1])
 
 
         token = src[:,:1]
@@ -536,7 +537,7 @@ class TransformerEncoderLayer(nn.Module):
 
         src = torch.cat([src[:, :1], src_intra_group_fusion], 1)
 
-        if self.layer_count > 1:
+        if self.config.drop_rate[self.layer_count-1]<1:
 
             batch_dict['src_idx'] = torch.gather(batch_dict['src_idx'],1,sampled_inds)
 
