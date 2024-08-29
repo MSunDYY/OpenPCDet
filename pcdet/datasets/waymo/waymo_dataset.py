@@ -84,7 +84,7 @@ class WaymoDataset(DatasetTemplate):
         leaved_files = []
         for k in tqdm(range(len(self.sample_sequence_list))):
 
-            file_name = self.root_path / 'raw_data/tfrecord_validating' / self.sample_sequence_list[k]
+            file_name = Path('/media/dcx/Getea/waymo') / 'raw_data/tfrecord_training' /('training_'+ self.sample_sequence_list[k])
             if not file_name.exists():
                 leaved_files.append(file_name)
             sequence_name = os.path.splitext(self.sample_sequence_list[k])[0]
@@ -420,7 +420,7 @@ class WaymoDataset(DatasetTemplate):
                 try:
                     points_pre = np.load(key_points_file)
                 except:
-                    time.sleep(0.1)
+                    time.sleep(0.2)
                     points_pre = np.load(key_points_file)
 
                 points_pre = np.hstack([points_pre,0.1*(len(sample_idx_pre_list)-idx)*np.ones((points_pre.shape[0],1)).astype(points_pre.dtype)])

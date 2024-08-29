@@ -205,7 +205,7 @@ class MultiheadAttention(nn.Module):
         self.out_proj = NonDynamicallyQuantizableLinear(dim, dim, bias=True)
         self.fc_o = nn.Linear(dim, dim)
         self.conv_weight = nn.Sequential(
-            # nn.Conv1d(num_heads*2,num_heads*2,1,1),
+            nn.Conv1d(num_heads*2,num_heads*2,1,1),
             #                              nn.BatchNorm1d(num_heads*2),
             #                              nn.ReLU(),
                                          nn.Conv1d(num_heads*2,1,1,1)
@@ -232,14 +232,14 @@ class MultiheadAttention(nn.Module):
         A = self.dropout(A)
 
         if drop !=1:
-            # weight_mean = A.view(B, self.num_heads, T, T).mean(dim=-2).detach()
-            # weight_max = A.view(B,self.num_heads,T,T).max(dim=-2)[0].detach()
-            # weight = F.sigmoid(self.conv_weight(torch.concat([weight_mean,weight_max],dim=-2)))
+            weight_mean = A.view(B, self.num_heads, T, T).mean(dim=-2).detach()
+            weight_max = A.view(B,self.num_heads,T,T).max(dim=-2)[0].detach()
+            weight = F.sigmoid(self.conv_weight(torch.concat([weight_mean,weight_max],dim=-2))).squeeze(1)
 
-            weight = A.view(B,self.num_heads,T,T).mean(1)
-            weight = weight.sum(1)
+            # weight = A.view(B,self.num_heads,T,T).mean(1)
+            # weight = weight.sum(1)
             # V = (V.unflatten(0,(B,self.num_heads)) * weight.unsqueeze(-1)).flatten(0,1)
-            sampled_inds = torch.topk(weight.squeeze(1),int(weight.shape[-1]*drop),-1)[1]
+            sampled_inds = torch.topk(weight,int(weight.shape[-1]*drop),-1)[1]
 
             A = torch.gather(A.unflatten(0,(-1,self.num_heads)),2,sampled_inds[:,None,:,None].repeat(1,self.num_heads,1,T)).flatten(0,1)
         else:
@@ -305,7 +305,8 @@ class SpatialDropBlock(nn.Module):
 
         src2,weight,sampled_inds = self.mixer(src,src,src,drop=drop)
         if drop!=1:
-            src =torch.gather(src,1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))
+            src =torch.gather(src*weight.unsqueeze(-1),1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))
+
         src = src+self.dropout(src2)
         src_mixer = self.norm(src)
 

@@ -97,7 +97,7 @@ MODEL:
         AVG_STAGE1_SCORE: True
         USE_TRAJ_EMPTY_MASK: True
         USE_AUX_LOSS: True
-        IOU_WEIGHT: [0.45,0.4]
+        IOU_WEIGHT: [0.4,0.35]
 
         PRE_AUG: True
 
@@ -136,7 +136,7 @@ MODEL:
             use_mlp_mixer:
                 enabled: True
                 hidden_dim: 16
-            drop_rate: [0.6,0.5,1]
+            drop_rate: [0.6,0.5,1.0]
 
         Transformer2st:
             num_lidar_points: 64
