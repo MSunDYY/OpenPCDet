@@ -609,8 +609,11 @@ class DENet5Head(RoIHeadTemplate):
         lwh = trajectory_rois.flatten(0,1)[:, 3:6].unsqueeze(1)
         diag_dist = (lwh[:, :, 0] ** 2 + lwh[:, :, 1] ** 2 + lwh[:, :, 2] ** 2) ** 0.5
 
-
-        motion_aware_feat = proxy_point[:,:,:3].repeat(1,1,9)-corner_add_center_points.unflatten(0,(num_rois,-1))[:,0:1]
+        if False:
+            motion_aware_feat = proxy_point[:,:,:3].repeat(1,1,9)-corner_add_center_points.unflatten(0,(num_rois,-1))[:,0:1]
+        else:
+            motion_aware_feat = corner_add_center_points.unflatten(0,(num_rois,-1))-corner_add_center_points.unflatten(0,(num_rois,-1))[:,0:1]
+            motion_aware_feat = motion_aware_feat.unsqueeze(2).repeat(1,1,num_points_single_frame,1).flatten(1,2)
         geometry_aware_feat = proxy_point.reshape(num_rois*num_frames,num_points_single_frame,-1)[:, :, :3].repeat(1, 1, 9) - corner_add_center_points.unsqueeze(1)
         motion_aware_feat = self.spherical_coordinate(motion_aware_feat, diag_dist=diag_dist.unflatten(0,(num_rois,-1))[:,:1,:])
         geometry_aware_feat = self.spherical_coordinate(geometry_aware_feat,diag_dist=diag_dist[:,:,None])

@@ -232,12 +232,13 @@ class MultiheadAttention(nn.Module):
         A = self.dropout(A)
 
         if drop !=1:
-            weight_mean = A.view(B, self.num_heads, T, T).mean(dim=-2).detach()
-            weight_max = A.view(B,self.num_heads,T,T).max(dim=-2)[0].detach()
-            weight = F.sigmoid(self.conv_weight(torch.concat([weight_mean,weight_max],dim=-2))).squeeze(1)
+            # weight_mean = A.view(B, self.num_heads, T, T).mean(dim=-2).detach()
+            # weight_max = A.view(B,self.num_heads,T,T).max(dim=-2)[0].detach()
+            # weight = F.sigmoid(self.conv_weight(torch.concat([weight_mean,weight_max],dim=-2))).squeeze(1)
 
-            # weight = A.view(B,self.num_heads,T,T).mean(1)
-            # weight = weight.sum(1)
+            weight = A.view(B,self.num_heads,T,T).max(1)[0]
+            # var = weight.transpose(1,2).flatten(0,1).var(0)
+            weight = weight .sum(1)
             # V = (V.unflatten(0,(B,self.num_heads)) * weight.unsqueeze(-1)).flatten(0,1)
             sampled_inds = torch.topk(weight,int(weight.shape[-1]*drop),-1)[1]
 
@@ -305,7 +306,7 @@ class SpatialDropBlock(nn.Module):
 
         src2,weight,sampled_inds = self.mixer(src,src,src,drop=drop)
         if drop!=1:
-            src =torch.gather(src*weight.unsqueeze(-1),1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))
+            src =torch.gather(src,1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))
 
         src = src+self.dropout(src2)
         src_mixer = self.norm(src)
