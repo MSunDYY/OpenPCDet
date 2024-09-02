@@ -262,9 +262,9 @@ def main(args, cfgs):
     args.start_epoch = max(args.epochs - args.num_epochs_to_eval,
                            0)  # Only evaluate the last args.num_epochs_to_eval epochs
 
-    eval_single_ckpt(
+    repeat_eval_ckpt(
         model.module if dist_train else model,
-        test_loader, args, eval_output_dir, logger, last_epoch,
+        test_loader, args, eval_output_dir, logger, ckpt_dir,
         dist_test=dist_train
     )
     logger.info('**********************End evaluation %s/%s(%s)**********************' %
