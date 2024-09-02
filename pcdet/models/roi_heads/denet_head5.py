@@ -609,7 +609,7 @@ class DENet5Head(RoIHeadTemplate):
         lwh = trajectory_rois.flatten(0,1)[:, 3:6].unsqueeze(1)
         diag_dist = (lwh[:, :, 0] ** 2 + lwh[:, :, 1] ** 2 + lwh[:, :, 2] ** 2) ** 0.5
 
-        if False:
+        if True:
             motion_aware_feat = proxy_point[:,:,:3].repeat(1,1,9)-corner_add_center_points.unflatten(0,(num_rois,-1))[:,0:1]
         else:
             motion_aware_feat = corner_add_center_points.unflatten(0,(num_rois,-1))-corner_add_center_points.unflatten(0,(num_rois,-1))[:,0:1]

@@ -564,22 +564,29 @@ class DataProcessor(object):
 
             batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_labels, batch_trajectory_rois, batch_valid_length = sample_rois_for_mppnet(
                 batch_dict=data_dict, config=config)
-            reg_valid_mask = (batch_roi_ious > config.REG_FG_THRESH).long()
+
+            REG_FG_THRESH = torch.tensor([0.55,0.4,0.4])
+            CLS_FG_THRESH = torch.tensor([0.75,0.6,0.6])
+            CLS_BG_THRESH = torch.tensor([0.3,0.2,0.2])
+            reg_valid_mask = (batch_roi_ious > REG_FG_THRESH[batch_roi_labels-1]).long()
             if config.CLS_SCORE_TYPE == 'cls':
                 batch_cls_labels = (batch_roi_ious > config.CLS_FG_THRESH).long()
                 ignore_mask = (batch_roi_ious > config.CLS_BG_THRESH) & \
                               (batch_roi_ious < config.CLS_FG_THRESH)
                 batch_cls_labels[ignore_mask > 0] = -1
             elif config.CLS_SCORE_TYPE == 'roi_iou':
-                iou_bg_thresh = config.CLS_BG_THRESH
-                iou_fg_thresh = config.CLS_FG_THRESH
+                # iou_bg_thresh = config.CLS_BG_THRESH
+                # iou_fg_thresh = config.CLS_FG_THRESH
+                iou_bg_thresh = CLS_BG_THRESH[batch_roi_labels-1]
+                iou_fg_thresh = CLS_FG_THRESH[batch_roi_labels-1]
+
                 fg_mask = batch_roi_ious > iou_fg_thresh
                 bg_mask = batch_roi_ious < iou_bg_thresh
                 interval_mask = (fg_mask == 0) & (bg_mask == 0)
 
                 batch_cls_labels = (fg_mask > 0).float()
                 batch_cls_labels[interval_mask] = \
-                    (batch_roi_ious[interval_mask] - iou_bg_thresh) / (iou_fg_thresh - iou_bg_thresh)
+                    (batch_roi_ious[interval_mask] - iou_bg_thresh[interval_mask]) / (iou_fg_thresh[interval_mask] - iou_bg_thresh[interval_mask])
             else:
                 raise NotImplementedError
 
