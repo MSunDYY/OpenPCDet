@@ -7,8 +7,6 @@ from pcdet import device
 from pcdet.models.backbones_3d.spconv_backbone import SparseBasicBlock
 from pcdet.datasets.processor.data_processor import VoxelGeneratorWrapper
 from tools.visual_utils.open3d_vis_utils import draw_scenes
-from pcdet.ops.deformDETR.modules.ms_deform_attn import MSDeformAttn
-from pcdet.ops.deformDETR.functions import MSDeformAttnFunction
 from pcdet.ops.pointnet2.pointnet2_stack.pointnet2_utils import ball_query, grouping_operation
 from spconv.pytorch.functional import sparse_add
 from spconv.pytorch.core import SparseConvTensor
