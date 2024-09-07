@@ -289,7 +289,7 @@ class SpatialDropBlock(nn.Module):
     def __init__(self, channels, config=None, dropout=0.0, batch_first=False):
         super().__init__()
 
-        self.mixer = MultiheadAttention(channels,8,dropout,batch_first= True)
+        self.mixer = MultiheadAttention(channels,4,dropout,batch_first= True)
         # self.mixer = Attention(channels, 8,dropout=dropout )
         self.dropout = nn.Dropout(dropout)
         self.norm = nn.LayerNorm(channels)
