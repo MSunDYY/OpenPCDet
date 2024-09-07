@@ -328,7 +328,8 @@ class WaymoDataset(DatasetTemplate):
             sequence_name = sequence_name.replace('training_', '').replace('validation_', '')
 
             load_boxes = self.pred_boxes_dict[sequence_name][sample_idx]
-
+            if load_boxes.shape[0]==0:
+                load_boxes = np.array([[50,50,50,3,3,3,0,0,0,0,1]])
                 # assert load_boxes.shape[-1] == 11
 
             load_boxes[:, 7:9] = -0.1 * load_boxes[:, 7:9]  # transfer speed to negtive motion from t to t-1
