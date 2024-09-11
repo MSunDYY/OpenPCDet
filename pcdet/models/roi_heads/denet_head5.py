@@ -307,6 +307,8 @@ class KPTransformer(nn.Module):
             nn.ReLU(),
         )
         self.linear1 = nn.ModuleList([nn.Linear(self.channels*2,self.channels) for _ in range(self.num_groups)])
+        self.dropout1 = nn.ModuleList([nn.Dropout(0.1) for _ in range(self.num_groups)])
+        self.dropout2 = nn.ModuleList([nn.Dropout(0.1) for _ in range(self.num_groups)])
 
         self.norm1 = nn.LayerNorm(self.channels)
 
@@ -351,7 +353,7 @@ class KPTransformer(nn.Module):
             src_max = src.max(2).values
             src_max = src_max.flatten(1,2)
             src_max = self.conv1(src_max.unsqueeze(-1)).squeeze()
-            src_new = [self.linear1[i](torch.concat([src[:,i],src_max[:,None,:].repeat(1,src.shape[2],1)],dim=-1)) for i in range(self.num_groups)]
+            src_new = [self.dropout1[i](self.linear1[i](torch.concat([src[:,i],src_max[:,None,:].repeat(1,src.shape[2],1)],dim=-1))) for i in range(self.num_groups)]
 
             src = self.norm1(src + torch.stack(src_new,1)).flatten(1,2)
         else:
@@ -365,7 +367,7 @@ class KPTransformer(nn.Module):
             src_max = self.conv2(src_max.unsqueeze(-1)).squeeze(-1)
             # src = src.flatten(1,2)
 
-            src_new = [self.linear2[i](torch.concat([src[:,i],src_max[:,None,:].repeat(1,src.shape[2],1)],dim=-1)) for i in range(self.num_groups)]
+            src_new = [self.dropout2[i](self.linear2[i](torch.concat([src[:,i],src_max[:,None,:].repeat(1,src.shape[2],1)],dim=-1))) for i in range(self.num_groups)]
 
             src = self.norm2(src + torch.stack(src_new,1)).flatten(1,2)
         else:
