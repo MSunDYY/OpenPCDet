@@ -170,7 +170,7 @@ class DENet(Detector3DTemplate):
                     final_boxes  = torch.cat([final_boxes_car,final_boxes_pedcyc],0)
 
                 #########  Car DONOT Using NMS ###### 
-            batch_dict['rois'] = batch_dict['roi_boxes']
+            batch_dict['rois'] = batch_dict['roi_boxes'].unsqueeze(0)
             batch_dict['final_scores'] = final_scores
             recall_dict = self.generate_recall_record(
                 box_preds=final_boxes,

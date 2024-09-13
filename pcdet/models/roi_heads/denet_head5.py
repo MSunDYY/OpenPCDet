@@ -290,16 +290,7 @@ class KPTransformer(nn.Module):
         # self.decoder_layer1 = CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
         # self.decoder_layer2 = CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
         self.decoder_layer3 = CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
-        self.pointnet = nn.Sequential(
-            nn.Conv1d(self.channels,self.channels*2,1),
-            nn.BatchNorm1d(self.channels*2),
-            nn.ReLU(),
-            nn.Conv1d(self.channels*2,self.channels,1),
-            nn.BatchNorm1d(self.channels)
-        )
-        self.box_reg = nn.Sequential(nn.Linear(self.channels,self.channels),
-                                     nn.ReLU(),
-                                     nn.Linear(self.channels,7))
+
 
         self.conv1 = nn.Sequential(
             nn.Conv1d(self.channels*4,self.channels*2,1,1),
@@ -324,20 +315,7 @@ class KPTransformer(nn.Module):
         self.linear2 = nn.ModuleList([nn.Linear(self.channels*2 , self.channels) for _ in range(self.num_groups)])
         self.norm2 = nn.LayerNorm(self.channels)
 
-        self.fc1 = nn.Linear(256, 256)
-        self.fc2 = nn.Linear(256, 256)
 
-        self.x_bn1 = nn.BatchNorm1d(256)
-        self.x_bn2 = nn.BatchNorm1d(256)
-
-        self.fc_s1 = nn.Linear(256, 256)
-        self.fc_s2 = nn.Linear(256, 3, bias=False)
-        self.fc_ce1 = nn.Linear(256, 256)
-        self.fc_ce2 = nn.Linear(256, 3, bias=False)
-        self.fc_hr1 = nn.Linear(256, 256)
-        self.fc_hr2 = nn.Linear(256, 1, bias=False)
-        self.fc_cls1 = nn.Linear(256,256)
-        self.fc_cls2 = nn.Linear(256,1,bias=False)
 
 
 
@@ -446,56 +424,34 @@ class DENet5Head(RoIHeadTemplate):
         self.hidden_dim = model_cfg.TRANS_INPUT
         self.num_groups = model_cfg.Transformer.num_groups
         self.voxel_sampler_cur = build_voxel_sampler(device, return_point_feature=model_cfg.USE_POINTNET)
-        self.pointLK = PointNetLK(channels=self.hidden_dim)
         self.voxel_sampler = build_voxel_sampler(device)
         self.grid_size = model_cfg.ROI_GRID_POOL.GRID_SIZE
-        self.pos_embding = nn.Linear(4,128)
+        # self.pos_embding = nn.Linear(4,128)
         # self.cross = nn.ModuleList([CrossAttention(3,4,256,None) for i in range(4)])
-        self.seqboxembed = PointNet(8,model_cfg=self.model_cfg)
+        # self.seqboxembed = PointNet(8,model_cfg=self.model_cfg)
 
         self.jointembed = MLP(self.hidden_dim, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
-        self.jointclsembed = MLP(self.hidden_dim+256,256,1,num_layers=2)
+
         self.up_dimension_geometry = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
-        # self.up_dimension_geometry_pre = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
         self.up_dimension_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
-        self.points_box_reg = MLP(256,256,7,3)
 
         self.transformer = build_transformer(model_cfg.Transformer)
         self.transformer2st = KPTransformer(model_cfg.Transformer2st)
 
-
-        self.compress_points = SpatialMixerBlockCompress(hidden_dim=256,grid_size=self.grid_size,dropout=0.1)
-
-
         self.class_embed = nn.ModuleList()
         self.class_embed_final = nn.Linear(model_cfg.Transformer2st.hidden_dim,1)
         self.class_embed.append(nn.Linear(model_cfg.Transformer.hidden_dim, 1))
-        self.points_feature_cls = nn.Sequential(
-            nn.Linear(131,256),
-            nn.BatchNorm1d(256),
-            nn.ReLU(),
-            nn.Linear(256,3)
-        )
-        self.points_attention = CrossMixerBlock(channels=128)
-
-        self.points_feature_reg = nn.Sequential(
-            nn.Linear(131,256),
-            nn.BatchNorm1d(256,256),
-            nn.ReLU(),
-            nn.Linear(256,256),
-            nn.BatchNorm1d(256),
-            nn.ReLU(),
-            nn.Linear(256,5)
-        )
+        # self.points_feature_cls = nn.Sequential(
+        #     nn.Linear(131,256),
+        #     nn.BatchNorm1d(256),
+        #     nn.ReLU(),
+        #     nn.Linear(256,3)
+        # )
         self.bbox_embed = nn.ModuleList()
-        self.bbox_embed_final = MLP(model_cfg.Transformer.hidden_dim,model_cfg.Transformer.hidden_dim,self.box_coder.code_size * self.num_class,4)
-        self.token_conv = nn.ModuleList()
+        # self.bbox_embed_final = MLP(model_cfg.Transformer.hidden_dim,model_cfg.Transformer.hidden_dim,self.box_coder.code_size * self.num_class,4)
         for _ in range(self.num_groups):
             self.bbox_embed.append(MLP(model_cfg.Transformer.hidden_dim, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4))
-            self.token_conv.append(nn.Linear(model_cfg.Transformer.hidden_dim*2,model_cfg.Transformer.hidden_dim))
-        self.add_module('point_cls_loss_func',loss_utils.SigmoidFocalClassificationLoss(alpha=0.25,gamma=2.0))
-        self.add_module('point_reg_loss_func',loss_utils.WeightedSmoothL1Loss(code_weights=[1,1,1,1,1]))
-        
+
     def init_weights(self, weight_init='xavier'):
         if weight_init == 'kaiming':
             init_func = nn.init.kaiming_normal_
@@ -879,18 +835,21 @@ class DENet5Head(RoIHeadTemplate):
             batch_dict['roi_boxes'] = targets_dict['rois']
             # batch_dict['roi_scores'] = targets_dict['roi_scores']
             batch_dict['roi_labels'] = targets_dict['roi_labels']
-            targets_dict['trajectory_rois'][:, batch_dict['cur_frame_idx'], :, :] = batch_dict['roi_boxes']
+            targets_dict['trajectory_rois'][ batch_dict['cur_frame_idx'], :, :] = batch_dict['roi_boxes']
             trajectory_rois = targets_dict['trajectory_rois']
             roi_boxes = targets_dict['rois']
-            empty_mask = batch_dict['roi_boxes'][:,:,:6].sum(-1)==0
+            empty_mask = batch_dict['roi_boxes'][:,:6].sum(-1)==0
             valid_length = targets_dict['valid_length']
+            num_rois = torch.cumsum(F.pad(targets_dict['num_rois'],(1,0),'constant',0),0)
         else:
-            trajectory_rois = batch_dict['trajectory_rois']
-            empty_mask = batch_dict['roi_boxes'][:,:,:6].sum(-1)==0
+            trajectory_rois = batch_dict['trajectory_rois'][0]
+            batch_dict['roi_boxes'] = trajectory_rois[ 0]
+            empty_mask = batch_dict['roi_boxes'][:,:6].sum(-1)==0
             batch_dict['valid_traj_mask'] = ~empty_mask
-            batch_dict['roi_boxes'] = trajectory_rois[:,0]
+            num_rois = torch.tensor([0,batch_dict['roi_boxes'].shape[0]],device=device)
+            batch_dict['roi_labels'] = batch_dict['roi_labels'].squeeze(0)
+            batch_dict['roi_scores'] = batch_dict['roi_scores'].squeeze(0)
         roi_boxes = batch_dict['roi_boxes']
-        num_rois = batch_dict['roi_boxes'].shape[1]
         num_sample = self.num_lidar_points 
 
             # self.voxel_sampler_traj = build_voxel_sampler_traj(rois.device)
@@ -900,15 +859,15 @@ class DENet5Head(RoIHeadTemplate):
         roi_boxes = roi_boxes.reshape(-1,roi_boxes.shape[-1])
         roi_scores = roi_scores.reshape(-1)
         roi_labels = roi_labels.reshape(-1)
-        num_rois = torch.cumsum(torch.tensor([0]+[batch_dict['roi_boxes'][i].shape[0] for i in range(batch_size)],device=device),dim=0)
+        # num_rois = torch.cumsum(torch.tensor([0]+[batch_dict['roi_boxes'][i].shape[0] for i in range(batch_size)],device=device),dim=0)
 
-        src_cur,src_idx,query_points,points_pre = self.voxel_sampler_cur(batch_size,trajectory_rois[:,0,...].flatten(0,1),num_sample,batch_dict,start_idx=0,num_rois=num_rois)
+        src_cur,src_idx,query_points,points_pre = self.voxel_sampler_cur(batch_size,trajectory_rois[0,...],num_sample,batch_dict,start_idx=0,num_rois=num_rois)
         batch_dict['src_cur'] = src_cur
         batch_dict['src_idx'] = src_idx
         batch_dict['query_points'] = query_points
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK', None):
             src_cur[empty_mask.view(-1)] = 0
-        src_cur = self.get_proposal_aware_geometry_feature(src_cur,trajectory_rois[:,0,...].flatten(0,1))
+        src_cur = self.get_proposal_aware_geometry_feature(src_cur,trajectory_rois[0,...])
 
         hs, tokens,src_cur = self.transformer(src_cur, batch_dict, pos=None)
         if not self.training:
@@ -920,16 +879,16 @@ class DENet5Head(RoIHeadTemplate):
             os.makedirs(key_roi_root,exist_ok=True)
             key_roi_mask = (src_idx!=0).sum(1)<28
             # np.save(key_roi_root/('%04d.npy' % batch_dict['sample_idx'][0]),torch.concat([roi_boxes[key_roi_mask],roi_scores[key_roi_mask,None],roi_labels[key_roi_mask,None].float()],dim=1).cpu().numpy())
-            np.save(key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]), torch.concat([query_points_shrink],dim=0).cpu().numpy())
+            # np.save(key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]), torch.concat([query_points_shrink],dim=0).cpu().numpy())
             # print(self.voxel_sampler_cur.num_points/self.voxel_sampler_cur.iteration)
             if self.signal=='train':
                 return batch_dict
-        src_pre = self.voxel_sampler(batch_size,trajectory_rois,num_sample//4,batch_dict)
+        src_pre = self.voxel_sampler(batch_size,trajectory_rois,num_sample//4,batch_dict,num_rois)
 
 
 
-        trajectory_rois = trajectory_rois.transpose(1,2).flatten(0,1)
-        src_pre = src_pre.flatten(0,1)
+        trajectory_rois = trajectory_rois.transpose(0,1)
+        src_pre = src_pre.flatten(1,2)
         src_idx = batch_dict['src_idx'][:,:num_sample//4]
         src_pre[:,:num_sample//4] = torch.gather(query_points,0,src_idx.reshape(-1,1).repeat(1,query_points.shape[-1])).unflatten(0,src_idx.shape)
 
@@ -973,28 +932,31 @@ class DENet5Head(RoIHeadTemplate):
 
             batch_dict['cls_preds_normalized'] = False
             if self.avg_stage1_score:
-                stage1_score = batch_dict['roi_scores'][:,:,None]
+                stage1_score = batch_dict['roi_scores'][:,None]
                 batch_cls_preds = F.sigmoid(batch_cls_preds)
                 if self.model_cfg.get('IOU_WEIGHT', None):
                     batch_box_preds_list = []
                     roi_labels_list = []
                     batch_cls_preds_list = []
-                    for bs_idx in range(batch_size):
-                        car_mask = batch_dict['roi_labels'][bs_idx] ==1
-                        batch_cls_preds_car = batch_cls_preds[bs_idx].pow(self.model_cfg.IOU_WEIGHT[0])* \
-                                              stage1_score[bs_idx].pow(1-self.model_cfg.IOU_WEIGHT[0])
-                        batch_cls_preds_car = batch_cls_preds_car[car_mask][None]
-                        batch_cls_preds_pedcyc = batch_cls_preds[bs_idx].pow(self.model_cfg.IOU_WEIGHT[1])* \
-                                                 stage1_score[bs_idx].pow(1-self.model_cfg.IOU_WEIGHT[1])
-                        batch_cls_preds_pedcyc = batch_cls_preds_pedcyc[~car_mask][None]
-                        cls_preds = torch.cat([batch_cls_preds_car,batch_cls_preds_pedcyc],1)
-                        box_preds = torch.cat([batch_dict['batch_box_preds'][bs_idx][car_mask],
-                                                     batch_dict['batch_box_preds'][bs_idx][~car_mask]],0)[None]
-                        roi_labels = torch.cat([batch_dict['roi_labels'][bs_idx][car_mask],
-                                                batch_dict['roi_labels'][bs_idx][~car_mask]],0)[None]
-                        batch_box_preds_list.append(box_preds)
-                        roi_labels_list.append(roi_labels)
-                        batch_cls_preds_list.append(cls_preds)
+                    # for bs_idx in range(batch_size):
+
+                    car_mask = batch_dict['roi_labels'] ==1
+                    batch_cls_preds_car = batch_cls_preds.pow(self.model_cfg.IOU_WEIGHT[0])* \
+                                          stage1_score.pow(1-self.model_cfg.IOU_WEIGHT[0])
+                    batch_cls_preds_car = batch_cls_preds_car[car_mask][None]
+                    batch_cls_preds_pedcyc = batch_cls_preds.pow(self.model_cfg.IOU_WEIGHT[1])* \
+                                             stage1_score.pow(1-self.model_cfg.IOU_WEIGHT[1])
+                    batch_cls_preds_pedcyc = batch_cls_preds_pedcyc[~car_mask][None]
+                    cls_preds = torch.cat([batch_cls_preds_car,batch_cls_preds_pedcyc],1)
+                    box_preds = torch.cat([batch_dict['batch_box_preds'][car_mask],
+                                                 batch_dict['batch_box_preds'][~car_mask]],0)[None]
+                    roi_labels = torch.cat([batch_dict['roi_labels'][car_mask],
+                                            batch_dict['roi_labels'][~car_mask]],0)[None]
+                    batch_box_preds_list.append(box_preds)
+                    roi_labels_list.append(roi_labels)
+                    batch_cls_preds_list.append(cls_preds)
+
+
                     batch_dict['batch_box_preds'] = torch.cat(batch_box_preds_list,0)
                     batch_dict['roi_labels'] = torch.cat(roi_labels_list,0)
                     batch_cls_preds = torch.cat(batch_cls_preds_list,0)
@@ -1049,7 +1011,7 @@ class DENet5Head(RoIHeadTemplate):
         
         if loss_cfgs.REG_LOSS == 'smooth-l1':
 
-            rois_anchor = roi_boxes3d.clone().detach()[:,:,:7].contiguous().view(-1, code_size)
+            rois_anchor = roi_boxes3d.clone().detach()[:,:7].contiguous().view(-1, code_size)
             rois_anchor[:, 0:3] = 0
             rois_anchor[:, 6] = 0
             reg_targets = self.box_coder.encode_torch(
@@ -1099,15 +1061,15 @@ class DENet5Head(RoIHeadTemplate):
             if loss_cfgs.CORNER_LOSS_REGULARIZATION and fg_sum > 0:
 
                 fg_rcnn_reg = rcnn_reg.view(rcnn_batch_size, -1)[fg_mask]
-                fg_roi_boxes3d = roi_boxes3d[:,:,:7].contiguous().view(-1, code_size)[fg_mask]
+                fg_roi_boxes3d = roi_boxes3d[:,:7].contiguous().view(-1, code_size)[fg_mask]
 
-                fg_roi_boxes3d = fg_roi_boxes3d.view(1, -1, code_size)
+                fg_roi_boxes3d = fg_roi_boxes3d.view( -1, code_size)
                 batch_anchors = fg_roi_boxes3d.clone().detach()
-                roi_ry = fg_roi_boxes3d[:, :, 6].view(-1)
-                roi_xyz = fg_roi_boxes3d[:, :, 0:3].view(-1, 3)
-                batch_anchors[:, :, 0:3] = 0
+                roi_ry = fg_roi_boxes3d[:,  6].view(-1)
+                roi_xyz = fg_roi_boxes3d[:,  0:3].view(-1, 3)
+                batch_anchors[:,  0:3] = 0
                 rcnn_boxes3d = self.box_coder.decode_torch(
-                    fg_rcnn_reg.view(batch_anchors.shape[0], -1, code_size), batch_anchors
+                    fg_rcnn_reg.view(batch_anchors.shape[0], code_size), batch_anchors
                 ).view(-1, code_size)
 
                 rcnn_boxes3d = common_utils.rotate_points_along_z(
@@ -1188,15 +1150,15 @@ class DENet5Head(RoIHeadTemplate):
         """
         code_size = self.box_coder.code_size
         if cls_preds is not None:
-            batch_cls_preds = cls_preds.view(batch_size, -1, cls_preds.shape[-1])
+            batch_cls_preds = cls_preds.view( -1, cls_preds.shape[-1])
         else:
             batch_cls_preds = None
-        batch_box_preds = box_preds.view(batch_size, -1, code_size)
+        batch_box_preds = box_preds.view( -1, code_size)
 
-        roi_ry = rois[:, :, 6].view(-1)
-        roi_xyz = rois[:, :, 0:3].view(-1, 3)
+        roi_ry = rois[:,  6].view(-1)
+        roi_xyz = rois[:,  0:3].view(-1, 3)
         local_rois = rois.clone().detach()
-        local_rois[:, :, 0:3] = 0
+        local_rois[:,  0:3] = 0
 
         batch_box_preds = self.box_coder.decode_torch(batch_box_preds, local_rois).view(-1, code_size)
 
@@ -1205,6 +1167,6 @@ class DENet5Head(RoIHeadTemplate):
         ).squeeze(dim=1)
 
         batch_box_preds[:, 0:3] += roi_xyz
-        batch_box_preds = batch_box_preds.view(batch_size, -1, code_size)
-        batch_box_preds = torch.cat([batch_box_preds,rois[:,:,7:]],-1) 
+        batch_box_preds = batch_box_preds.view( -1, code_size)
+        batch_box_preds = torch.cat([batch_box_preds,rois[:,7:]],-1)
         return batch_cls_preds, batch_box_preds

@@ -567,7 +567,7 @@ class DataProcessor(object):
 
             REG_FG_THRESH = torch.tensor([0.55,0.4,0.4])
             CLS_FG_THRESH = torch.tensor([0.75,0.6,0.6])
-            CLS_BG_THRESH = torch.tensor([0.3,0.2,0.2])
+            CLS_BG_THRESH = torch.tensor([0.35,0.2,0.2])
             reg_valid_mask = (batch_roi_ious > REG_FG_THRESH[batch_roi_labels-1]).long()
             if config.CLS_SCORE_TYPE == 'cls':
                 batch_cls_labels = (batch_roi_ious > config.CLS_FG_THRESH).long()

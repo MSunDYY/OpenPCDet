@@ -52,7 +52,7 @@ DATA_CONFIG:
             }
         - NAME: anchor_aug
           NUM_FRAMES: 16
-          ROI_PER_IMAGE: 96
+          ROI_PER_IMAGE: 120
           FG_RATIO: 0.5
           REG_AUG_METHOD: single
           ROI_FG_AUG_TIMES: 10
@@ -68,7 +68,7 @@ DATA_CONFIG:
               MIN_ROI: 30
           SAMPLE_ROI_BY_EACH_CLASS: True
           CLS_SCORE_TYPE: roi_iou
-
+          STACK_CONCAT: True
           CLS_FG_THRESH: 0.75
           CLS_BG_THRESH: 0.25
           CLS_BG_THRESH_LO: 0.1

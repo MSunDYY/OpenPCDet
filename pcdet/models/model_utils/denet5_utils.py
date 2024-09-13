@@ -203,13 +203,6 @@ class MultiheadAttention(nn.Module):
         self.in_proj_bias = Parameter(torch.empty(3 * dim))
         self.dropout = nn.Dropout(dropout)
         self.out_proj = NonDynamicallyQuantizableLinear(dim, dim, bias=True)
-        self.fc_o = nn.Linear(dim, dim)
-        self.conv_weight = nn.Sequential(
-            nn.Conv1d(num_heads*2,num_heads*2,1,1),
-            #                              nn.BatchNorm1d(num_heads*2),
-            #                              nn.ReLU(),
-                                         nn.Conv1d(num_heads*2,1,1,1)
-                                         )
 
 
         self._reset_parameters()
@@ -490,11 +483,7 @@ class TransformerEncoderLayer(nn.Module):
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
 
-        if self.layer_count <= self.config.enc_layers-1:
-            self.cross_conv_1 = nn.Linear(d_model * 2, d_model)
-            self.cross_norm_1 = nn.LayerNorm(d_model)
-            self.cross_conv_2 = nn.Linear(d_model * 2, d_model)
-            self.cross_norm_2 = nn.LayerNorm(d_model)
+
 
         self.activation = _get_activation_fn(activation)
         self.normalize_before = normalize_before
@@ -505,13 +494,10 @@ class TransformerEncoderLayer(nn.Module):
                         dropout=dropout,
         )
 
-        # self.point_attention = CrossMixerBlock(
-        #     channels=96
-        # )
+
 
         if self.layer_count<=self.config.enc_layers-1 and config.get('sampler',False) is not False:
             from pcdet.ops.pointnet2.pointnet2_batch import pointnet2_utils
-            self.group = StackSAModuleMSG(radii=config.sampler.radius[self.layer_count-1],nsamples=config.sampler.nsample[self.layer_count-1],use_xyz=True,mlps=config.sampler.mlp[self.layer_count-1],use_spher=config.sampler.USE_SPHER)
 
     def with_pos_embed(self, tensor, pos: Optional[Tensor]):
         return tensor if pos is None else tensor + pos
@@ -647,21 +633,21 @@ class VoxelSampler(nn.Module):
     def get_output_feature_dim(self):
         return self.num_point_features
 
-    def forward(self, batch_size, trajectory_rois, num_sample, batch_dict):
+    def forward(self, batch_size, trajectory_rois, num_sample, batch_dict , num_rois = None):
 
         src = list()
         speed = torch.norm(trajectory_rois[..., -2:], dim=-1)
         for bs_idx in range(batch_size):
 
             cur_points = batch_dict['points'][(batch_dict['points'][:, 0] == bs_idx)][:, 1:]
-            cur_batch_boxes = trajectory_rois[bs_idx]
+            cur_batch_boxes = trajectory_rois[:,num_rois[bs_idx]:num_rois[bs_idx+1]]
             src_points = list()
 
-            for idx in range(trajectory_rois.shape[1]):
+            for idx in range(trajectory_rois.shape[0]):
 
                 time_mask = (cur_points[:, -1] - idx * 0.1).abs() < 1e-3
                 cur_time_points = cur_points[time_mask, :5].contiguous()
-                gamma = torch.clamp((self.GAMMA * (1 + speed[bs_idx, idx])) ** (idx / 5), max=2.5)  # ** (idx+1)
+                gamma = torch.clamp((self.GAMMA * (1 + speed[idx,num_rois[bs_idx]:num_rois[bs_idx+1]])) ** (idx / 5), max=2)  # ** (idx+1)
 
                 cur_frame_boxes = cur_batch_boxes[idx]
                 if idx==0:
@@ -693,7 +679,7 @@ class VoxelSampler(nn.Module):
 
             src.append(torch.stack(src_points))
 
-        return torch.stack(src).permute(0, 2, 1, 3, 4).flatten(2, 3)
+        return torch.concat(src,1).transpose(0,1)
 
     def cylindrical_pool(self, cur_points, cur_boxes, num_sample, gamma=1.):
         if len(cur_points) < num_sample:
@@ -742,7 +728,6 @@ class VoxelPointsSampler(nn.Module):
         self.grid_x = int((pc_range[3] - pc_range[0]) / voxel_size)
         self.grid_y = int((pc_range[4] - pc_range[1]) / voxel_size)
         self.return_point_feature = config.ENABLE
-        # self.point_emb = nn.Linear(sum([mlp[-1] for mlp in config.mlps])+(3 if self.use_absolute_xyz else 0),96)
 
     def get_output_feature_dim(self):
         return self.num_point_features
