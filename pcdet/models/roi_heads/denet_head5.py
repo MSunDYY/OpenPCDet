@@ -293,11 +293,11 @@ class KPTransformer(nn.Module):
 
 
         self.conv1 = nn.Sequential(
-            nn.Conv1d(self.channels*4,self.channels*2,1,1),
+            nn.Conv1d(self.channels*4,self.channels,1,1),
             nn.BatchNorm1d(self.channels*2),
             nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Conv1d(self.channels*2,self.channels,1)
+            # nn.Dropout(0.1),
+            # nn.Conv1d(self.channels*2,self.channels,1)
         )
         self.linear1 = nn.ModuleList([nn.Linear(self.channels*2,self.channels) for _ in range(self.num_groups)])
         self.dropout1 = nn.ModuleList([nn.Dropout(0.1) for _ in range(self.num_groups)])
@@ -306,11 +306,11 @@ class KPTransformer(nn.Module):
         self.norm1 = nn.LayerNorm(self.channels)
 
         self.conv2 = nn.Sequential(
-            nn.Conv1d(self.channels * 4, self.channels*2 , 1, 1),
+            nn.Conv1d(self.channels * 4, self.channels , 1, 1),
             nn.BatchNorm1d(self.channels*2 ),
             nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Conv1d(self.channels*2,self.channels,1)
+            # nn.Dropout(0.1),
+            # nn.Conv1d(self.channels*2,self.channels,1)
         )
         self.linear2 = nn.ModuleList([nn.Linear(self.channels*2 , self.channels) for _ in range(self.num_groups)])
         self.norm2 = nn.LayerNorm(self.channels)
