@@ -294,7 +294,7 @@ class KPTransformer(nn.Module):
 
         self.conv1 = nn.Sequential(
             nn.Conv1d(self.channels*4,self.channels,1,1),
-            nn.BatchNorm1d(self.channels*2),
+            nn.BatchNorm1d(self.channels),
             nn.ReLU(),
             # nn.Dropout(0.1),
             # nn.Conv1d(self.channels*2,self.channels,1)
@@ -307,7 +307,7 @@ class KPTransformer(nn.Module):
 
         self.conv2 = nn.Sequential(
             nn.Conv1d(self.channels * 4, self.channels , 1, 1),
-            nn.BatchNorm1d(self.channels*2 ),
+            nn.BatchNorm1d(self.channels),
             nn.ReLU(),
             # nn.Dropout(0.1),
             # nn.Conv1d(self.channels*2,self.channels,1)

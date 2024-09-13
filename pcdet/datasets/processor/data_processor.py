@@ -320,7 +320,8 @@ class DataProcessor(object):
                 return bg_inds
             
             # sample fg, easy_bg, hard_bg
-            fg_rois_per_image = int(np.round(config.FG_RATIO * config.ROI_PER_IMAGE))
+            roi_per_image = min(max_overlaps.shape[0],config.ROI_PER_IMAGE)
+            fg_rois_per_image = int(np.round(config.FG_RATIO * roi_per_image))
             fg_thresh = min(config.REG_FG_THRESH, config.CLS_FG_THRESH)
 
             fg_inds = ((max_overlaps >= fg_thresh)).nonzero().view(-1)
@@ -339,21 +340,21 @@ class DataProcessor(object):
                 fg_inds = fg_inds[rand_num[:fg_rois_per_this_image]]
 
                 # sampling bg
-                bg_rois_per_this_image = config.ROI_PER_IMAGE - fg_rois_per_this_image
+                bg_rois_per_this_image = roi_per_image - fg_rois_per_this_image
                 bg_inds = sample_bg_inds(
                     hard_bg_inds, easy_bg_inds, bg_rois_per_this_image, config.HARD_BG_RATIO
                 )
 
             elif fg_num_rois > 0 and bg_num_rois == 0:
                 # sampling fg
-                rand_num = np.floor(np.random.rand(config.ROI_PER_IMAGE) * fg_num_rois)
+                rand_num = np.floor(np.random.rand(roi_per_image) * fg_num_rois)
                 rand_num = torch.from_numpy(rand_num).type_as(max_overlaps).long()
                 fg_inds = fg_inds[rand_num]
                 bg_inds = fg_inds[fg_inds < 0]  # yield empty tensor
 
             elif bg_num_rois > 0 and fg_num_rois == 0:
                 # sampling bg
-                bg_rois_per_this_image = config.ROI_PER_IMAGE
+                bg_rois_per_this_image = roi_per_image
                 bg_inds = sample_bg_inds(
                     hard_bg_inds, easy_bg_inds, bg_rois_per_this_image, config.HARD_BG_RATIO
                 )
