@@ -20,7 +20,7 @@ DATA_CONFIG:
         ENABLED: True
         SAMPLE_OFFSET: [-15,0]
         USE_PRE_PREDBOX: True
-        USE_KEY_BOX: True
+        USE_KEY_BOX: False
 
     USE_PREDBOX: True
     ROI_BOXES_PATH: {

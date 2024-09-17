@@ -758,7 +758,7 @@ class VoxelPointsSampler(nn.Module):
             dist = torch.norm(query_coords[:, None, :2] - coords[None, :, :],dim=-1)
             voxel_mask = (dist < radiis[:, None]).any(0)
 
-            if not self.training:
+            if not self.training and batch_dict.get('pred_key_boxes',False) is not False:
                 pre_roi = batch_dict['pred_key_boxes'][bs_idx]
 
                 pre_roi = pre_roi.flatten(0,1)
@@ -779,6 +779,8 @@ class VoxelPointsSampler(nn.Module):
                     key_points_pre = key_points_pre[points_in_boxes_idx>=0]
 
                 points_pre_list.append(key_points_pre)
+            else:
+                pre_roi = None
             num_points = num_points[voxel_mask]
             key_points = voxel[voxel_mask, :]
 
@@ -817,7 +819,7 @@ class VoxelPointsSampler(nn.Module):
                 self.num_points +=key_points_pre.shape[0]
                 self.iteration+=1
             # src.append(torch.stack(src_points))
-        return torch.concat(src, dim=0),torch.concat(src_idx_list,dim=0),torch.concat(query_points_list,dim=0),torch.concat(points_pre_list,dim=0) if not self.training else None
+        return torch.concat(src, dim=0),torch.concat(src_idx_list,dim=0),torch.concat(query_points_list,dim=0),torch.concat(points_pre_list,dim=0) if (not self.training and pre_roi is not None) else None
 
 
     def cylindrical_pool(self, cur_points, cur_boxes, num_sample, gamma=1., idx_checkpoint=0,pre_roi=None):

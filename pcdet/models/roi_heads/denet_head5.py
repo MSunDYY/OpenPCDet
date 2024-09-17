@@ -871,15 +871,19 @@ class DENet5Head(RoIHeadTemplate):
 
         hs, tokens,src_cur = self.transformer(src_cur, batch_dict, pos=None)
         if not self.training:
-            key_points_root = Path('../../data/waymo/key_points_mini_new_pretrainedmodel') / batch_dict['metadata'][0][:-4]
+            key_points_root = Path('../../data/waymo/key_points_mini_new') / batch_dict['metadata'][0][:-4]
+            extra_key_points_root = Path('../../data/waymo/extra_key_points_mini_new') / batch_dict['metadata'][0][:-4]
+
             key_roi_root = Path('../../data/waymo/key_rois') / batch_dict['metadata'][0][:-4]
             src_idx = batch_dict['src_idx']
             query_points_shrink = query_points[torch.unique(src_idx)]
             os.makedirs(key_points_root,exist_ok=True)
             os.makedirs(key_roi_root,exist_ok=True)
+            os.makedirs(extra_key_points_root,exist_ok=True)
             key_roi_mask = (src_idx!=0).sum(1)<28
             # np.save(key_roi_root/('%04d.npy' % batch_dict['sample_idx'][0]),torch.concat([roi_boxes[key_roi_mask],roi_scores[key_roi_mask,None],roi_labels[key_roi_mask,None].float()],dim=1).cpu().numpy())
-            # np.save(key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]), torch.concat([query_points_shrink],dim=0).cpu().numpy())
+            # np.save(key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]), query_points_shrink.cpu().numpy())
+            # np.save(extra_key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]),points_pre.cpu().numpy())
             # print(self.voxel_sampler_cur.num_points/self.voxel_sampler_cur.iteration)
             if self.signal=='train':
                 return batch_dict
