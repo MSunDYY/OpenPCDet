@@ -52,7 +52,7 @@ DATA_CONFIG:
             }
         - NAME: anchor_aug
           NUM_FRAMES: 8
-          ROI_PER_IMAGE: 96
+          ROI_PER_IMAGE: 48
           FG_RATIO: 0.5
           REG_AUG_METHOD: single
           ROI_FG_AUG_TIMES: 10
@@ -130,7 +130,7 @@ MODEL:
 
         TARGET_CONFIG:
             BOX_CODER: ResidualCoder
-            ROI_PER_IMAGE: 96
+            ROI_PER_IMAGE: 48
             FG_RATIO: 0.5
             REG_AUG_METHOD: single
             ROI_FG_AUG_TIMES: 10

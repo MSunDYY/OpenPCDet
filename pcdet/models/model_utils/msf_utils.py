@@ -175,13 +175,13 @@ class Transformer(nn.Module):
 
         self.token = nn.Parameter(torch.zeros(self.num_groups, 1, d_model))
 
-        if self.num_frames > 4:
-            self.group_length = self.num_frames // self.num_groups
-            self.fusion_all_group = MLP(input_dim=self.config.hidden_dim * self.group_length,
-                                        hidden_dim=self.config.hidden_dim, output_dim=self.config.hidden_dim,
-                                        num_layers=4)
-
-            self.fusion_norm = FFN(d_model, dim_feedforward)
+        # if self.num_frames > 4:
+        #     self.group_length = self.num_frames // self.num_groups
+        #     self.fusion_all_group = MLP(input_dim=self.config.hidden_dim * self.group_length,
+        #                                 hidden_dim=self.config.hidden_dim, output_dim=self.config.hidden_dim,
+        #                                 num_layers=4)
+        #
+        #     self.fusion_norm = FFN(d_model, dim_feedforward)
 
         self._reset_parameters()
 

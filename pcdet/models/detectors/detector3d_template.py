@@ -369,11 +369,12 @@ class Detector3DTemplate(nn.Module):
                 if iou3d_rcnn.shape[0] == 0:
                     recall_dict['rcnn_%s' % str(cur_thresh)] += 0
                 else:
-                    rcnn_recalled = (iou3d_rcnn.max(dim=0)[0] > cur_thresh).sum().item()
+                    rcnn_recalled = ((iou3d_rcnn.max(dim=0)[0] > cur_thresh)*(cur_gt[:,-1]==1 if cur_thresh==0.7 else cur_gt[:,-1]>=2 if cur_thresh==0.5 else 1)).sum().item()
 
                     recall_dict['rcnn_%s' % str(cur_thresh)] += rcnn_recalled
                 if rois is not None:
-                    roi_recalled = (iou3d_roi.max(dim=0)[0] > cur_thresh).sum().item()
+                    roi_recalled = ((iou3d_roi.max(dim=0)[0] > cur_thresh)*(cur_gt[:,-1]==1 if cur_thresh==0.7 else cur_gt[:,-1]>=2 if cur_thresh==0.5 else 1)).sum().item()
+
                     recall_dict['roi_%s' % str(cur_thresh)] += roi_recalled
 
             recall_dict['gt'] += cur_gt.shape[0]

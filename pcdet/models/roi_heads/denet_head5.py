@@ -281,6 +281,7 @@ class KPTransformer(nn.Module):
         self.channels = model_cfg.hidden_dim
         self.num_frames = model_cfg.num_frames
         self.num_groups = model_cfg.num_groups
+        self.drop_rate = model_cfg.drop_rate
         self.Attention = SpatialDropBlock(self.channels,dropout=0.1,batch_first=True)
         self.Attention2 = SpatialDropBlock(self.channels,dropout=0.1,batch_first=True)
         self.Attention3 = SpatialMixerBlock(self.channels,dropout=0.1,batch_first=True)
@@ -325,7 +326,7 @@ class KPTransformer(nn.Module):
         token_list = list()
         src = src.reshape(src.shape[0]*self.num_frames,-1,src.shape[-1])
         num_frames_single_group = self.num_frames // self.num_groups
-        src,weight,sampled_inds = self.Attention(src,return_weight=True,drop=0.5 if self.num_frames==16 else 0.45)
+        src,weight,sampled_inds = self.Attention(src,return_weight=True,drop=self.drop_rate[0])
         src = src.reshape(B,16,-1,self.channels)
 
         signal = True
@@ -339,7 +340,7 @@ class KPTransformer(nn.Module):
             src = self.norm1(src + torch.stack(src_new,1)).flatten(1,2)
         else:
             src = src.unflatten(1,(-1,self.num_groups)).transpose(1,2).flatten(0,1).flatten(1,2)
-        src,weight,sampled_inds = self.Attention2(src,return_weight=True,drop=0.5)
+        src,weight,sampled_inds = self.Attention2(src,return_weight=True,drop=self.drop_rate[1])
 
         if signal:
             src = src.unflatten(0,(-1,self.num_groups))
@@ -417,6 +418,7 @@ class DENet5Head(RoIHeadTemplate):
         self.proposal_target_layer = ProposalTargetLayerMPPNet(roi_sampler_cfg=self.model_cfg.TARGET_CONFIG)
         self.use_time_stamp = self.model_cfg.get('USE_TIMESTAMP',None)
         self.num_lidar_points = self.model_cfg.Transformer.num_lidar_points
+        self.num_lidar_points2 = self.model_cfg.Transformer2st.num_lidar_points
         self.avg_stage1_score = self.model_cfg.get('AVG_STAGE1_SCORE', None)
         self.nhead = model_cfg.Transformer.nheads
         self.num_enc_layer = model_cfg.Transformer.enc_layers
@@ -887,14 +889,14 @@ class DENet5Head(RoIHeadTemplate):
             # print(self.voxel_sampler_cur.num_points/self.voxel_sampler_cur.iteration)
             if self.signal=='train':
                 return batch_dict
-        src_pre = self.voxel_sampler(batch_size,trajectory_rois,num_sample//4,batch_dict,num_rois)
+        src_pre = self.voxel_sampler(batch_size,trajectory_rois,self.num_lidar_points2,batch_dict,num_rois)
 
 
 
         trajectory_rois = trajectory_rois.transpose(0,1)
         src_pre = src_pre.flatten(1,2)
-        src_idx = batch_dict['src_idx'][:,:num_sample//4]
-        src_pre[:,:num_sample//4] = torch.gather(query_points,0,src_idx.reshape(-1,1).repeat(1,query_points.shape[-1])).unflatten(0,src_idx.shape)
+        src_idx = batch_dict['src_idx'][:,:self.num_lidar_points2]
+        src_pre[:,:self.num_lidar_points2] = torch.gather(query_points,0,src_idx.reshape(-1,1).repeat(1,query_points.shape[-1])).unflatten(0,src_idx.shape)
 
         src_pre = self.get_proposal_aware_motion_feature(src_pre, trajectory_rois)
 

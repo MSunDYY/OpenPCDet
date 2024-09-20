@@ -120,7 +120,7 @@ class DataProcessor(object):
 
         return data_dict
 
-    def aug_roi_by_noise_torch(self,roi_boxes3d, gt_boxes3d, iou3d_src, aug_times=10, pos_thresh=None,config=None):
+    def aug_roi_by_noise_torch(self,roi_boxes3d, gt_boxes3d, iou3d_src, aug_times=10, pos_thresh=None,config=None,roi_labels=None):
         def random_aug_box3d( box3d,config):
             """
             :param box3d: (7) [x, y, z, h, w, l, ry]
@@ -171,7 +171,7 @@ class DataProcessor(object):
 
         iou_of_rois = torch.zeros(roi_boxes3d.shape[0]).type_as(gt_boxes3d)
         if pos_thresh is None:
-            pos_thresh = min(config.REG_FG_THRESH, config.CLS_FG_THRESH)
+            pos_thresh = torch.tensor(config.REG_FG_THRESH)
 
         for k in range(roi_boxes3d.shape[0]):
             temp_iou = cnt = 0
@@ -180,7 +180,7 @@ class DataProcessor(object):
             gt_box3d = gt_boxes3d[k].view(1, gt_boxes3d.shape[-1])
             aug_box3d = roi_box3d
             keep = True
-            while temp_iou < pos_thresh and cnt < aug_times:
+            while temp_iou < (pos_thresh if roi_labels is None else pos_thresh[roi_labels[k]-1]) and cnt < aug_times:
                 if np.random.rand() <= config.RATIO:
                     aug_box3d = roi_box3d  # p=RATIO to keep the original roi box
                     keep = True
@@ -288,7 +288,7 @@ class DataProcessor(object):
 
             return trajectory_rois
 
-        def subsample_rois(max_overlaps,config):
+        def subsample_rois(max_overlaps,roi_labels,config):
 
             def sample_bg_inds(hard_bg_inds, easy_bg_inds, bg_rois_per_this_image, hard_bg_ratio):
                 if hard_bg_inds.numel() > 0 and easy_bg_inds.numel() > 0:
@@ -322,12 +322,12 @@ class DataProcessor(object):
             # sample fg, easy_bg, hard_bg
             roi_per_image = min(max_overlaps.shape[0],config.ROI_PER_IMAGE)
             fg_rois_per_image = int(np.round(config.FG_RATIO * roi_per_image))
-            fg_thresh = min(config.REG_FG_THRESH, config.CLS_FG_THRESH)
+            fg_thresh = torch.tensor(config.REG_FG_THRESH)[roi_labels-1]
 
             fg_inds = ((max_overlaps >= fg_thresh)).nonzero().view(-1)
-            easy_bg_inds = ((max_overlaps < config.CLS_BG_THRESH_LO)).nonzero().view(-1)
-            hard_bg_inds = ((max_overlaps < config.REG_FG_THRESH) &
-                            (max_overlaps >= config.CLS_BG_THRESH_LO)).nonzero().view(-1)
+            easy_bg_inds = ((max_overlaps < torch.tensor(config.CLS_BG_THRESH_LO)[roi_labels-1])).nonzero().view(-1)
+            hard_bg_inds = ((max_overlaps < torch.tensor(config.REG_FG_THRESH)[roi_labels-1]) &
+                            (max_overlaps >= torch.tensor(config.CLS_BG_THRESH_LO)[roi_labels-1])).nonzero().view(-1)
 
             fg_num_rois = fg_inds.numel()
             bg_num_rois = hard_bg_inds.numel() + easy_bg_inds.numel()
@@ -438,7 +438,7 @@ class DataProcessor(object):
                 max_overlaps, gt_assignment = torch.max(iou3d, dim=1)
             num_rois = max_overlaps.shape[0]
             sampled_inds, fg_inds, bg_inds = subsample_rois(
-                max_overlaps=max_overlaps[torch.arange(num_rois)],config=config)
+                max_overlaps=max_overlaps[torch.arange(num_rois)],roi_labels=cur_roi_labels,config=config)
 
             sampled_inds = torch.concat([fg_inds, bg_inds], dim=0)
             if config.get('USE_OVERLAP_ROI',False):
@@ -455,17 +455,10 @@ class DataProcessor(object):
 
                 fg_rois, fg_iou3d = self.aug_roi_by_noise_torch(cur_roi[fg_inds], cur_gt[gt_assignment[fg_inds]],
                                                                 max_overlaps[fg_inds],
-                                                                aug_times=config.ROI_FG_AUG_TIMES,config=config)
-                if config.get('USE_BG_ROI_AUG', False):
-                    bg_rois, _ = self.aug_roi_by_noise_torch(cur_roi[bg_inds], cur_roi[bg_inds],
-                                                             max_overlaps[bg_inds],
-                                                             aug_times=config.ROI_FG_AUG_TIMES,config=config,pos_thresh=config.REG_BG_THRESH)
-                    bg_iou3d = iou3d_nms_utils.boxes_iou3d_cpu(bg_rois[:, :7],
-                                                               cur_gt[:, :7][gt_assignment[bg_inds]])
-                    bg_iou3d = bg_iou3d[torch.arange(bg_rois.shape[0]), torch.arange(bg_rois.shape[0])]
-                else:
-                    bg_rois = cur_roi[bg_inds]
-                    bg_iou3d = max_overlaps[bg_inds]
+                                                                aug_times=config.ROI_FG_AUG_TIMES,config=config,roi_labels=cur_roi_labels)
+
+                bg_rois = cur_roi[bg_inds]
+                bg_iou3d = max_overlaps[bg_inds]
 
                 batch_rois = torch.cat([fg_rois, bg_rois], 0)
                 batch_roi_ious = torch.cat([fg_iou3d, bg_iou3d], 0)
@@ -509,32 +502,6 @@ class DataProcessor(object):
                 batch_trajectory_rois = cur_trajectory_rois[:, sampled_inds]
                 # batch_trajectory_rois[index] = cur_trajectory_rois[:,sampled_inds]
 
-            if config.get('USE_ROI_LIST',False) and config.USE_ROI_LIST.ENABLED:
-                roi_list = []
-
-                batch_trajectory_rois_list = []
-                for idx in range(0, batch_dict['num_frames']):
-                    if idx == cur_frame_idx:
-                        roi_list.append(cur_trajectory_rois[cur_frame_idx, sampled_inds])
-                        continue
-                    if roi_list is not None:
-                        roi_pre = data_dict['roi_list'][idx].clone()
-
-                        roi_pre = torch.from_numpy(transform_prebox_to_current(roi_pre.numpy(),data_dict['poses'][4*idx:4*(idx+1)],data_dict['poses'][:4]))
-
-                        iou3d_pre = iou3d_nms_utils.boxes_iou3d_cpu(batch_trajectory_rois[idx].squeeze()[:, :7],
-                                                                    roi_pre[:, :7]).max(dim=0)[0]
-                        if iou3d_pre.sum()<config.USE_ROI_LIST.MIN_ROI:
-                            sampled_inds = torch.ones(iou3d_pre.shape,dtype=torch.bool)
-                        elif iou3d_pre.sum()>config.USE_ROI_LIST.MAX_ROI:
-                            sampled_inds = torch.topk(iou3d_pre, k=config.USE_ROI_LIST.MAX_ROI)[1]
-                        else:
-                            sampled_inds = iou3d_pre>0
-                        roi_list.append(data_dict['roi_list'][idx][sampled_inds] )
-
-                max_num_rois = max([roi.shape[0] for roi in roi_list])
-                data_dict['roi_list'] = torch.stack(
-                    [F.pad(roi, [0, 0, 0, max_num_rois - roi.shape[0]], value=0) for roi in roi_list])
             return batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_labels, batch_trajectory_rois, batch_valid_length
 
         with torch.no_grad():
