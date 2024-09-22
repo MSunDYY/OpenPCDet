@@ -435,7 +435,7 @@ class DENet5Head(RoIHeadTemplate):
         self.jointembed = MLP(self.hidden_dim, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
 
         self.up_dimension_geometry = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
-        self.up_dimension_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
+        self.up_dimension_motion = MLP(input_dim = 31, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
 
         self.transformer = build_transformer(model_cfg.Transformer)
         self.transformer2st = KPTransformer(model_cfg.Transformer2st)
@@ -552,7 +552,7 @@ class DENet5Head(RoIHeadTemplate):
         return sampled_points.transpose(0,1),sampled_points_features.transpose(0,1)
 
 
-    def get_proposal_aware_motion_feature(self, proxy_point,  trajectory_rois):
+    def get_proposal_aware_motion_feature(self, proxy_point,  trajectory_rois,valid):
         num_rois = proxy_point.shape[0]
         padding_mask = proxy_point[:,:,0:1]!=0
         time_stamp = torch.ones([proxy_point.shape[0], proxy_point.shape[1], 1],device = device)
@@ -581,7 +581,7 @@ class DENet5Head(RoIHeadTemplate):
         motion_aware_feat = self.spherical_coordinate(motion_aware_feat, diag_dist=diag_dist.unflatten(0,(num_rois,-1))[:,:1,:])
         geometry_aware_feat = self.spherical_coordinate(geometry_aware_feat,diag_dist=diag_dist[:,:,None])
 
-        motion_aware_feat = self.up_dimension_motion(torch.cat([motion_aware_feat, point_time_padding], -1))
+        motion_aware_feat = self.up_dimension_motion(torch.cat([motion_aware_feat, point_time_padding,valid.transpose(0,1)[:,:,None].repeat(1,1,num_points_single_frame).reshape(num_rois,-1,1)], -1))
         geometry_aware_feat = self.up_dimension_geometry(torch.concat([geometry_aware_feat.reshape(num_rois,num_frames*num_points_single_frame,-1),proxy_point[:,:,3:]],-1))
 
         return motion_aware_feat + geometry_aware_feat
@@ -851,12 +851,9 @@ class DENet5Head(RoIHeadTemplate):
             num_rois = torch.tensor([0,batch_dict['roi_boxes'].shape[0]],device=device)
             batch_dict['roi_labels'] = batch_dict['roi_labels'].squeeze(0)
             batch_dict['roi_scores'] = batch_dict['roi_scores'].squeeze(0)
+            valid_length = batch_dict['valid_length'].squeeze(0)
         roi_boxes = batch_dict['roi_boxes']
-        num_sample = self.num_lidar_points 
-
-            # self.voxel_sampler_traj = build_voxel_sampler_traj(rois.device)
-        # if self.training or not self.training:
-        
+        num_sample = self.num_lidar_points
 
         roi_boxes = roi_boxes.reshape(-1,roi_boxes.shape[-1])
         roi_scores = roi_scores.reshape(-1)
@@ -898,11 +895,11 @@ class DENet5Head(RoIHeadTemplate):
         src_idx = batch_dict['src_idx'][:,:self.num_lidar_points2]
         src_pre[:,:self.num_lidar_points2] = torch.gather(query_points,0,src_idx.reshape(-1,1).repeat(1,query_points.shape[-1])).unflatten(0,src_idx.shape)
 
-        src_pre = self.get_proposal_aware_motion_feature(src_pre, trajectory_rois)
+        src_pre = self.get_proposal_aware_motion_feature(src_pre, trajectory_rois,valid_length)
 
 
         tokens2 = self.transformer2st(src_pre,tokens[-1],src_cur)
-        # box_reg, feat_box = self.trajectories_auxiliary_branch(trajectory_rois)
+
         point_cls_list = []
         point_reg_list = []
 
@@ -913,15 +910,15 @@ class DENet5Head(RoIHeadTemplate):
 
         for j in range(self.num_enc_layer):
             point_reg_list.append(self.bbox_embed[0](tokens[j][:,0]))
-        # point_reg_list.append(self.bbox_embed_final(tokens2[0][:,0]))
+
 
         point_cls = torch.cat(point_cls_list,0)
 
         point_reg = torch.cat(point_reg_list,0)
-        hs = hs.permute(1,0,2).reshape(hs.shape[1],-1)
+
 
         joint_reg = self.jointembed(torch.cat([tokens2[-1][:,0]],-1))
-        # joint_cls = self.jointclsembed(torch.cat([tokens2[-1][0],feat_box],dim=-1))
+
 
 
         rcnn_cls = point_cls

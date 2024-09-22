@@ -272,6 +272,12 @@ class DatasetTemplate(torch_data.Dataset):
                     for k in range(batch_size):
                         batch_gt_boxes3d[k, :, :val[k].shape[1], :] = val[k]
                     ret[key] = batch_gt_boxes3d
+                elif key in ['valid_length']:
+                    max_length = max([x.shape[1] for x in val])
+                    batch_gt_boxes3d = np.zeros((batch_size, val[0].shape[0],max_length), dtype=np.float32)
+                    for k in range(batch_size):
+                        batch_gt_boxes3d[k,:,:val[k].shape[1]] = val[k]
+                    ret[key] = batch_gt_boxes3d
                 elif key in ['roi_list']:
                     max_num_roi = max([x.shape[1] for x in val])
                     ret[key] = torch.stack([F.pad(x,(0,0,0,max_num_roi-x.shape[1],0,0)) for x in val])

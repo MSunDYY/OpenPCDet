@@ -266,11 +266,10 @@ class DataProcessor(object):
             num_frames = batch_dict['num_frames']
             trajectory_rois = cur_batch_boxes[None, :, :].repeat(num_frames,1,1)
             # trajectory_rois[:, 0, :, :] = cur_batch_boxes
-            batch_dict['valid_length'] = torch.ones(num_frames, trajectory_rois.shape[1])
-            # batch_dict['roi_scores'] = batch_dict['roi_scores'][:, :, None].repeat(1, 1, num_frames)
+            batch_valid_length = torch.zeros(num_frames, trajectory_rois.shape[1])
             roi_list = batch_dict.get('roi_list' , None)
 
-            # simply propagate proposal based on velocity
+            batch_valid_length[0] = batch_dict['roi_scores'].squeeze(0)
             for i in range(1, num_frames):
                 frame = trajectory_rois[i-1].clone()
                 frame[:, 0:2] = frame[:, 0:2] + (frame[:, 7:9] if batch_dict['sample_idx']-i>=0 else 0)
@@ -281,11 +280,12 @@ class DataProcessor(object):
                     max_overlaps,gt_assignment = iou3d.max(-1)
 
 
-                    fg_inds = (max_overlaps>0.5).nonzero()
-                    frame[fg_inds] = roi_list[i,gt_assignment[fg_inds]]
+                    fg_inds = (max_overlaps>0.5).nonzero().squeeze(-1)
+                    frame[fg_inds] = roi_list[i,gt_assignment[fg_inds],:9]
+                    batch_valid_length[i,fg_inds] = roi_list[i,gt_assignment[fg_inds],9]
                 trajectory_rois[i, :, :] = frame
 
-
+            data_dict['valid_length'] = batch_valid_length
             return trajectory_rois
 
         def subsample_rois(max_overlaps,roi_labels,config):
@@ -365,35 +365,6 @@ class DataProcessor(object):
 
             sampled_inds = torch.cat((fg_inds, bg_inds), dim=0)
             return sampled_inds.long(), fg_inds.long(), bg_inds.long()
-
-        def transform_prebox_to_current(pred_boxes3d, pose_pre, pose_cur):
-            """
-
-            Args:
-                pred_boxes3d (N, 9 or 11): [x, y, z, dx, dy, dz, raw, <vx, vy,> score, label]
-                pose_pre (4, 4):
-                pose_cur (4, 4):
-            Returns:
-
-            """
-            assert pred_boxes3d.shape[-1] in [9, 11]
-            pred_boxes3d = pred_boxes3d.copy()
-            expand_bboxes = np.concatenate([pred_boxes3d[:, :3], np.ones((pred_boxes3d.shape[0], 1))], axis=-1)
-
-            bboxes_global = np.dot(expand_bboxes, pose_pre.T)[:, :3]
-            expand_bboxes_global = np.concatenate([bboxes_global[:, :3], np.ones((bboxes_global.shape[0], 1))], axis=-1)
-            bboxes_pre2cur = np.dot(expand_bboxes_global, np.linalg.inv(pose_cur.T))[:, :3]
-            pred_boxes3d[:, 0:3] = bboxes_pre2cur
-
-            if pred_boxes3d.shape[-1] == 11:
-                expand_vels = np.concatenate([pred_boxes3d[:, 7:9], np.zeros((pred_boxes3d.shape[0], 1))], axis=-1)
-                vels_global = np.dot(expand_vels, pose_pre[:3, :3].T)
-                vels_pre2cur = np.dot(vels_global, np.linalg.inv(pose_cur[:3, :3].T))[:, :2]
-                pred_boxes3d[:, 7:9] = vels_pre2cur
-
-            pred_boxes3d[:, 6] = pred_boxes3d[..., 6] + np.arctan2(pose_pre[..., 1, 0], pose_pre[..., 0, 0])
-            pred_boxes3d[:, 6] = pred_boxes3d[..., 6] - np.arctan2(pose_cur[..., 1, 0], pose_cur[..., 0, 0])
-            return pred_boxes3d
 
         def sample_rois_for_mppnet(batch_dict, config):
 
@@ -510,7 +481,7 @@ class DataProcessor(object):
             data_dict['roi_scores'] = torch.from_numpy(data_dict['roi_scores'])
             if data_dict['roi_boxes'].shape[0]>1:
 
-                data_dict['roi_list'] = data_dict['roi_boxes'].clone()
+                data_dict['roi_list'] = torch.concat([data_dict['roi_boxes'].clone(),data_dict['roi_scores'].unsqueeze(-1).clone(),data_dict['roi_labels'].unsqueeze(-1).clone()],-1)
                 mask = data_dict['roi_boxes'][0,:,0]!=0
 
                 data_dict['roi_boxes'] = data_dict['roi_boxes'][0:1,mask]
@@ -594,7 +565,7 @@ class DataProcessor(object):
             gt_of_rois[:,  6] = heading_label
             targets_dict['gt_of_rois'] = gt_of_rois
             data_dict['targets_dict'] = targets_dict
-            poped_key = ['num_frames','valid_length','trajectory_rois']
+            poped_key = ['num_frames','trajectory_rois']
 
             for key in poped_key:
                 data_dict.pop(key)
