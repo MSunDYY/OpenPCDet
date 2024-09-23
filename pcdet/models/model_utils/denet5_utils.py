@@ -234,7 +234,7 @@ class MultiheadAttention(nn.Module):
             weight = weight .sum(1)
             # V = (V.unflatten(0,(B,self.num_heads)) * weight.unsqueeze(-1)).flatten(0,1)
             sampled_inds = torch.topk(weight,int(weight.shape[-1]*drop),-1)[1]
-
+            sampled_inds = torch.arange(int(weight.shape[-1]*drop),device=device)[None,:].repeat(weight.shape[0],1)
             A = torch.gather(A.unflatten(0,(-1,self.num_heads)),2,sampled_inds[:,None,:,None].repeat(1,self.num_heads,1,T)).flatten(0,1)
         else:
             weight = None

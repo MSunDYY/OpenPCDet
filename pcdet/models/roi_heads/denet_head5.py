@@ -435,7 +435,7 @@ class DENet5Head(RoIHeadTemplate):
         self.jointembed = MLP(self.hidden_dim, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
 
         self.up_dimension_geometry = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
-        self.up_dimension_motion = MLP(input_dim = 31, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
+        self.up_dimension_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
 
         self.transformer = build_transformer(model_cfg.Transformer)
         self.transformer2st = KPTransformer(model_cfg.Transformer2st)
@@ -581,7 +581,9 @@ class DENet5Head(RoIHeadTemplate):
         motion_aware_feat = self.spherical_coordinate(motion_aware_feat, diag_dist=diag_dist.unflatten(0,(num_rois,-1))[:,:1,:])
         geometry_aware_feat = self.spherical_coordinate(geometry_aware_feat,diag_dist=diag_dist[:,:,None])
 
-        motion_aware_feat = self.up_dimension_motion(torch.cat([motion_aware_feat, point_time_padding,valid.transpose(0,1)[:,:,None].repeat(1,1,num_points_single_frame).reshape(num_rois,-1,1)], -1))
+        # motion_aware_feat = self.up_dimension_motion(torch.cat([motion_aware_feat, point_time_padding,valid.transpose(0,1)[:,:,None].repeat(1,1,num_points_single_frame).reshape(num_rois,-1,1)], -1))
+        motion_aware_feat = self.up_dimension_motion(torch.cat([motion_aware_feat, point_time_padding], -1))
+
         geometry_aware_feat = self.up_dimension_geometry(torch.concat([geometry_aware_feat.reshape(num_rois,num_frames*num_points_single_frame,-1),proxy_point[:,:,3:]],-1))
 
         return motion_aware_feat + geometry_aware_feat
