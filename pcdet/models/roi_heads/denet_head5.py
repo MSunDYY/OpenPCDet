@@ -431,7 +431,8 @@ class DENet5Head(RoIHeadTemplate):
         # self.pos_embding = nn.Linear(4,128)
         # self.cross = nn.ModuleList([CrossAttention(3,4,256,None) for i in range(4)])
         # self.seqboxembed = PointNet(8,model_cfg=self.model_cfg)
-
+        self.memory_num = list()
+        self.delay = list()
         self.jointembed = MLP(self.hidden_dim, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
 
         self.up_dimension_geometry = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
@@ -812,7 +813,7 @@ class DENet5Head(RoIHeadTemplate):
         :return:
         """
 
-
+        st = time.time()
         num_frames = self.model_cfg.Transformer2st.num_frames
         roi_scores = batch_dict['roi_scores'][:, 0, :]
 
@@ -979,6 +980,13 @@ class DENet5Head(RoIHeadTemplate):
             targets_dict['point_reg'] = point_reg
             targets_dict['point_cls'] = point_cls
             self.forward_ret_dict = targets_dict
+        self.delay.append(time.time()-st)
+        import pycuda.driver as cuda
+        cuda.init()
+        device_0 = cuda.Device(0)
+        self.memory_num.append((device_0.total_memory() - cuda.mem_get_info()[0]) / 1024 / 1024)
+        torch.cuda.empty_cache()
+        print(sum(self.delay)/len(self.delay))
         return batch_dict
 
     def get_loss(self, tb_dict=None):

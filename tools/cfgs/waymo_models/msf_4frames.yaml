@@ -12,7 +12,7 @@ DATA_CONFIG:
 
     SAMPLED_INTERVAL: {
         'train': 1,
-        'test': 5
+        'test': 200
     }
     FILTER_EMPTY_BOXES_FOR_TRAIN: True
     DISABLE_NLZ_FLAG_ON_POINTS: True

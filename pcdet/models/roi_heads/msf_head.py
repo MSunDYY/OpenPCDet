@@ -323,7 +323,7 @@ class MSFHead(RoIHeadTemplate):
 
         self.up_dimension_geometry = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
         self.up_dimension_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim = hidden_dim, num_layers = 3)
-
+        self.delay = list()
         self.transformer = build_transformer(model_cfg.Transformer)
         self.voxel_sampler = None
   
@@ -333,7 +333,7 @@ class MSFHead(RoIHeadTemplate):
         self.bbox_embed = nn.ModuleList()
         for _ in range(self.num_groups):
             self.bbox_embed.append(MLP(model_cfg.Transformer.hidden_dim, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4))
-
+        self.memory_num = list()
 
     def init_weights(self, weight_init='xavier'):
         if weight_init == 'kaiming':
@@ -633,7 +633,14 @@ class MSFHead(RoIHeadTemplate):
             targets_dict['point_reg'] = point_reg
             targets_dict['point_cls'] = point_cls
             self.forward_ret_dict = targets_dict
+        self.delay.append(time.time()-st)
+        import pycuda.driver as cuda
+        cuda.init()
+        device_0 = cuda.Device(0)
+        self.memory_num.append((device_0.total_memory() - cuda.mem_get_info()[0]) / 1024 / 1024)
+        torch.cuda.empty_cache()
 
+        print(sum(self.delay) / len(self.delay))
         return batch_dict
 
     def get_loss(self, tb_dict=None):
