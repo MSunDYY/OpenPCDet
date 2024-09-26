@@ -592,22 +592,23 @@ class WaymoDataset(DatasetTemplate):
         data_dict['metadata'] = info.get('metasdata', info['frame_id'])
         data_dict.pop('num_points_in_gt', None)
 
-        if self.dataset_cfg.SEQUENCE_CONFIG.get('USE_KEY_BOX', False) and not self.training:
-            sequence_info = self.seq_name_to_infos[sequence_name]
-            pose_cur = sequence_info[sample_idx]['pose'].reshape(4,4)
-            pred_key_boxes = list()
-            for idx in range(-3, 3):
-                if idx==0:
-                    continue
-                sample_idx_pre = min(max(sample_idx + idx, 0), len(sequence_info) - 1)
-                pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
-                roi_path = Path('../../data/waymo/key_rois') / sequence_name / ('%04d.npy' % (sample_idx_pre))
-                pred_boxes = np.load(roi_path)[:,:9]
-                pred_boxes = self.transform_prebox_to_current(pred_boxes, pose_pre, pose_cur)
-                pred_boxes[:, :2] -=  (sample_idx - sample_idx_pre) * pred_boxes[:, 7:9]
-                pred_key_boxes.append(pred_boxes)
-            pred_key_boxes = self.reorder_rois_for_refining(pred_key_boxes)
-            data_dict['pred_key_boxes'] = pred_key_boxes
+        if self.dataset_cfg.get('SEQUENCE_CONFIG',None) is not None:
+            if self.dataset_cfg.SEQUENCE_CONFIG.get('USE_KEY_BOX', False) and not self.training:
+                sequence_info = self.seq_name_to_infos[sequence_name]
+                pose_cur = sequence_info[sample_idx]['pose'].reshape(4,4)
+                pred_key_boxes = list()
+                for idx in range(-3, 3):
+                    if idx==0:
+                        continue
+                    sample_idx_pre = min(max(sample_idx + idx, 0), len(sequence_info) - 1)
+                    pose_pre = sequence_info[sample_idx_pre]['pose'].reshape((4, 4))
+                    roi_path = Path('../../data/waymo/key_rois') / sequence_name / ('%04d.npy' % (sample_idx_pre))
+                    pred_boxes = np.load(roi_path)[:,:9]
+                    pred_boxes = self.transform_prebox_to_current(pred_boxes, pose_pre, pose_cur)
+                    pred_boxes[:, :2] -=  (sample_idx - sample_idx_pre) * pred_boxes[:, 7:9]
+                    pred_key_boxes.append(pred_boxes)
+                pred_key_boxes = self.reorder_rois_for_refining(pred_key_boxes)
+                data_dict['pred_key_boxes'] = pred_key_boxes
         return data_dict
 
 
