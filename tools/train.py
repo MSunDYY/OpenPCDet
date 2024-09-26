@@ -26,7 +26,7 @@ if not os.getcwd().endswith('tools'):
 
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
-    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/dsvt_pillar_4frames.yaml',
+    parser.add_argument('--cfg_file', type=str, default='cfgs/waymo_models/denet5_32frames.yaml',
                         help='specify the config for training')
     parser.add_argument('--batch_size', type=int, default=1, required=False, help='batch size for training')
     parser.add_argument('--epochs', type=int, default=None, required=False, help='number of epochs to train for')
@@ -203,7 +203,7 @@ def main(args, cfgs):
         data_config.DATA_SPLIT.test = 'train'
         data_config.SAMPLED_INTERVAL.test=1
         data_config.ROI_BOXES_PATH.test = data_config.ROI_BOXES_PATH.test.replace('/val','/train')
-        model.roi_head.signal = 'train'
+        # model.roi_head.signal = 'train'
         test_set, test_loader, sampler = build_dataloader(
             dataset_cfg=data_config,
             class_names=cfg.CLASS_NAMES,

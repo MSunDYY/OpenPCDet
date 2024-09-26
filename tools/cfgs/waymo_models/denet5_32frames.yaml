@@ -6,7 +6,7 @@ DATA_CONFIG:
     TRANSFORMED_POINTS: False
     DATA_SPLIT: {
         'train': train,
-        'test': test
+        'test': val
     }
     TRAIN_WITH_SPEED: True
     SAMPLED_INTERVAL: {
@@ -25,7 +25,7 @@ DATA_CONFIG:
     USE_PREDBOX: True
     ROI_BOXES_PATH: {
         'train': '../output/waymo_models/centerpoint_4frames/Interval5/eval/epoch_36/train/Interval1/result.pkl',  # example: predicted boxes of RPN in training set
-        'test': '../output/waymo_models/centerpoint_4frames/Interval5/eval/epoch_36/test/Interval1/result.pkl',  # example: predicted boxes of RPN in evalulation set
+        'test': '../output/waymo_models/centerpoint_4frames/Interval5/eval/epoch_36/val/Interval1/result.pkl',  # example: predicted boxes of RPN in evalulation set
     }
 
     DATA_AUGMENTOR:
@@ -52,7 +52,7 @@ DATA_CONFIG:
             }
         - NAME: anchor_aug
           NUM_FRAMES: 32
-          ROI_PER_IMAGE: 96
+          ROI_PER_IMAGE: 100
           FG_RATIO: 0.5
           REG_AUG_METHOD: single
           ROI_FG_AUG_TIMES: 10
@@ -68,13 +68,13 @@ DATA_CONFIG:
               MIN_ROI: 30
           SAMPLE_ROI_BY_EACH_CLASS: True
           CLS_SCORE_TYPE: roi_iou
-
+          STACK_CONCAT: True
           CLS_FG_THRESH: 0.75
           CLS_BG_THRESH: 0.25
-          CLS_BG_THRESH_LO: 0.1
+          CLS_BG_THRESH_LO: [0.2,0.1,0.1]
           HARD_BG_RATIO: 0.8
 
-          REG_FG_THRESH: 0.55
+          REG_FG_THRESH: [0.55,0.4,0.4]
           REG_BG_THRESH: 0.7
 
 
@@ -97,7 +97,7 @@ MODEL:
         AVG_STAGE1_SCORE: True
         USE_TRAJ_EMPTY_MASK: True
         USE_AUX_LOSS: True
-        IOU_WEIGHT: [0.5,0.4]
+        IOU_WEIGHT: [0.45,0.4]
 
         PRE_AUG: True
 
@@ -136,9 +136,10 @@ MODEL:
             use_mlp_mixer:
                 enabled: True
                 hidden_dim: 16
+            drop_rate: [0.8,0.6,0.6]
 
         Transformer2st:
-            num_lidar_points: 64
+            num_lidar_points: 48
             pos_hidden_dim: 64
             enc_layers: 3
             dim_feedforward: 512
@@ -146,7 +147,7 @@ MODEL:
             dropout: 0.1
             nheads: 4
             pre_norm: False
-            num_frames: 32
+            num_frames: 16
             num_groups: 4
             use_grid_pos:
                 enabled: True
@@ -154,6 +155,7 @@ MODEL:
             use_mlp_mixer:
                 enabled: True
                 hidden_dim: 16
+            drop_rate: [0.5,0.5]
 
 
         TARGET_CONFIG:
@@ -186,7 +188,7 @@ MODEL:
                 'rcnn_reg_weight': 1.0,
                 'rcnn_corner_weight': 2.0,
                 'joint_cls_weight': 1.0,
-                'traj_reg_weight': [2.0, 2.0, 2.0],
+                'traj_reg_weight': [2.0, 0.0, 2.0],
                 'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
                 'point_cls_weight': 1.0,
                 'point_reg_weight': 1.0,
