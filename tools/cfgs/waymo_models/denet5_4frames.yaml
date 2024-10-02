@@ -68,7 +68,7 @@ DATA_CONFIG:
               MIN_ROI: 30
           SAMPLE_ROI_BY_EACH_CLASS: True
           CLS_SCORE_TYPE: roi_iou
-          STACK_CONCAT: False
+          STACK_CONCAT: True
           CLS_FG_THRESH: 0.75
           CLS_BG_THRESH: 0.25
           CLS_BG_THRESH_LO: 0.1
