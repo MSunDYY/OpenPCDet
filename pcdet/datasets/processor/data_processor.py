@@ -180,7 +180,7 @@ class DataProcessor(object):
             gt_box3d = gt_boxes3d[k].view(1, gt_boxes3d.shape[-1])
             aug_box3d = roi_box3d
             keep = True
-            while temp_iou < (pos_thresh if roi_labels is None else pos_thresh[roi_labels[k]-1]) and cnt < aug_times:
+            while temp_iou < (pos_thresh) and cnt < aug_times:
                 if np.random.rand() <= config.RATIO:
                     aug_box3d = roi_box3d  # p=RATIO to keep the original roi box
                     keep = True
@@ -320,14 +320,13 @@ class DataProcessor(object):
                 return bg_inds
             
             # sample fg, easy_bg, hard_bg
-            roi_per_image = min(max_overlaps.shape[0],config.ROI_PER_IMAGE)
-            fg_rois_per_image = int(np.round(config.FG_RATIO * roi_per_image))
-            fg_thresh = torch.tensor(config.REG_FG_THRESH)[roi_labels-1]
+            fg_rois_per_image = int(np.round(config.FG_RATIO * config.ROI_PER_IMAGE))
+            fg_thresh = min(config.REG_FG_THRESH, config.CLS_FG_THRESH)
 
             fg_inds = ((max_overlaps >= fg_thresh)).nonzero().view(-1)
-            easy_bg_inds = ((max_overlaps < torch.tensor(config.CLS_BG_THRESH_LO)[roi_labels-1])).nonzero().view(-1)
-            hard_bg_inds = ((max_overlaps < torch.tensor(config.REG_FG_THRESH)[roi_labels-1]) &
-                            (max_overlaps >= torch.tensor(config.CLS_BG_THRESH_LO)[roi_labels-1])).nonzero().view(-1)
+            easy_bg_inds = ((max_overlaps < config.CLS_BG_THRESH_LO)).nonzero().view(-1)
+            hard_bg_inds = ((max_overlaps < config.REG_FG_THRESH) &
+                            (max_overlaps >= config.CLS_BG_THRESH_LO)).nonzero().view(-1)
 
             fg_num_rois = fg_inds.numel()
             bg_num_rois = hard_bg_inds.numel() + easy_bg_inds.numel()
@@ -340,21 +339,21 @@ class DataProcessor(object):
                 fg_inds = fg_inds[rand_num[:fg_rois_per_this_image]]
 
                 # sampling bg
-                bg_rois_per_this_image = roi_per_image - fg_rois_per_this_image
+                bg_rois_per_this_image = config.ROI_PER_IMAGE - fg_rois_per_this_image
                 bg_inds = sample_bg_inds(
                     hard_bg_inds, easy_bg_inds, bg_rois_per_this_image, config.HARD_BG_RATIO
                 )
 
             elif fg_num_rois > 0 and bg_num_rois == 0:
                 # sampling fg
-                rand_num = np.floor(np.random.rand(roi_per_image) * fg_num_rois)
+                rand_num = np.floor(np.random.rand(config.ROI_PER_IMAGE) * fg_num_rois)
                 rand_num = torch.from_numpy(rand_num).type_as(max_overlaps).long()
                 fg_inds = fg_inds[rand_num]
-                bg_inds = fg_inds[fg_inds < 0]  # yield empty tensor
+                bg_inds = torch.tensor([]).type_as(fg_inds)
 
             elif bg_num_rois > 0 and fg_num_rois == 0:
                 # sampling bg
-                bg_rois_per_this_image = roi_per_image
+                bg_rois_per_this_image = config.ROI_PER_IMAGE
                 bg_inds = sample_bg_inds(
                     hard_bg_inds, easy_bg_inds, bg_rois_per_this_image, config.HARD_BG_RATIO
                 )
