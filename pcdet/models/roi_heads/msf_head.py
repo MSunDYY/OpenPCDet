@@ -633,14 +633,14 @@ class MSFHead(RoIHeadTemplate):
             targets_dict['point_reg'] = point_reg
             targets_dict['point_cls'] = point_cls
             self.forward_ret_dict = targets_dict
-        self.delay.append(time.time()-st)
-        import pycuda.driver as cuda
-        cuda.init()
-        device_0 = cuda.Device(0)
-        self.memory_num.append((device_0.total_memory() - cuda.mem_get_info()[0]) / 1024 / 1024)
-        torch.cuda.empty_cache()
-
-        print(sum(self.delay) / len(self.delay))
+        # self.delay.append(time.time()-st)
+        # import pycuda.driver as cuda
+        # cuda.init()
+        # device_0 = cuda.Device(0)
+        # self.memory_num.append((device_0.total_memory() - cuda.mem_get_info()[0]) / 1024 / 1024)
+        # torch.cuda.empty_cache()
+        #
+        # print(sum(self.delay) / len(self.delay))
         return batch_dict
 
     def get_loss(self, tb_dict=None):
