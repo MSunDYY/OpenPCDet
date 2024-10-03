@@ -290,6 +290,8 @@ class KPTransformer(nn.Module):
 
         # self.decoder_layer1 = CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
         # self.decoder_layer2 = CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
+        # self.token_linear = nn.Linear(self.channels*4,self.channels)
+
         self.decoder_layer3 = CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
 
 
@@ -342,6 +344,9 @@ class KPTransformer(nn.Module):
             src = src.unflatten(1,(-1,self.num_groups)).transpose(1,2).flatten(0,1).flatten(1,2)
         src,weight,sampled_inds = self.Attention2(src,return_weight=True,drop=self.drop_rate[1])
 
+        # token1 = self.decoder_layer2(token.unsqueeze(1).repeat(1,4,1,1).flatten(0,1),src)
+
+        # token_list.append(token1)
         if signal:
             src = src.unflatten(0,(-1,self.num_groups))
             src_max = src.max(2).values
@@ -393,23 +398,6 @@ class Pointnet(nn.Module):
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
         return x
-
-
-class PointNetLK(nn.Module):
-    def __init__(self,channels):
-        super(PointNetLK, self).__init__()
-        self.pointnet = Pointnet(channels)
-
-    def forward(self, source, target):
-        source_feature = self.pointnet(source)
-        target_feature = self.pointnet(target)
-        transform = self.estimate_transform(source_feature, target_feature)
-        return transform
-
-    def estimate_transform(self, source_feature, target_feature):
-        # 简单的线性变换估计
-        transform = target_feature - source_feature
-        return transform
 
 class DENet5Head(RoIHeadTemplate):
     def __init__(self,model_cfg, num_class=1,**kwargs):
