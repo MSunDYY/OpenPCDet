@@ -288,9 +288,9 @@ class KPTransformer(nn.Module):
         # self.Crossatten1= CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
         # self.Crossatten2 = CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
 
-        # self.decoder_layer1 = CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
+        self.decoder_layer1 = CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
         # self.decoder_layer2 = CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
-        # self.token_linear = nn.Linear(self.channels*4,self.channels)
+        self.token_linear = nn.Linear(self.channels*4,self.channels)
 
         self.decoder_layer3 = CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
 
@@ -342,8 +342,11 @@ class KPTransformer(nn.Module):
             src = self.norm1(src + torch.stack(src_new,1)).flatten(1,2)
         else:
             src = src.unflatten(1,(-1,self.num_groups)).transpose(1,2).flatten(0,1).flatten(1,2)
-        src,weight,sampled_inds = self.Attention2(src,return_weight=True,drop=self.drop_rate[1])
+        token1 = [self.decoder_layer1(token,src[B*i:B*(i+1)]) for i in range(4)]
+        token1 = self.token_linear(torch.concat(token1,dim=-1))
+        token_list.append(token1)
 
+        src,weight,sampled_inds = self.Attention2(src,return_weight=True,drop=self.drop_rate[1])
         # token1 = self.decoder_layer2(token.unsqueeze(1).repeat(1,4,1,1).flatten(0,1),src)
 
         # token_list.append(token1)
@@ -362,7 +365,7 @@ class KPTransformer(nn.Module):
         src = self.Attention3(src,return_weight = False)
 
         # src_cur = self.Crossatten2(src_cur,src_new)
-        token = self.decoder_layer3(token,src)
+        token = self.decoder_layer3(token1,src)
         token_list.append(token)
         # src = self.pointnet(src.permute(0,2,1))
         # # src = src.permute(0,2,1)
@@ -896,19 +899,21 @@ class DENet5Head(RoIHeadTemplate):
 
         for i in range(self.num_enc_layer):
             point_cls_list.append(self.class_embed[0](tokens[i][:,0]))
-        point_cls_list.append(self.class_embed_final(tokens2[0][:,0]))
+        for i in range(len(tokens2)):
+            point_cls_list.append(self.class_embed_final(tokens2[i][:,0]))
 
 
         for j in range(self.num_enc_layer):
             point_reg_list.append(self.bbox_embed[0](tokens[j][:,0]))
-
+        for i in range(len(tokens2)):
+            point_reg_list.append(self.jointembed(tokens2[i][:,0]))
 
         point_cls = torch.cat(point_cls_list,0)
 
         point_reg = torch.cat(point_reg_list,0)
 
 
-        joint_reg = self.jointembed(torch.cat([tokens2[-1][:,0]],-1))
+        joint_reg = self.jointembed(tokens2[-1][:,0])
 
 
 
@@ -978,17 +983,18 @@ class DENet5Head(RoIHeadTemplate):
         return batch_dict
 
     def get_loss(self, tb_dict=None):
-        tb_dict = {} if tb_dict is None else tb_dict
-        rcnn_loss = 0
-        rcnn_loss_cls, cls_tb_dict = self.get_box_cls_layer_loss(self.forward_ret_dict)
-        rcnn_loss += rcnn_loss_cls
-        tb_dict.update(cls_tb_dict)
+        with torch.cuda.amp.autocast(False):
+            tb_dict = {} if tb_dict is None else tb_dict
+            rcnn_loss = 0
+            rcnn_loss_cls, cls_tb_dict = self.get_box_cls_layer_loss(self.forward_ret_dict)
+            rcnn_loss += rcnn_loss_cls
+            tb_dict.update(cls_tb_dict)
 
-        rcnn_loss_reg, reg_tb_dict = self.get_box_reg_layer_loss(self.forward_ret_dict)
-        rcnn_loss += rcnn_loss_reg
-        tb_dict.update(reg_tb_dict)
-        tb_dict['rcnn_loss'] = rcnn_loss.item()
-        return rcnn_loss, tb_dict
+            rcnn_loss_reg, reg_tb_dict = self.get_box_reg_layer_loss(self.forward_ret_dict)
+            rcnn_loss += rcnn_loss_reg
+            tb_dict.update(reg_tb_dict)
+            tb_dict['rcnn_loss'] = rcnn_loss.item()
+            return rcnn_loss, tb_dict
     
     def get_box_reg_layer_loss(self, forward_ret_dict):
         loss_cfgs = self.model_cfg.LOSS_CONFIG
@@ -1110,7 +1116,8 @@ class DENet5Head(RoIHeadTemplate):
                 rcnn_loss_cls = 0
                 slice = rcnn_cls_labels.shape[0]
                 for i in range(groups):
-                    batch_loss_cls = F.binary_cross_entropy(torch.sigmoid(rcnn_cls_flat[i*slice:(i+1)*slice]), 
+
+                    batch_loss_cls = F.binary_cross_entropy(torch.sigmoid(rcnn_cls_flat[i*slice:(i+1)*slice]).float(),
                                      rcnn_cls_labels.float(), reduction='none')
 
                     cls_valid_mask = (rcnn_cls_labels >= 0).float() 
