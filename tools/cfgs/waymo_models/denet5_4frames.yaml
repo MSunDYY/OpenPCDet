@@ -149,14 +149,14 @@ MODEL:
             nheads: 4
             pre_norm: False
             num_frames: 16
-            num_groups: 4
+            num_groups: [4,1]
             use_grid_pos:
                 enabled: True
                 init_type: index
             use_mlp_mixer:
                 enabled: True
                 hidden_dim: 16
-            drop_rate: [0.5,0.5]
+            drop_rate: [0.5,0.5,1]
 
 
         TARGET_CONFIG:

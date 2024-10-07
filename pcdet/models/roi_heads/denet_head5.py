@@ -284,7 +284,7 @@ class KPTransformer(nn.Module):
         self.drop_rate = model_cfg.drop_rate
         self.Attention = SpatialDropBlock(self.channels,dropout=0.1,batch_first=True)
         self.Attention2 = SpatialDropBlock(self.channels,dropout=0.1,batch_first=True)
-        self.Attention3 = SpatialMixerBlock(self.channels,dropout=0.1,batch_first=True)
+        self.Attention3 = SpatialDropBlock(self.channels,dropout=0.1,batch_first=True)
         # self.Crossatten1= CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
         # self.Crossatten2 = CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
 
@@ -302,9 +302,9 @@ class KPTransformer(nn.Module):
             # nn.Dropout(0.1),
             # nn.Conv1d(self.channels*2,self.channels,1)
         )
-        self.linear1 = nn.ModuleList([nn.Linear(self.channels*2,self.channels) for _ in range(self.num_groups)])
-        self.dropout1 = nn.ModuleList([nn.Dropout(0.1) for _ in range(self.num_groups)])
-        self.dropout2 = nn.ModuleList([nn.Dropout(0.1) for _ in range(self.num_groups)])
+        self.linear1 = nn.ModuleList([nn.Linear(self.channels*2,self.channels) for _ in range(4)])
+        self.dropout1 = nn.ModuleList([nn.Dropout(0.1) for _ in range(4)])
+        self.dropout2 = nn.ModuleList([nn.Dropout(0.1) for _ in range(4)])
 
         self.norm1 = nn.LayerNorm(self.channels)
 
@@ -315,7 +315,7 @@ class KPTransformer(nn.Module):
             # nn.Dropout(0.1),
             # nn.Conv1d(self.channels*2,self.channels,1)
         )
-        self.linear2 = nn.ModuleList([nn.Linear(self.channels*2 , self.channels) for _ in range(self.num_groups)])
+        self.linear2 = nn.ModuleList([nn.Linear(self.channels*2 , self.channels) for _ in range(4)])
         self.norm2 = nn.LayerNorm(self.channels)
 
 
@@ -327,17 +327,17 @@ class KPTransformer(nn.Module):
         B = src_cur.shape[0]
         token_list = list()
         src = src.reshape(src.shape[0]*self.num_frames,-1,src.shape[-1])
-        num_frames_single_group = self.num_frames // self.num_groups
+
         src,weight,sampled_inds = self.Attention(src,return_weight=True,drop=self.drop_rate[0])
-        src = src.reshape(B,16,-1,self.channels)
+        src = src.reshape(B,self.num_frames,-1,self.channels)
 
         signal = True
         if signal:
-            src=src.unflatten(1,(-1,self.num_groups)).transpose(1,2).flatten(0,1)
+            src=src.unflatten(1,(-1,self.num_groups[0])).transpose(1,2).flatten(0,1)
             src_max = src.max(2).values
             src_max = src_max.flatten(1,2)
             src_max = self.conv1(src_max.unsqueeze(-1)).squeeze()
-            src_new = [self.dropout1[i](self.linear1[i](torch.concat([src[:,i],src_max[:,None,:].repeat(1,src.shape[2],1)],dim=-1))) for i in range(self.num_groups)]
+            src_new = [self.dropout1[i](self.linear1[i](torch.concat([src[:,i],src_max[:,None,:].repeat(1,src.shape[2],1)],dim=-1))) for i in range(4)]
 
             src = self.norm1(src + torch.stack(src_new,1)).flatten(1,2)
         else:
@@ -350,19 +350,22 @@ class KPTransformer(nn.Module):
         # token1 = self.decoder_layer2(token.unsqueeze(1).repeat(1,4,1,1).flatten(0,1),src)
 
         # token_list.append(token1)
+
         if signal:
-            src = src.unflatten(0,(-1,self.num_groups))
+            src = src.unflatten(0,(B,-1)).unflatten(1,(-1,self.num_groups[1])).transpose(1,2).flatten(0,1)
             src_max = src.max(2).values
             src_max = src_max.flatten(1,2)
             src_max = self.conv2(src_max.unsqueeze(-1)).squeeze(-1)
             # src = src.flatten(1,2)
 
-            src_new = [self.dropout2[i](self.linear2[i](torch.concat([src[:,i],src_max[:,None,:].repeat(1,src.shape[2],1)],dim=-1))) for i in range(self.num_groups)]
+            src_new = [self.dropout2[i](self.linear2[i](torch.concat([src[:,i],src_max[:,None,:].repeat(1,src.shape[2],1)],dim=-1))) for i in range(4)]
 
             src = self.norm2(src + torch.stack(src_new,1)).flatten(1,2)
         else:
             src = src.reshape(-1,self.num_groups*src.shape[1],src.shape[-1])
-        src = self.Attention3(src,return_weight = False)
+        src = self.Attention3(src,return_weight = False,drop = self.drop_rate[2])
+        if self.num_frames==32:
+            src = src.unflatten(0,(B,2)).flatten(1,2)
 
         # src_cur = self.Crossatten2(src_cur,src_new)
         token = self.decoder_layer3(token,src)

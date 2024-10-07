@@ -42,7 +42,7 @@ class WaymoDataset(DatasetTemplate):
         self.seq_name_to_infos = self.include_waymo_data(self.mode)
 
         self.use_shared_memory = self.dataset_cfg.get('USE_SHARED_MEMORY', False) and self.training
-        self.use_shared_key_memory = self.dataset_cfg.get('USE_SHARED_KEY_MEMORY',False) and self.training
+        self.use_shared_key_memory = self.dataset_cfg.get('USE_SHARED_KEY_MEMORY',False)
         if self.use_shared_memory:
             self.shared_memory_file_limit = self.dataset_cfg.get('SHARED_MEMORY_FILE_LIMIT', 0x7FFFFFFF)
             self.load_data_to_shared_memory()

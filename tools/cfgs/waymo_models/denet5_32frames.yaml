@@ -8,6 +8,7 @@ DATA_CONFIG:
         'train': train,
         'test': val
     }
+    USE_SHARED_KEY_MEMORY: True
     TRAIN_WITH_SPEED: True
     SAMPLED_INTERVAL: {
         'train': 1,
@@ -52,7 +53,7 @@ DATA_CONFIG:
             }
         - NAME: anchor_aug
           NUM_FRAMES: 32
-          ROI_PER_IMAGE: 100
+          ROI_PER_IMAGE: 96
           FG_RATIO: 0.5
           REG_AUG_METHOD: single
           ROI_FG_AUG_TIMES: 10
@@ -71,10 +72,10 @@ DATA_CONFIG:
           STACK_CONCAT: True
           CLS_FG_THRESH: 0.75
           CLS_BG_THRESH: 0.25
-          CLS_BG_THRESH_LO: [0.2,0.1,0.1]
+          CLS_BG_THRESH_LO: 0.1
           HARD_BG_RATIO: 0.8
 
-          REG_FG_THRESH: [0.55,0.4,0.4]
+          REG_FG_THRESH: 0.55
           REG_BG_THRESH: 0.7
 
 
@@ -136,7 +137,7 @@ MODEL:
             use_mlp_mixer:
                 enabled: True
                 hidden_dim: 16
-            drop_rate: [0.8,0.6,0.6]
+            drop_rate: [0.6,0.5,1.0]
 
         Transformer2st:
             num_lidar_points: 48
@@ -147,15 +148,15 @@ MODEL:
             dropout: 0.1
             nheads: 4
             pre_norm: False
-            num_frames: 16
-            num_groups: 4
+            num_frames: 32
+            num_groups: [8,2]
             use_grid_pos:
                 enabled: True
                 init_type: index
             use_mlp_mixer:
                 enabled: True
                 hidden_dim: 16
-            drop_rate: [0.5,0.5]
+            drop_rate: [0.5,0.5,0.5]
 
 
         TARGET_CONFIG:
