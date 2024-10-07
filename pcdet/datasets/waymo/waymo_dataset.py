@@ -449,6 +449,8 @@ class WaymoDataset(DatasetTemplate):
                         if self.use_shared_key_memory:
                             sa_key = f'{sequence_name}___{sample_idx}'
                             points_pre = SharedArray.attach(f"shm://{sa_key}").copy()
+                        else:
+                            points_pre = np.load(key_points_file)
                     except:
                         time.sleep(0.2)
                         points_pre = np.load(key_points_file)
