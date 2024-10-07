@@ -42,9 +42,13 @@ class WaymoDataset(DatasetTemplate):
         self.seq_name_to_infos = self.include_waymo_data(self.mode)
 
         self.use_shared_memory = self.dataset_cfg.get('USE_SHARED_MEMORY', False) and self.training
+        self.use_shared_key_memory = self.dataset_cfg.get('USE_SHARED_KEY_MEMORY',False) and self.training
         if self.use_shared_memory:
             self.shared_memory_file_limit = self.dataset_cfg.get('SHARED_MEMORY_FILE_LIMIT', 0x7FFFFFFF)
             self.load_data_to_shared_memory()
+
+        if self.use_shared_key_memory:
+            self.load_key_data_to_shared_memory()
 
         if self.dataset_cfg.get('USE_PREDBOX', False):
             self.pred_boxes_dict = self.load_pred_boxes_to_dict(
@@ -59,10 +63,7 @@ class WaymoDataset(DatasetTemplate):
         import GPUtil
         if (GPUtil.getGPUs()[0].name.endswith('3080') and self.training) or (GPUtil.getGPUs()[0].name.endswith('1650')) or (GPUtil.getGPUs()[0].name.endswith('3070') and not self.training):
             self.dataset_cfg.TRANSFORMED_POINTS=False
-        if GPUtil.getGPUs()[0].name.endswith('1650'):
-            for config in self.dataset_cfg.DATA_PROCESSOR:
-                if config.NAME=='anchor_aug':
-                    config.ROI_PER_IMAGE=16
+
 
     def set_split(self, split):
         super().__init__(
@@ -185,6 +186,30 @@ class WaymoDataset(DatasetTemplate):
 
         # dist.barrier()
         self.logger.info('Training data has been saved to shared memory')
+
+    def load_key_data_to_shared_memory(self):
+        self.logger.info(f'Loading key data to shared memory')
+
+        cur_rank, num_gpus = common_utils.get_dist_info()
+        all_infos = self.infos
+        cur_infos = all_infos[cur_rank::num_gpus]
+        for info in cur_infos:
+            pc_info = info['point_cloud']
+            sequence_name = pc_info['lidar_sequence']
+            sample_idx = pc_info['sample_idx']
+
+            sa_key = f'{sequence_name}___{sample_idx}'
+            if os.path.exists(f"/dev/shm/{sa_key}"):
+                continue
+            key_points_mini_root = Path('../../data/waymo/key_points_mini_new')
+            key_points_file = key_points_mini_root/sequence_name/('%04d.npy'%sample_idx)
+
+            points = np.load(key_points_file)
+            common_utils.sa_create(f"shm://{sa_key}", points)
+
+        # dist.barrier()
+        self.logger.info('Training data has been saved to shared memory')
+
 
     def clean_shared_memory(self):
         self.logger.info(f'Clean training data from shared memory (file limit={self.shared_memory_file_limit})')
@@ -421,7 +446,9 @@ class WaymoDataset(DatasetTemplate):
                     points_pre = np.load(key_points_file)
                 else:
                     try:
-                        points_pre = np.load(key_points_file)
+                        if self.use_shared_key_memory:
+                            sa_key = f'{sequence_name}___{sample_idx}'
+                            points_pre = SharedArray.attach(f"shm://{sa_key}").copy()
                     except:
                         time.sleep(0.2)
                         points_pre = np.load(key_points_file)

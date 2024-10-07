@@ -342,9 +342,9 @@ class KPTransformer(nn.Module):
             src = self.norm1(src + torch.stack(src_new,1)).flatten(1,2)
         else:
             src = src.unflatten(1,(-1,self.num_groups)).transpose(1,2).flatten(0,1).flatten(1,2)
-        token1 = [self.decoder_layer1(token,src[B*i:B*(i+1)]) for i in range(4)]
-        token1 = self.token_linear(torch.concat(token1,dim=-1))
-        token_list.append(token1)
+        # token1 = [self.decoder_layer1(token,src[B*i:B*(i+1)]) for i in range(4)]
+        # token1 = self.token_linear(torch.concat(token1,dim=-1))
+        # token_list.append(token1)
 
         src,weight,sampled_inds = self.Attention2(src,return_weight=True,drop=self.drop_rate[1])
         # token1 = self.decoder_layer2(token.unsqueeze(1).repeat(1,4,1,1).flatten(0,1),src)
@@ -365,7 +365,7 @@ class KPTransformer(nn.Module):
         src = self.Attention3(src,return_weight = False)
 
         # src_cur = self.Crossatten2(src_cur,src_new)
-        token = self.decoder_layer3(token1,src)
+        token = self.decoder_layer3(token,src)
         token_list.append(token)
         # src = self.pointnet(src.permute(0,2,1))
         # # src = src.permute(0,2,1)
@@ -905,7 +905,7 @@ class DENet5Head(RoIHeadTemplate):
 
         for j in range(self.num_enc_layer):
             point_reg_list.append(self.bbox_embed[0](tokens[j][:,0]))
-        for i in range(len(tokens2)):
+        for i in range(len(tokens2)-1):
             point_reg_list.append(self.jointembed(tokens2[i][:,0]))
 
         point_cls = torch.cat(point_cls_list,0)
