@@ -57,8 +57,7 @@ class WaymoDataset(DatasetTemplate):
         else:
             self.pred_boxes_dict = {}
 
-        if self.dataset_cfg.get('USE_ANCHOR',False):
-            self.pred_boxes_dict,self.pred_anchors_dict =self.pred_boxes_dict
+
 
         import GPUtil
         if (GPUtil.getGPUs()[0].name.endswith('3080') and self.training) or (GPUtil.getGPUs()[0].name.endswith('1650')) or (GPUtil.getGPUs()[0].name.endswith('3070') and not self.training):
@@ -352,7 +351,7 @@ class WaymoDataset(DatasetTemplate):
             """
             sequence_name = sequence_name.replace('training_', '').replace('validation_', '')
 
-            load_boxes = self.pred_boxes_dict[sequence_name][sample_idx]
+            load_boxes = copy.deepcopy(self.pred_boxes_dict[sequence_name][sample_idx])
             if load_boxes.shape[0]==0:
                 load_boxes = np.array([[50,50,50,3,3,3,0,0,0,0,1]])
                 # assert load_boxes.shape[-1] == 11
@@ -447,7 +446,7 @@ class WaymoDataset(DatasetTemplate):
                 else:
                     try:
                         if self.use_shared_key_memory:
-                            sa_key = f'{sequence_name}___{sample_idx}'
+                            sa_key = f'{sequence_name}___{sample_idx_pre}'
                             points_pre = SharedArray.attach(f"shm://{sa_key}").copy()
                         else:
                             points_pre = np.load(key_points_file)

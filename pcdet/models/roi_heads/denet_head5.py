@@ -284,7 +284,7 @@ class KPTransformer(nn.Module):
         self.drop_rate = model_cfg.drop_rate
         self.Attention = SpatialDropBlock(self.channels,dropout=0.1,batch_first=True)
         self.Attention2 = SpatialDropBlock(self.channels,dropout=0.1,batch_first=True)
-        self.Attention3 = SpatialDropBlock(self.channels,dropout=0.1,batch_first=True)
+        self.Attention3 = SpatialMixerBlock(self.channels,dropout=0.1,batch_first=True)
         # self.Crossatten1= CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
         # self.Crossatten2 = CrossMixerBlock(self.channels,dropout=0.1,batch_first=True)
 
@@ -363,7 +363,7 @@ class KPTransformer(nn.Module):
             src = self.norm2(src + torch.stack(src_new,1)).flatten(1,2)
         else:
             src = src.reshape(-1,self.num_groups*src.shape[1],src.shape[-1])
-        src = self.Attention3(src,return_weight = False,drop = self.drop_rate[2])
+        src = self.Attention3(src,return_weight = False)
         if self.num_frames==32:
             src = src.unflatten(0,(B,2)).flatten(1,2)
 
