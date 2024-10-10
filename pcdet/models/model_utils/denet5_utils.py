@@ -199,43 +199,59 @@ class MultiheadAttention(nn.Module):
         super(MultiheadAttention, self).__init__()
         self.dim_LIN = dim
         self.num_heads = num_heads
-        self.in_proj_weight = Parameter(torch.empty((3 * dim, dim)))
-        self.in_proj_bias = Parameter(torch.empty(3 * dim))
+        self.in_proj_weight_q = Parameter(torch.empty((dim, dim)))
+        self.in_proj_weight_kv = Parameter(torch.empty(2*dim,dim))
+
+        self.in_proj_bias_q = Parameter(torch.empty(dim))
+        self.in_proj_bias_kv = Parameter(torch.empty(2*dim))
         self.dropout = nn.Dropout(dropout)
         self.out_proj = NonDynamicallyQuantizableLinear(dim, dim, bias=True)
 
-
+        self.linear = nn.Sequential(nn.Linear(dim,dim),
+                                    nn.ReLU(),
+                                    nn.Linear(dim,1))
         self._reset_parameters()
     def _reset_parameters(self):
-        nn.init.xavier_uniform_(self.in_proj_weight)
-        nn.init.constant_(self.in_proj_bias,0)
-
+        nn.init.xavier_uniform_(self.in_proj_weight_q)
+        nn.init.xavier_uniform_(self.in_proj_weight_kv)
+        nn.init.constant_(self.in_proj_bias_q,0)
+        nn.init.constant_(self.in_proj_bias_kv,0)
         nn.init.constant_(self.out_proj.bias,0)
 
-    def forward(self, Q,K,V, drop=0.5):
-        B,T,D = Q.shape
+    def forward(self, q,K,V, drop=0.5):
+        B,T,D = q.shape
         L_out = int(T*drop)
-        Q,K, V = linear(Q,self.in_proj_weight,self.in_proj_bias).chunk(3,-1)
         dim_split = self.dim_LIN // self.num_heads
-        Q = Q.view(B,T,self.num_heads,dim_split).transpose(1,2).contiguous().view(B*self.num_heads,T,dim_split)
-        K = K.view(B,T,self.num_heads,dim_split).transpose(1,2).contiguous().view(B*self.num_heads,T,dim_split)
-        V = V.view(B,T,self.num_heads,dim_split).transpose(1,2).contiguous().view(B*self.num_heads,T,dim_split)
-        Q = Q / math.sqrt(dim_split)
-        A = torch.softmax(torch.bmm(Q,K.transpose(1,2)), 2)
-        A = self.dropout(A)
+
 
         if drop !=1:
 
-            weight = A.view(B,self.num_heads,T,T).max(1)[0]
-            # var = weight.transpose(1,2).flatten(0,1).var(0)
-            weight = weight .sum(1)
+            weight = torch.sigmoid(self.linear(q)).squeeze(-1)
+            weight = weight/torch.sum(weight,1,keepdim=True)
             # V = (V.unflatten(0,(B,self.num_heads)) * weight.unsqueeze(-1)).flatten(0,1)
-            sampled_inds = torch.topk(weight,int(weight.shape[-1]*drop),-1)[1]
+            sampled_inds = torch.topk(weight,int(weight.shape[1]*drop),1)[1]
+            proxy_token = torch.sum(q * weight[:,:,None],1,keepdim=True)
+            k = torch.concat([q,proxy_token],dim=1)
+
+            q = torch.gather(q,1,sampled_inds[:,:,None].repeat(1,1,self.dim_LIN))
+
             # sampled_inds = torch.arange(int(weight.shape[-1]*drop),device=device)[None,:].repeat(weight.shape[0],1)
-            A = torch.gather(A.unflatten(0,(-1,self.num_heads)),2,sampled_inds[:,None,:,None].repeat(1,self.num_heads,1,T)).flatten(0,1)
         else:
             weight = None
             sampled_inds = None
+            k=q
+
+        Q = linear(q,self.in_proj_weight_q,self.in_proj_bias_q)
+        K,V = linear(k,self.in_proj_weight_kv,self.in_proj_bias_kv).chunk(2,-1)
+        Q = Q.view(B, -1, self.num_heads, dim_split).transpose(1, 2).contiguous().view(B * self.num_heads, -1, dim_split)
+        K = K.view(B, -1, self.num_heads, dim_split).transpose(1, 2).contiguous().view(B * self.num_heads, -1, dim_split)
+        V = V.view(B, -1, self.num_heads, dim_split).transpose(1, 2).contiguous().view(B * self.num_heads, -1, dim_split)
+        Q = Q / math.sqrt(dim_split)
+        A = torch.softmax(torch.bmm(Q, K.transpose(1, 2)), 2)
+        A = self.dropout(A)
+
+
+
         O = torch.bmm(A,V)
         O = O.view(B,self.num_heads,L_out,dim_split).transpose(1,2).contiguous().view(B,L_out,self.dim_LIN)
         O = linear(O,self.out_proj.weight,self.out_proj.bias)

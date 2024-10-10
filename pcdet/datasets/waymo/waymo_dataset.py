@@ -394,7 +394,7 @@ class WaymoDataset(DatasetTemplate):
             for idx, sample_idx_pre in enumerate(sample_idx_pre_list):
 
                 if self.use_shared_memory and os.path.exists('/dev/shm/' + sequence_name + '___' + str(sample_idx)):
-                    sa_key = f'{sequence_name}___{sample_idx}'
+                    sa_key = f'{sequence_name}___{sample_idx_pre}'
                     points_pre = SharedArray.attach(f"shm://{sa_key}").copy()
                 else:
                     points_pre = self.get_lidar(sequence_name, sample_idx_pre)

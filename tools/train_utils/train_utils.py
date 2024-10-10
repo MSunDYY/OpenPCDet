@@ -1,5 +1,5 @@
 import os
-
+from memory_profiler import profile
 import torch
 import tqdm
 import time
@@ -10,6 +10,7 @@ from pcdet.utils import common_utils, commu_utils
 from pcdet.models import build_network , load_data_to_gpu
 from torch.nn.parallel import DistributedDataParallel
 
+@profile
 def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, accumulated_iter, optim_cfg,
                     rank, tbar, total_it_each_epoch, dataloader_iter, tb_log=None, leave_pbar=False, 
                     use_logger_to_record=False, logger=None, logger_iter_interval=50, cur_epoch=None, 
