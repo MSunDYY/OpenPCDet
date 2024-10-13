@@ -336,8 +336,8 @@ class KPTransformer(nn.Module):
             src = self.norm1(src + torch.stack(src_new,1)).flatten(1,2)
         else:
             src = src.unflatten(1,(-1,self.num_groups)).transpose(1,2).flatten(0,1).flatten(1,2)
-        token1 = self.decoder_layer2(token,src.unflatten(0,(B,-1))[:,0])
-        token_list.append(token1)
+        # token1 = self.decoder_layer2(token,src.unflatten(0,(B,-1))[:,0])
+        # token_list.append(token1)
 
 
         src,weight,sampled_inds = self.Attention2(src,return_weight=True,drop=self.drop_rate[1])
@@ -357,7 +357,7 @@ class KPTransformer(nn.Module):
         src = self.Attention3(src,return_weight = False)
 
         # src_cur = self.Crossatten2(src_cur,src_new)
-        token = self.decoder_layer3(token1,src)
+        token = self.decoder_layer3(token,src)
         token_list.append(token)
         # src = self.pointnet(src.permute(0,2,1))
         # # src = src.permute(0,2,1)
@@ -430,7 +430,7 @@ class DENet5Head(RoIHeadTemplate):
         self.grid_size = model_cfg.ROI_GRID_POOL.GRID_SIZE
         # self.pos_embding = nn.Linear(4,128)
         # self.cross = nn.ModuleList([CrossAttention(3,4,256,None) for i in range(4)])
-        self.seqboxembed = PointNet(8,model_cfg=self.model_cfg)
+        self.seqboxembed = PointNet(10,model_cfg=self.model_cfg)
         self.memory_num = list()
         self.delay = list()
         self.jointembed = MLP(self.hidden_dim*2, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
@@ -615,7 +615,7 @@ class DENet5Head(RoIHeadTemplate):
 
         return src_gemoetry
 
-    def trajectories_auxiliary_branch(self,trajectory_rois):
+    def trajectories_auxiliary_branch(self,trajectory_rois,valid_length):
 
         # time_stamp = torch.ones([trajectory_rois.shape[0],trajectory_rois.shape[1],1]).cuda()
         # for i in range(time_stamp.shape[1]):
@@ -623,7 +623,7 @@ class DENet5Head(RoIHeadTemplate):
         batch_rcnn = trajectory_rois.shape[0]
         time_stamp = torch.arange(trajectory_rois.shape[1],device=device)[None,:,None].repeat(batch_rcnn,1,1)
 
-        box_seq = torch.cat([trajectory_rois[:,:,:7],time_stamp],-1)
+        box_seq = torch.cat([trajectory_rois[:,:,:7],time_stamp,(valid_length>0).unsqueeze(-1).float(),(valid_length==0).unsqueeze(-1).float()],-1)
 
         box_seq[:, :, 0:3] = box_seq[:, :, 0:3] - box_seq[:, 0:1,  0:3]
 
@@ -870,7 +870,7 @@ class DENet5Head(RoIHeadTemplate):
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK', None):
             src_cur[empty_mask.view(-1)] = 0
         src_cur = self.get_proposal_aware_geometry_feature(src_cur,trajectory_rois[0,...])
-        box_reg,box_feat = self.trajectories_auxiliary_branch(trajectory_rois.transpose(0,1))
+        box_reg,box_feat = self.trajectories_auxiliary_branch(trajectory_rois.transpose(0,1),valid_length.transpose(0,1))
         hs, tokens,src_cur = self.transformer(src_cur, batch_dict, pos=None)
         if not self.training:
             key_points_root = Path('../../data/waymo/key_points_mini_new') / batch_dict['metadata'][0][:-4]
@@ -906,13 +906,13 @@ class DENet5Head(RoIHeadTemplate):
         point_cls_list = []
         point_reg_list = []
 
-        for i in range(self.num_enc_layer):
+        for i in range(len(tokens)):
             point_cls_list.append(self.class_embed[0](tokens[i][:,0]))
         for i in range(len(tokens2)):
             point_cls_list.append(self.class_embed_final(tokens2[i][:,0]))
 
 
-        for j in range(self.num_enc_layer):
+        for j in range(len(tokens)):
             point_reg_list.append(self.bbox_embed[0](tokens[j][:,0]))
         for j in range(len(tokens2)):
             point_reg_list.append(self.bbox_embed[0](tokens2[j][:,0]))
