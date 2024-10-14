@@ -400,7 +400,7 @@ class Transformer(nn.Module):
         memory,tokens = self.encoder(src,batch_dict,pos=pos)
 
         # memory = torch.cat(memory[0:1].chunk(self.num_groups,dim=1),0)
-        return memory[:,:1], [tokens[-1]],memory[:,1:]
+        return memory[:,:1], tokens,memory[:,1:]
     
 
 class TransformerEncoder(nn.Module):
@@ -514,13 +514,13 @@ class TransformerEncoderLayer(nn.Module):
         else:
             key = src_intra_group_fusion
 
-        if self.layer_count==3:
-            src_summary = self.self_attn(token, key,src_intra_group_fusion)[0]
-            token = token + self.dropout1(src_summary)
-            token = self.norm1(token)
-            src_summary = self.linear2(self.dropout(self.activation(self.linear1(token))))
-            token = token + self.dropout2(src_summary)
-            token = self.norm2(token)
+
+        src_summary = self.self_attn(token, key,src_intra_group_fusion)[0]
+        token = token + self.dropout1(src_summary)
+        token = self.norm1(token)
+        src_summary = self.linear2(self.dropout(self.activation(self.linear1(token))))
+        token = token + self.dropout2(src_summary)
+        token = self.norm2(token)
 
         src = torch.cat([token,src[:,1:]],1)
 
