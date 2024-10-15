@@ -433,7 +433,7 @@ class DENet5Head(RoIHeadTemplate):
         self.seqboxembed = PointNet(10,model_cfg=self.model_cfg)
         self.memory_num = list()
         self.delay = list()
-        self.jointembed = MLP(self.hidden_dim*2, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
+        self.jointembed = MLP(self.hidden_dim, model_cfg.Transformer.hidden_dim, self.box_coder.code_size * self.num_class, 4)
 
         self.up_dimension_geometry = MLP(input_dim = 29, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
         self.up_dimension_motion = MLP(input_dim = 30, hidden_dim = 64, output_dim =hidden_dim, num_layers = 3)
@@ -870,7 +870,7 @@ class DENet5Head(RoIHeadTemplate):
         if self.model_cfg.get('USE_TRAJ_EMPTY_MASK', None):
             src_cur[empty_mask.view(-1)] = 0
         src_cur = self.get_proposal_aware_geometry_feature(src_cur,trajectory_rois[0,...])
-        box_reg,box_feat = self.trajectories_auxiliary_branch(trajectory_rois.transpose(0,1),valid_length.transpose(0,1))
+        # box_reg,box_feat = self.trajectories_auxiliary_branch(trajectory_rois.transpose(0,1),valid_length.transpose(0,1))
         hs, tokens,src_cur = self.transformer(src_cur, batch_dict, pos=None)
         if not self.training:
             key_points_root = Path('../../data/waymo/key_points_mini_new') / batch_dict['metadata'][0][:-4]
@@ -914,15 +914,15 @@ class DENet5Head(RoIHeadTemplate):
 
         for j in range(len(tokens)):
             point_reg_list.append(self.bbox_embed[0](tokens[j][:,0]))
-        for j in range(len(tokens2)):
-            point_reg_list.append(self.bbox_embed[0](tokens2[j][:,0]))
+        # for j in range(len(tokens2)):
+        #     point_reg_list.append(self.bbox_embed[0](tokens2[j][:,0]))
 
         point_cls = torch.cat(point_cls_list,0)
 
         point_reg = torch.cat(point_reg_list,0)
 
 
-        joint_reg = self.jointembed(torch.cat([tokens2[-1][:,0],box_feat],-1))
+        joint_reg = self.jointembed(torch.cat([tokens2[-1][:,0]],-1))
 
 
 
@@ -978,7 +978,7 @@ class DENet5Head(RoIHeadTemplate):
             targets_dict['batch_size'] = batch_size
             targets_dict['rcnn_cls'] = rcnn_cls
             targets_dict['rcnn_reg'] = rcnn_reg
-            targets_dict['box_reg'] = box_reg
+            targets_dict['box_reg'] = rcnn_reg
             targets_dict['point_reg'] = point_reg
             targets_dict['point_cls'] = point_cls
             self.forward_ret_dict = targets_dict
