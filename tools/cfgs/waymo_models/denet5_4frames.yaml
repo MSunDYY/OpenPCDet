@@ -25,7 +25,7 @@ DATA_CONFIG:
     USE_PREDBOX: True
     ROI_BOXES_PATH: {
         'train': '../output/waymo_models/centerpoint_4frames/Interval5/eval/epoch_36/train/Interval1/result.pkl',  # example: predicted boxes of RPN in training set
-        'test': '../output/waymo_models/centerpoint_4frames/Interval5_pretrainedmodel/eval/epoch_36/val/Interval1/result.pkl',  # example: predicted boxes of RPN in evalulation set
+        'test': '../output/waymo_models/centerpoint_4frames/Interval5/eval/epoch_36/val/Interval1/result.pkl',  # example: predicted boxes of RPN in evalulation set
     }
 
     DATA_AUGMENTOR:
