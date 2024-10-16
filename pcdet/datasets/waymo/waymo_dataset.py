@@ -409,7 +409,7 @@ class WaymoDataset(DatasetTemplate):
             poses = np.concatenate(pose_all, axis=0).astype(np.float32)
             num_points_all = np.array(num_points_all)
         else:
-            key_points_root = Path('../../data/waymo/waymo_processed_data_v0_5_0')
+            key_points_root = Path('../../data/waymo/key_points')
 
             key_points_mini_root = Path('../../data/waymo/key_points_mini_new_56')
             extra_key_points_mini = Path('../../data/waymo/extra_key_points_mini_new')
@@ -425,14 +425,14 @@ class WaymoDataset(DatasetTemplate):
                     except:
                         time.sleep(0.2)
                         points_pre = np.load(key_points_file)
-                    if sequence_cfg.get('USE_KEY_BOX',False) and self.split=='train':
-                        extra_key_points_file = extra_key_points_mini / sequence_name / ('%04d.npy' % sample_idx_pre)
-                        try:
-                            extra_points_pre = np.load(extra_key_points_file)
-                        except:
-                            time.sleep(0.2)
-                            extra_points_pre = np.load(extra_key_points_file)
-                        points_pre = np.concatenate([points_pre,extra_points_pre],0)
+                if sequence_cfg.get('USE_KEY_BOX',False) and self.split=='train':
+                    extra_key_points_file = extra_key_points_mini / sequence_name / ('%04d.npy' % sample_idx_pre)
+                    try:
+                        extra_points_pre = np.load(extra_key_points_file)
+                    except:
+                        time.sleep(0.2)
+                        extra_points_pre = np.load(extra_key_points_file)
+                    points_pre = np.concatenate([points_pre,extra_points_pre],0)
 
                 points_pre = np.hstack([points_pre,0.1*(len(sample_idx_pre_list)-idx)*np.ones((points_pre.shape[0],1)).astype(points_pre.dtype)])
                 pose_pre = sequence_info[sample_idx_pre]['pose'].reshape(4,4)
