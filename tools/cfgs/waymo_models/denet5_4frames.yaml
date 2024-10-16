@@ -139,7 +139,7 @@ MODEL:
             drop_rate: [1.0,0.6,0.6]
 
         Transformer2st:
-            num_lidar_points: 48
+            num_lidar_points: 54
             pos_hidden_dim: 64
             enc_layers: 3
             dim_feedforward: 512
