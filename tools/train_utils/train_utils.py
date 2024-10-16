@@ -201,7 +201,7 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
             model.train()
 
 
-            if (type(model).__name__)=='DENet' and cur_epoch in [8]:
+            if (type(model).__name__)=='DENet' and cur_epoch in [3.5]:
 
                 model.eval()
 

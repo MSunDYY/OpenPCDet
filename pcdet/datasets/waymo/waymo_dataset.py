@@ -409,9 +409,9 @@ class WaymoDataset(DatasetTemplate):
             poses = np.concatenate(pose_all, axis=0).astype(np.float32)
             num_points_all = np.array(num_points_all)
         else:
-            key_points_root = Path('../../data/waymo/key_points')
+            key_points_root = Path('../../data/waymo/waymo_processed_data_v0_5_0')
 
-            key_points_mini_root = Path('../../data/waymo/key_points_mini_new')
+            key_points_mini_root = Path('../../data/waymo/key_points_mini_new_56')
             extra_key_points_mini = Path('../../data/waymo/extra_key_points_mini_new')
 
             for idx, sample_idx_pre in enumerate(reversed(sample_idx_pre_list)):

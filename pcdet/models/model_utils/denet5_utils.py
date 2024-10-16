@@ -649,7 +649,7 @@ class VoxelSampler(nn.Module):
 
                 cur_frame_boxes = cur_batch_boxes[idx]
                 if idx==0:
-                    src_points.append(torch.zeros(trajectory_rois.shape[1],num_sample,cur_time_points.shape[-1],device=device))
+                    src_points.append(torch.zeros(cur_batch_boxes.shape[1],num_sample,cur_time_points.shape[-1],device=device))
                     continue
                     voxel, coords, num_points = self.gen(cur_time_points)
                     coords = coords[:, [2, 1]].contiguous()
