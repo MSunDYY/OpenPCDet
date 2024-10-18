@@ -52,7 +52,7 @@ DATA_CONFIG:
             }
         - NAME: anchor_aug
           NUM_FRAMES: 32
-          ROI_PER_IMAGE: 100
+          ROI_PER_IMAGE: 96
           FG_RATIO: 0.5
           REG_AUG_METHOD: single
           ROI_FG_AUG_TIMES: 10
@@ -71,10 +71,10 @@ DATA_CONFIG:
           STACK_CONCAT: True
           CLS_FG_THRESH: 0.75
           CLS_BG_THRESH: 0.25
-          CLS_BG_THRESH_LO: [0.2,0.1,0.1]
+          CLS_BG_THRESH_LO: 0.1
           HARD_BG_RATIO: 0.8
 
-          REG_FG_THRESH: [0.55,0.4,0.4]
+          REG_FG_THRESH: 0.55
           REG_BG_THRESH: 0.7
 
 
@@ -136,10 +136,10 @@ MODEL:
             use_mlp_mixer:
                 enabled: True
                 hidden_dim: 16
-            drop_rate: [0.8,0.6,0.6]
+            drop_rate: [1.0,0.6,0.6]
 
         Transformer2st:
-            num_lidar_points: 48
+            num_lidar_points: 54
             pos_hidden_dim: 64
             enc_layers: 3
             dim_feedforward: 512

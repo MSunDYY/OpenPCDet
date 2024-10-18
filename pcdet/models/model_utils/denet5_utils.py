@@ -294,6 +294,7 @@ class SpatialDropBlock(nn.Module):
 
     def forward(self, src, return_weight=False,drop=0.5):
 
+
         src2,weight,sampled_inds = self.mixer(src,src,src,drop=drop)
         if drop!=1:
             src =torch.gather(src,1,sampled_inds[:,:,None].repeat(1,1,src.shape[-1]))
@@ -490,8 +491,6 @@ class TransformerEncoderLayer(nn.Module):
                         self.config.use_mlp_mixer,
                         dropout=dropout,
         )
-
-
 
         if self.layer_count<=self.config.enc_layers-1 and config.get('sampler',False) is not False:
             from pcdet.ops.pointnet2.pointnet2_batch import pointnet2_utils

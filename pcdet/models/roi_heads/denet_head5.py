@@ -884,7 +884,7 @@ class DENet5Head(RoIHeadTemplate):
             os.makedirs(extra_key_points_root,exist_ok=True)
             key_roi_mask = (src_idx!=0).sum(1)<28
             # np.save(key_roi_root/('%04d.npy' % batch_dict['sample_idx'][0]),torch.concat([roi_boxes[key_roi_mask],roi_scores[key_roi_mask,None],roi_labels[key_roi_mask,None].float()],dim=1).cpu().numpy())
-            np.save(key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]), query_points_shrink.cpu().numpy())
+            # np.save(key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]), query_points_shrink.cpu().numpy())
             # np.save(extra_key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]),points_pre.cpu().numpy())
             # print(self.voxel_sampler_cur.num_points/self.voxel_sampler_cur.iteration)
             if self.signal=='train':
@@ -989,6 +989,7 @@ class DENet5Head(RoIHeadTemplate):
         # self.memory_num.append((device_0.total_memory() - cuda.mem_get_info()[0]) / 1024 / 1024)
         # torch.cuda.empty_cache()
         # print(sum(self.delay)/len(self.delay))
+        # print(sum(self.memory_num)/len(self.delay))
         return batch_dict
 
     def get_loss(self, tb_dict=None):
