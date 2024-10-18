@@ -50,14 +50,14 @@ def parse_config():
     parser.add_argument('--save_to_file', action='store_true', default=False, help='')
     parser.add_argument('--use_tqdm_to_record', action='store_true', default=False,
                         help='if True, the intermediate losses will not be logged to file, only tqdm will be used')
-    parser.add_argument('--logger_iter_interval', type=int, default=20, help='')
+    parser.add_argument('--logger_iter_interval', type=int, default=200, help='')
     parser.add_argument('--ckpt_save_time_interval', type=int, default=300, help='in terms of seconds')
     parser.add_argument('--wo_gpu_stat', action='store_true', help='')
     parser.add_argument('--use_amp', action='store_true', help='use mix precision training')
     parser.add_argument('--model_name', type=str, default='detection', help='the model to be trained')
     parser.add_argument('--retrain', action='store_true', default=False, help='whether retrain')
     parser.add_argument('--output_pkl',action='store_true',default=False)
-
+    parser.add_argument('--accumulated_step',type=int,default=1)
     args = parser.parse_args()
 
     if args.model_name == 'Sampler':
@@ -235,7 +235,8 @@ def main(args, cfgs):
         use_logger_to_record=not args.use_tqdm_to_record,
         show_gpu_stat=not args.wo_gpu_stat,
         use_amp=args.use_amp,
-        cfg=cfg,test_loader=test_loader if cfg.MODEL.NAME=='DENet' else None
+        cfg=cfg,test_loader=test_loader if cfg.MODEL.NAME=='DENet' else None,
+        accumulated_step=args.accumulated_step,
     )
 
     if cfg.MODEL.NAME=='DENet':

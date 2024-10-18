@@ -13,13 +13,13 @@ from torch.nn.parallel import DistributedDataParallel
 def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, accumulated_iter, optim_cfg,
                     rank, tbar, total_it_each_epoch, dataloader_iter, tb_log=None, leave_pbar=False, 
                     use_logger_to_record=False, logger=None, logger_iter_interval=50, cur_epoch=None, 
-                    total_epochs=None, ckpt_save_dir=None, ckpt_save_time_interval=300, show_gpu_stat=False, use_amp=False):
+                    total_epochs=None, ckpt_save_dir=None, ckpt_save_time_interval=300, show_gpu_stat=False, use_amp=False,accumulated_step = 1):
     if total_it_each_epoch == len(train_loader):
         dataloader_iter = iter(train_loader)
-
+    # accumulated_step = 2
     ckpt_save_cnt = 1
     start_it = accumulated_iter % total_it_each_epoch
-
+    torch.cuda.empty_cache()
     scaler = torch.cuda.amp.GradScaler(enabled=use_amp, init_scale=optim_cfg.get('LOSS_SCALE_FP16', 2.0**16))
     
     if rank == 0:
@@ -29,11 +29,7 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
         forward_time = common_utils.AverageMeter()
         losses_m = common_utils.AverageMeter()
     end = time.time()
-    import GPUtil
-    if GPUtil.getGPUs()[0].name.endswith('3080'):
-        delay_time = 0.5
-    else:
-        delay_time = 0
+
     for cur_it in range(start_it, total_it_each_epoch):
         try:
 
@@ -60,18 +56,19 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
             tb_log.add_scalar('meta_data/learning_rate', cur_lr, accumulated_iter)
 
         model.train()
-        optimizer.zero_grad()
+        if(accumulated_iter-1)%accumulated_step==0:
+            optimizer.zero_grad()
 
 
         with torch.cuda.amp.autocast(enabled=use_amp):
             loss, tb_dict, disp_dict = model_func(model, batch)
-        time.sleep(delay_time)
-
         scaler.scale(loss).backward()
-        scaler.unscale_(optimizer)
-        clip_grad_norm_(model.parameters(), optim_cfg.GRAD_NORM_CLIP)
-        scaler.step(optimizer)
-        scaler.update()
+        if accumulated_iter%accumulated_step==0:
+
+            scaler.unscale_(optimizer)
+            clip_grad_norm_(model.parameters(), optim_cfg.GRAD_NORM_CLIP)
+            scaler.step(optimizer)
+            scaler.update()
 
         accumulated_iter += 1
 
@@ -98,7 +95,7 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
             })
 
             if use_logger_to_record:
-                if accumulated_iter % logger_iter_interval == 0 or cur_it == start_it or cur_it + 1 == total_it_each_epoch:
+                if (accumulated_iter-accumulated_step) % logger_iter_interval == 0 or cur_it == start_it or cur_it + 1 == total_it_each_epoch:
                     trained_time_past_all = tbar.format_dict['elapsed']
                     second_each_iter = pbar.format_dict['elapsed'] / max(cur_it - start_it + 1, 1.0)
 
@@ -163,7 +160,7 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
                 lr_warmup_scheduler=None, ckpt_save_interval=1, max_ckpt_save_num=50,
                 merge_all_iters_to_one_epoch=False, use_amp=False,
                 use_logger_to_record=False, logger=None, logger_iter_interval=None, ckpt_save_time_interval=None,
-                show_gpu_stat=False, cfg=None,test_loader = None):
+                show_gpu_stat=False, cfg=None,test_loader = None,accumulated_step=1):
     accumulated_iter = start_iter
 
     # use for disable data augmentation hook
@@ -201,7 +198,7 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
             model.train()
 
 
-            if (type(model).__name__)=='DENet' and cur_epoch in [3,5]:
+            if (type(model).__name__)=='DENet' and cur_epoch in [8]:
 
                 model.eval()
 
@@ -226,7 +223,8 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
                 logger=logger, logger_iter_interval=logger_iter_interval,
                 ckpt_save_dir=ckpt_save_dir, ckpt_save_time_interval=ckpt_save_time_interval, 
                 show_gpu_stat=show_gpu_stat,
-                use_amp=use_amp
+                use_amp=use_amp,
+                accumulated_step=accumulated_step,
             )
 
 
