@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from pcdet.ops.iou3d_nms import iou3d_nms_utils
 from ...utils import common_utils, loss_utils
 from .roi_head_template import RoIHeadTemplate
+from ..model_utils.msf_utils import TransformerEncoderLayer,_get_activation_fn
 from ..model_utils.denet5_utils import build_transformer,unflatten,SpatialMixerBlockCompress,CrossMixerBlock,SpatialMixerBlock,SpatialDropBlock
 from ..model_utils.denet5_utils import build_voxel_sampler,PointNet,MLP
 from .msf_head import ProposalTargetLayerMPPNet
@@ -275,9 +276,101 @@ class ProposalTargetLayerMPPNet1(ProposalTargetLayer):
             raise NotImplementedError
 
 
+class MSFEncoderLayer(nn.Module):
+    count = 0
+
+    def __init__(self,  d_model, nhead, dim_feedforward=2048, dropout=0.1,
+                 activation="relu", normalize_before=False, num_points=None, num_groups=None):
+        super().__init__()
+        TransformerEncoderLayer.count += 1
+        self.layer_count = TransformerEncoderLayer.count
+
+        self.num_point = num_points
+        self.num_groups = num_groups
+        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.linear1 = nn.Linear(d_model, dim_feedforward)
+        self.dropout = nn.Dropout(dropout)
+        self.linear2 = nn.Linear(dim_feedforward, d_model)
+
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
+
+
+        self.cross_conv_1 = nn.Linear(d_model * 2, d_model)
+        self.cross_norm_1 = nn.LayerNorm(d_model)
+        self.cross_conv_2 = nn.Linear(d_model * 2, d_model)
+        self.cross_norm_2 = nn.LayerNorm(d_model)
+
+        self.activation = _get_activation_fn(activation)
+        self.normalize_before = normalize_before
+
+        self.mlp_mixer_3d = SpatialMixerBlock(
+            d_model,
+        )
+
+    def forward(self,src,pos = None):
+
+        src_intra_group_fusion,weight = self.mlp_mixer_3d(src[1:])
+        src = torch.cat([src[:1], src_intra_group_fusion], 0)
+
+        token = src[:1]
+
+        if not pos is None:
+            key = self.with_pos_embed(src_intra_group_fusion, pos[1:])
+        else:
+            key = src_intra_group_fusion
+
+        src_summary = self.self_attn(token, key, value=src_intra_group_fusion)[0]
+        token = token + self.dropout1(src_summary)
+        token = self.norm1(token)
+        src_summary = self.linear2(self.dropout(self.activation(self.linear1(token))))
+        token = token + self.dropout2(src_summary)
+        token = self.norm2(token)
+        src = torch.cat([token, src[1:]], 0)
+        # if self.config.get('SHRINK_POINTS',False):
+        #     sampled_inds =torch.topk(weight.sum(1),k=weight.shape[1]//2)[1]
+
+            # src = torch.cat([token,torch.gather(src[1:],0,sampled_inds.transpose(0,1)[:,:,None].repeat(1,1,src.shape[-1]))],dim=0)
+
+        src_all_groups = src[1:].view((src.shape[0] - 1) * self.num_groups, -1, src.shape[-1])
+        src_groups_list = src_all_groups.chunk(self.num_groups, 0)
+        # src_groups_list = [src_all_groups[torch.arange(src_all_groups.shape[0]//self.num_groups) * self.num_groups+i] for i in range(self.num_groups)]
+        src_all_groups = torch.stack(src_groups_list, 0)
+
+        src_max_groups = torch.max(src_all_groups, 1, keepdim=True).values
+        src_past_groups = torch.cat([src_all_groups[1:], \
+                                     src_max_groups[:-1].repeat(1, (src.shape[0] - 1), 1, 1)], -1)
+        src_all_groups[1:] = self.cross_norm_1(self.cross_conv_1(src_past_groups) + src_all_groups[1:])
+
+        src_max_groups = torch.max(src_all_groups, 1, keepdim=True).values
+        src_past_groups = torch.cat([src_all_groups[:-1], \
+                                     src_max_groups[1:].repeat(1, (src.shape[0] - 1), 1, 1)], -1)
+        src_all_groups[:-1] = self.cross_norm_2(self.cross_conv_2(src_past_groups) + src_all_groups[:-1])
+
+        src_inter_group_fusion = src_all_groups.permute(1, 0, 2, 3).contiguous().flatten(1, 2)
+
+        src = torch.cat([src[:1], src_inter_group_fusion], 0)
+
+        return src, torch.cat(src[:1].chunk(self.num_groups, 1), 0)
+
+    def forward_pre(self, src,
+                    pos = None):
+        src2 = self.norm1(src)
+        q = k = self.with_pos_embed(src2, pos)
+        src2 = self.self_attn(q, k, value=src2)[0]
+        src = src + self.dropout1(src2)
+        src2 = self.norm2(src)
+        src2 = self.linear2(self.dropout(self.activation(self.linear1(src2))))
+        src = src + self.dropout2(src2)
+        return src
+
+
 class KPTransformer(nn.Module):
     def __init__(self,model_cfg=None):
         super(KPTransformer, self).__init__()
+        self.spatial_temporal_type = model_cfg.SPATIAL_TEMPORAL_TYPE
         self.channels = model_cfg.hidden_dim
         self.num_frames = model_cfg.num_frames
         self.num_groups = model_cfg.num_groups
@@ -315,6 +408,13 @@ class KPTransformer(nn.Module):
         )
         self.linear2 = nn.ModuleList([nn.Linear(self.channels*2 , self.channels) for _ in range(self.num_groups)])
         self.norm2 = nn.LayerNorm(self.channels)
+        if self.spatial_temporal_type=='BiFA':
+            self.Attention2 = MSFEncoderLayer(d_model=self.channels,dim_feedforward=512,nhead=8,num_groups=4)
+            self.Attention3 = MSFEncoderLayer(d_model=self.channels,dim_feedforward=512,nhead=8,num_groups=4)
+            # self.decoder_layer2 = SpatialMixerBlock(channels=self.channels,num_heads=8,batch_first=True)
+
+
+
 
     def forward(self, src,token,src_cur):
         # src = src.permute(2,1,0,3).flatten(1,2)
@@ -339,6 +439,15 @@ class KPTransformer(nn.Module):
         # token1 = self.decoder_layer2(token,src.unflatten(0,(B,-1))[:,0])
         # token_list.append(token1)
 
+        if self.spatial_temporal_type=='BiFA':
+
+            src = torch.concat([token.repeat(1,4,1).reshape(B*4,1,-1),src],dim=1).transpose(0,1)
+
+            src,token2 = self.Attention2(src)
+            src,token3 = self.Attention3(src)
+            token_list.append(token2.transpose(0,1))
+            token_list.append(token3.transpose(0,1))
+            return token_list
 
         src,weight,sampled_inds = self.Attention2(src,return_weight=True,drop=self.drop_rate[1])
 
@@ -450,6 +559,10 @@ class DENet5Head(RoIHeadTemplate):
         #     nn.ReLU(),
         #     nn.Linear(256,3)
         # )
+
+        if model_cfg.Transformer2st.SPATIAL_TEMPORAL_TYPE=='BiFA':
+            self.num_groups=4
+            self.jointembed = MLP(self.hidden_dim*4,model_cfg.Transformer.hidden_dim,self.box_coder.code_size*self.num_class,4)
         self.bbox_embed = nn.ModuleList()
         # self.bbox_embed_final = MLP(model_cfg.Transformer.hidden_dim,model_cfg.Transformer.hidden_dim,self.box_coder.code_size * self.num_class,4)
         for _ in range(self.num_groups):
@@ -909,20 +1022,21 @@ class DENet5Head(RoIHeadTemplate):
         for i in range(len(tokens)):
             point_cls_list.append(self.class_embed[0](tokens[i][:,0]))
         for i in range(len(tokens2)):
-            point_cls_list.append(self.class_embed_final(tokens2[i][:,0]))
+            point_cls_list.append(self.class_embed_final(tokens2[i][:,-1]))
 
 
         for j in range(len(tokens)):
             point_reg_list.append(self.bbox_embed[0](tokens[j][:,0]))
-        # for j in range(len(tokens2)):
-        #     point_reg_list.append(self.bbox_embed[0](tokens2[j][:,0]))
+        for j in range(len(tokens2)):
+            for k in range(tokens2[0].shape[1]):
+                point_reg_list.append(self.bbox_embed[k](tokens2[j][:,k]))
 
         point_cls = torch.cat(point_cls_list,0)
 
         point_reg = torch.cat(point_reg_list,0)
 
 
-        joint_reg = self.jointembed(torch.cat([tokens2[-1][:,0]],-1))
+        joint_reg = self.jointembed(tokens2[-1].flatten(1,2))
 
 
 

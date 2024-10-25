@@ -50,7 +50,7 @@ def parse_config():
     parser.add_argument('--eval_all', action='store_true', default=False, help='whether to evaluate all checkpoints')
     parser.add_argument('--ckpt_dir', type=str, default=None, help='specify a ckpt directory to be evaluated if needed')
     parser.add_argument('--save_to_file', action='store_true', default=False, help='')
-    parser.add_argument('--output_pkl',action='store_true',default=False)
+    parser.add_argument('--output_pkl',action='store_true',default=True)
     parser.add_argument('--infer_time', action='store_true', default=False, help='calculate inference latency')
     parser.add_argument('--test_sampler', action='store_false',default = False, help='train the pointsampler model')
     args = parser.parse_args()
