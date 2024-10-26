@@ -57,7 +57,7 @@ def parse_config():
     parser.add_argument('--model_name', type=str, default='detection', help='the model to be trained')
     parser.add_argument('--retrain', action='store_true', default=False, help='whether retrain')
     parser.add_argument('--output_pkl',action='store_true',default=False)
-    parser.add_argument('--accumulated_step',type=int,default=2)
+    parser.add_argument('--accumulated_step',type=int,default=1)
     args = parser.parse_args()
 
     if args.model_name == 'Sampler':

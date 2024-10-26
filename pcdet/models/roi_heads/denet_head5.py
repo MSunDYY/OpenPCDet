@@ -353,7 +353,7 @@ class MSFEncoderLayer(nn.Module):
 
         src = torch.cat([src[:1], src_inter_group_fusion], 0)
 
-        return src, torch.cat(src[:1].chunk(self.num_groups, 1), 0)
+        return src, src[0].unflatten(0,(-1,4)).transpose(0,1)
 
     def forward_pre(self, src,
                     pos = None):
@@ -996,7 +996,7 @@ class DENet5Head(RoIHeadTemplate):
             os.makedirs(key_roi_root,exist_ok=True)
             os.makedirs(extra_key_points_root,exist_ok=True)
             key_roi_mask = (src_idx!=0).sum(1)<28
-            # np.save(key_roi_root/('%04d.npy' % batch_dict['sample_idx'][0]),torch.concat([roi_boxes[key_roi_mask],roi_scores[key_roi_mask,None],roi_labels[key_roi_mask,None].float()],dim=1).cpu().numpy())
+            np.save(key_roi_root/('%04d.npy' % batch_dict['sample_idx'][0]),torch.concat([roi_boxes[key_roi_mask],roi_scores[key_roi_mask,None],roi_labels[key_roi_mask,None].float()],dim=1).cpu().numpy())
             # np.save(key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]), query_points_shrink.cpu().numpy())
             # np.save(extra_key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]),points_pre.cpu().numpy())
             # print(self.voxel_sampler_cur.num_points/self.voxel_sampler_cur.iteration)
