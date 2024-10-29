@@ -996,14 +996,13 @@ class DENet5Head(RoIHeadTemplate):
             os.makedirs(key_roi_root,exist_ok=True)
             os.makedirs(extra_key_points_root,exist_ok=True)
             key_roi_mask = (src_idx!=0).sum(1)<28
-            np.save(key_roi_root/('%04d.npy' % batch_dict['sample_idx'][0]),torch.concat([roi_boxes[key_roi_mask],roi_scores[key_roi_mask,None],roi_labels[key_roi_mask,None].float()],dim=1).cpu().numpy())
+            # np.save(key_roi_root/('%04d.npy' % batch_dict['sample_idx'][0]),torch.concat([roi_boxes[key_roi_mask],roi_scores[key_roi_mask,None],roi_labels[key_roi_mask,None].float()],dim=1).cpu().numpy())
             # np.save(key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]), query_points_shrink.cpu().numpy())
             # np.save(extra_key_points_root / ('%04d.npy' % batch_dict['sample_idx'][0]),points_pre.cpu().numpy())
             # print(self.voxel_sampler_cur.num_points/self.voxel_sampler_cur.iteration)
             if self.signal=='train':
                 return batch_dict
         src_pre = self.voxel_sampler(batch_size,trajectory_rois,self.num_lidar_points2,batch_dict,num_rois)
-
 
 
         trajectory_rois = trajectory_rois.transpose(0,1)
@@ -1027,9 +1026,9 @@ class DENet5Head(RoIHeadTemplate):
 
         for j in range(len(tokens)):
             point_reg_list.append(self.bbox_embed[0](tokens[j][:,0]))
-        for j in range(len(tokens2)):
-            for k in range(tokens2[0].shape[1]):
-                point_reg_list.append(self.bbox_embed[k](tokens2[j][:,k]))
+        # for j in range(len(tokens2)):
+        #     for k in range(tokens2[0].shape[1]):
+        #         point_reg_list.append(self.bbox_embed[k](tokens2[j][:,k]))
 
         point_cls = torch.cat(point_cls_list,0)
 

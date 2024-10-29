@@ -21,6 +21,17 @@ def unflatten(tensor,dim,sizes):
     shape = list(tensor.shape)
     shape = shape[:dim]+list(sizes)+shape[dim+1:]
     return tensor.reshape(shape)
+
+def map(tensor):
+    return (tensor-tensor.min())/(tensor.max()-tensor.min())
+
+def color(tensor):
+    COLOR1 = torch.tensor([0, 255 / 255, 0 / 255]).to(device)
+    COLOR2 = torch.tensor([255 / 255, 0 / 255, 0]).to(device)
+    color = (1 - tensor)[:, None] * COLOR1[None, :] + (tensor)[:, None] * COLOR2[None, :]
+    return color
+
+
 class PointNetfeat(nn.Module):
     def __init__(self, input_dim, x=1,outchannel=512):
         super(PointNetfeat, self).__init__()
@@ -504,6 +515,15 @@ class TransformerEncoderLayer(nn.Module):
 
 
         src_intra_group_fusion,weight,sampled_inds = self.mlp_mixer_3d(src[:,1:],return_weight=True,drop = self.config.drop_rate[self.layer_count-1])
+        if False:
+            points = batch_dict['points'][batch_dict['points'][:, -1] == 0, 1:]
+            box = batch_dict['gt_boxes'][0,4:]
+            dis = (((points[:, :2] - box[:,:2]) ** 2).sum(-1)) / ((box[:,3:5] / 2) ** 2).sum(-1)
+
+            points_color = np.ones(((batch_dict['points'][:, -1] == 0).sum().item(), 3))
+            points_color[dis.cpu().numpy() < 1.1] = np.array([0.5, 0.5, 0])
+            draw_scenes(points, gt_boxes=box, point_colors=points_color,background_color = np.ones(3)*240/255)
+
 
 
         token = src[:,:1]

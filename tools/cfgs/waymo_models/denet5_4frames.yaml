@@ -11,7 +11,7 @@ DATA_CONFIG:
     TRAIN_WITH_SPEED: True
     SAMPLED_INTERVAL: {
         'train': 1,
-        'test': 1
+        'test': 5
     }
     FILTER_EMPTY_BOXES_FOR_TRAIN: True
     DISABLE_NLZ_FLAG_ON_POINTS: True
@@ -137,10 +137,10 @@ MODEL:
             use_mlp_mixer:
                 enabled: True
                 hidden_dim: 16
-            drop_rate: [1.0,0.6,0.6]
+            drop_rate: [1.0,1.0,0.5]
 
         Transformer2st:
-            SPATIAL_TEMPORAL_TYPE: BiFA
+            SPATIAL_TEMPORAL_TYPE: Denet
             num_lidar_points: 48
             pos_hidden_dim: 64
             enc_layers: 3

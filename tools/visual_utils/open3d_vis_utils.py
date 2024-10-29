@@ -149,8 +149,7 @@ def draw_scenes_pcd(data_path):
 
 
 def draw_scenes(points, file_name=None, gt_boxes=None, gt_labels=None, ref_boxes=None, ref_labels=None, ref_scores=None,
-                point_colors=None,
-                draw_origin=True,window_name='open3d'):
+                point_colors=None,draw_origin=True,window_name='open3d',background_color = np.zeros(3)):
     print('points num:',points.shape[0])
     if isinstance(points, torch.Tensor):
         points = points.cpu().numpy()
@@ -171,7 +170,7 @@ def draw_scenes(points, file_name=None, gt_boxes=None, gt_labels=None, ref_boxes
     vis.create_window(window_name=window_name)
 
     vis.get_render_option().point_size = 1.0
-    vis.get_render_option().background_color = np.zeros(3)
+    vis.get_render_option().background_color = background_color
 
     # draw origin
     if draw_origin:
