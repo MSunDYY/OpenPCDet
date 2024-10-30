@@ -387,20 +387,20 @@ class KPTransformer(nn.Module):
 
 
         self.conv1 = nn.Sequential(
-            nn.Conv1d(self.channels*4,self.channels,1,1),
+            nn.Conv1d(self.channels*self.num_frames//self.num_groups,self.channels,1,1),
             nn.BatchNorm1d(self.channels),
             nn.ReLU(),
             # nn.Dropout(0.1),
             # nn.Conv1d(self.channels*2,self.channels,1)
         )
-        self.linear1 = nn.ModuleList([nn.Linear(self.channels*2,self.channels) for _ in range(self.num_groups)])
-        self.dropout1 = nn.ModuleList([nn.Dropout(0.1) for _ in range(self.num_groups)])
+        self.linear1 = nn.ModuleList([nn.Linear(self.channels*2,self.channels) for _ in range(self.num_frames//self.num_groups)])
+        self.dropout1 = nn.ModuleList([nn.Dropout(0.1) for _ in range(self.num_frames//self.num_groups)])
         self.dropout2 = nn.ModuleList([nn.Dropout(0.1) for _ in range(self.num_groups)])
 
         self.norm1 = nn.LayerNorm(self.channels)
 
         self.conv2 = nn.Sequential(
-            nn.Conv1d(self.channels * 4, self.channels , 1, 1),
+            nn.Conv1d(self.channels *self.num_groups, self.channels , 1, 1),
             nn.BatchNorm1d(self.channels),
             nn.ReLU(),
             # nn.Dropout(0.1),
@@ -423,7 +423,7 @@ class KPTransformer(nn.Module):
         src = src.reshape(src.shape[0]*self.num_frames,-1,src.shape[-1])
         num_frames_single_group = self.num_frames // self.num_groups
         src,weight,sampled_inds = self.Attention(src,return_weight=True,drop=self.drop_rate[0])
-        src = src.reshape(B,16,-1,self.channels)
+        src = src.reshape(B,self.num_frames,-1,self.channels)
 
         signal = True
         if signal:
@@ -431,7 +431,7 @@ class KPTransformer(nn.Module):
             src_max = src.max(2).values
             src_max = src_max.flatten(1,2)
             src_max = self.conv1(src_max.unsqueeze(-1)).squeeze()
-            src_new = [self.dropout1[i](self.linear1[i](torch.concat([src[:,i],src_max[:,None,:].repeat(1,src.shape[2],1)],dim=-1))) for i in range(self.num_groups)]
+            src_new = [self.dropout1[i](self.linear1[i](torch.concat([src[:,i],src_max[:,None,:].repeat(1,src.shape[2],1)],dim=-1))) for i in range(self.num_frames//self.num_groups)]
 
             src = self.norm1(src + torch.stack(src_new,1)).flatten(1,2)
         else:
@@ -930,10 +930,10 @@ class DENet5Head(RoIHeadTemplate):
         num_frames = self.model_cfg.Transformer2st.num_frames
         roi_scores = batch_dict['roi_scores'][:, 0, :]
 
-        batch_dict['roi_scores'] = roi_scores[:,roi_scores.sum(0)>0]
+        batch_dict['roi_scores'] = roi_scores[:,roi_scores.sum(0)>=0]
         batch_dict['proposals_list'] = batch_dict['roi_boxes']
-        batch_dict['roi_boxes'] = batch_dict['roi_boxes'][:,0,:][:,roi_scores.sum(0)>0]
-        batch_dict['roi_labels'] = batch_dict['roi_labels'][:, 0, :][:, roi_scores.sum(0) > 0].long()
+        batch_dict['roi_boxes'] = batch_dict['roi_boxes'][:,0,:][:,roi_scores.sum(0)>=0]
+        batch_dict['roi_labels'] = batch_dict['roi_labels'][:, 0, :][:, roi_scores.sum(0) >= 0].long()
         batch_dict['num_frames'] = num_frames
         roi_labels = batch_dict['roi_labels']
         batch_size = batch_dict['batch_size']

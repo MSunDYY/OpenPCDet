@@ -777,7 +777,7 @@ class VoxelPointsSampler(nn.Module):
             dist = torch.norm(query_coords[:, None, :2] - coords[None, :, :],dim=-1)
             voxel_mask = (dist < radiis[:, None]).any(0)
 
-            if not self.training and batch_dict.get('pred_key_boxes',None) is not None:
+            if self.training and batch_dict.get('pred_key_boxes',None) is not None:
                 pre_roi = batch_dict['pred_key_boxes'][bs_idx]
 
                 pre_roi = pre_roi.flatten(0,1)
