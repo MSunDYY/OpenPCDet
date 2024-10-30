@@ -605,7 +605,7 @@ class WaymoDataset(DatasetTemplate):
                     roi_path = Path('../../data/waymo/key_rois') / sequence_name / ('%04d.npy' % (sample_idx_pre))
                     pred_boxes = np.load(roi_path)[:,:9]
                     pred_boxes = self.transform_prebox_to_current(pred_boxes, pose_pre, pose_cur)
-                    pred_boxes[:, :2] -=  (sample_idx - sample_idx_pre) * pred_boxes[:, 7:9]
+                    pred_boxes[:, :2] -=  (sample_idx - sample_idx_pre) * pred_boxes[:, 7:9]*0.1
                     pred_key_boxes.append(pred_boxes)
                 pred_key_boxes = self.reorder_rois_for_refining(pred_key_boxes)
                 data_dict['pred_key_boxes'] = pred_key_boxes
