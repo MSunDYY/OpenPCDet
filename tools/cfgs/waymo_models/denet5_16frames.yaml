@@ -11,7 +11,7 @@ DATA_CONFIG:
     TRAIN_WITH_SPEED: True
     SAMPLED_INTERVAL: {
         'train': 1,
-        'test': 100
+        'test': 5
     }
     FILTER_EMPTY_BOXES_FOR_TRAIN: True
     DISABLE_NLZ_FLAG_ON_POINTS: True
@@ -51,7 +51,7 @@ DATA_CONFIG:
                 'test': True
             }
         - NAME: anchor_aug
-          NUM_FRAMES: 16
+          NUM_FRAMES: 4
           ROI_PER_IMAGE: 96
           FG_RATIO: 0.5
           REG_AUG_METHOD: single
@@ -149,15 +149,15 @@ MODEL:
             dropout: 0.1
             nheads: 4
             pre_norm: False
-            num_frames: 16
-            num_groups: 4
+            num_frames: 4
+            num_groups: 2
             use_grid_pos:
                 enabled: True
                 init_type: index
             use_mlp_mixer:
                 enabled: True
                 hidden_dim: 16
-            drop_rate: [0.5,0.5]
+            drop_rate: [0.8,0.8]
 
 
         TARGET_CONFIG:
