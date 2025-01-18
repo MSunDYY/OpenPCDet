@@ -1003,12 +1003,15 @@ class DENet5Head(RoIHeadTemplate):
             if self.signal=='train':
                 return batch_dict
         src_pre = self.voxel_sampler(batch_size,trajectory_rois,self.num_lidar_points2,batch_dict,num_rois)
-
+        if True:
+            src_pre = src_pre *( torch.rand(src_pre.shape, device=device) >= 0.3 )
 
         trajectory_rois = trajectory_rois.transpose(0,1)
         src_pre = src_pre.flatten(1,2)
         src_idx = batch_dict['src_idx'][:,:self.num_lidar_points2]
         src_pre[:,:self.num_lidar_points2] = torch.gather(query_points,0,src_idx.reshape(-1,1).repeat(1,query_points.shape[-1])).unflatten(0,src_idx.shape)
+        if False:
+            drop_indice = torch.ones()
 
         src_pre = self.get_proposal_aware_motion_feature(src_pre, trajectory_rois,valid_length)
 

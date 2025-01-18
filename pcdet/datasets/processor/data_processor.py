@@ -278,7 +278,8 @@ class DataProcessor(object):
                     iou3d = iou3d_nms_utils.boxes_iou3d_cpu(frame[:,:7],roi_list[i,:,:7])
 
                     max_overlaps,gt_assignment = iou3d.max(-1)
-
+                    if False:
+                        max_overlaps =max_overlaps * (torch.rand(max_overlaps.shape)>0.3)
 
                     fg_inds = (max_overlaps>0.5).nonzero().squeeze(-1)
                     frame[fg_inds] = roi_list[i,gt_assignment[fg_inds],:9]
@@ -629,6 +630,18 @@ class DataProcessor(object):
             voxel_output = self.voxel_generator.generate(points)
             voxels, coordinates, num_points = voxel_output
             voxels = voxels[:,:,:-1] if config.get('REMOVE_TIME_STAMP',False) else voxels[:,:,:]
+
+        if False:
+            import matplotlib.pyplot as plt
+            image = np.ones((400, 800))
+            voxel_coords = coordinates
+            new_coords = voxel_coords[
+                (voxel_coords[:, 1] >= 552) * (voxel_coords[:, 1] < 952) * (voxel_coords[:, 2] >= 352) * (
+                        voxel_coords[:, 2] < 1152)]
+            image[new_coords[:, 1] - 552, new_coords[:, 2] - 352] = 0.3
+            plt.imshow(image, cmap='gray', vmin=0.2, vmax=1)
+            plt.show()
+
         # if config.get('POINT_FEATURES', None) is not None:
         #
         #

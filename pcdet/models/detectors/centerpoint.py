@@ -8,7 +8,17 @@ class CenterPoint(Detector3DTemplate):
         super().__init__(model_cfg=model_cfg, num_class=num_class, dataset=dataset)
         self.module_list = self.build_networks()
 
+    if False:
+        import matplotlib.pyplot as plt
 
+        image = torch.ones((400, 800))
+        voxel_coords = batch_dict['voxel_coords']
+        new_coords = voxel_coords[
+            (voxel_coords[:, 2] >= 552) * (voxel_coords[:, 2] < 952) * (voxel_coords[:, 3] >= 352) * (
+                    voxel_coords[:, 3] < 1152)]
+        image[new_coords[:, 2].long() - 552, new_coords[:, 3].long() - 352] = 0.3
+        plt.imshow(image.cpu().numpy(), cmap='gray', vmin=0.2, vmax=1)
+        plt.show()
     def forward(self, batch_dict):
         from spconv.utils import Point2VoxelGPU3d as VoxelGenerator
         import cumm.tensorview as tv

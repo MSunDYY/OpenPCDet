@@ -11,7 +11,7 @@ DATA_CONFIG:
     TRAIN_WITH_SPEED: True
     SAMPLED_INTERVAL: {
         'train': 1,
-        'test': 100
+        'test': 5
     }
     FILTER_EMPTY_BOXES_FOR_TRAIN: True
     DISABLE_NLZ_FLAG_ON_POINTS: True
@@ -137,7 +137,7 @@ MODEL:
             use_mlp_mixer:
                 enabled: True
                 hidden_dim: 16
-            drop_rate: [1.0,1.0,0.5]
+            drop_rate: [0.8,0.8,0.6]
 
         Transformer2st:
             SPATIAL_TEMPORAL_TYPE: Denet

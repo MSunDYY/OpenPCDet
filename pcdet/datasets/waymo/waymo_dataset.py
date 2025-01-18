@@ -248,6 +248,24 @@ class WaymoDataset(DatasetTemplate):
         all_sequences_infos = [item for infos in sequence_infos for item in infos]
         return all_sequences_infos
 
+
+    def get_previous_lidar(self, sequence_name, sample_idx):
+        lidar_file = self.root_path/Path('key_points') / sequence_name / ('%04d.npy' % sample_idx)
+        try:
+            points_all = np.load(lidar_file)
+        except:
+            print(lidar_file)
+            exit(0)
+
+        if not self.dataset_cfg.get('DISABLE_NLZ_FLAG_ON_POINTS', False):
+            points_all = points_all[NLZ_flag == -1]
+        if self.dataset_cfg.get('POINTS_TANH_DIM', None) is None:
+            points_all[:, 3] = np.tanh(points_all[:, 3])
+        else:
+            for dim_idx in self.dataset_cfg.POINTS_TANH_DIM:
+                points_all[:, dim_idx] = np.tanh(points_all[:, dim_idx])
+        return points_all
+
     def get_lidar(self, sequence_name, sample_idx):
         lidar_file = self.data_path / sequence_name / ('%04d.npy' % sample_idx)
         try:
