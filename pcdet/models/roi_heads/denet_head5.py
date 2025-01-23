@@ -1003,7 +1003,7 @@ class DENet5Head(RoIHeadTemplate):
             if self.signal=='train':
                 return batch_dict
         src_pre = self.voxel_sampler(batch_size,trajectory_rois,self.num_lidar_points2,batch_dict,num_rois)
-        if True:
+        if False:
             src_pre = src_pre *( torch.rand(src_pre.shape, device=device) >= 0.3 )
 
         trajectory_rois = trajectory_rois.transpose(0,1)
